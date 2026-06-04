@@ -167,7 +167,10 @@ export default function InfiniteWhiteboard({
 
       // Remote (other user's) objects — drawn first, slightly dimmed
       const remoteObjs = remoteObjsRef.current
-      const remoteSorted = [...remoteObjs].sort((a, b) => a.zIndex - b.zIndex)
+      const remoteSorted = [...remoteObjs].sort((a, b) => {
+          const typeOrder = (t: string) => t === 'image' ? 0 : 1
+          return typeOrder(a.type) - typeOrder(b.type) || a.zIndex - b.zIndex
+        })
       ctx.save(); ctx.globalAlpha = 1
       for (const obj of remoteSorted) {
         ctx.save()
@@ -223,7 +226,10 @@ export default function InfiniteWhiteboard({
       ctx.restore()
 
       // Own objects
-      const sorted = [...objs].sort((a, b) => a.zIndex - b.zIndex)
+      const sorted = [...objs].sort((a, b) => {
+          const typeOrder = (t: string) => t === 'image' ? 0 : 1
+          return typeOrder(a.type) - typeOrder(b.type) || a.zIndex - b.zIndex
+        })
       for (const obj of sorted) {
         ctx.save()
         ctx.translate(v.panX + obj.x * v.zoom, v.panY + obj.y * v.zoom)
