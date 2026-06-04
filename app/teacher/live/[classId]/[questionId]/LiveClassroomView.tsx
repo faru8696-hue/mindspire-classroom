@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 
 interface Student { id: string; full_name: string }
 interface Submission { id: string; student_id: string; canvas_data: string | null; text_answer: string | null; updated_at: string }
@@ -34,6 +35,7 @@ export default function LiveClassroomView({
   students, initialSubmissions, initialFeedbacks, initialNotifications,
 }: Props) {
   const supabase = createClient()
+  const router = useRouter()
   const [submissions, setSubmissions] = useState<Map<string, Submission>>(
     () => new Map(initialSubmissions.map(s => [s.student_id, s]))
   )
@@ -47,14 +49,11 @@ export default function LiveClassroomView({
   })
   const [notifications, setNotifications] = useState<StudentNotification[]>(initialNotifications)
   const [filter, setFilter] = useState<Filter>('all')
-  // Full-screen modal
-  const [focusedStudent, setFocusedStudent] = useState<string | null>(null)
   const audioRef = useRef<AudioContext | null>(null)
 
   // Sets of student IDs who need help / clicked done
   const helpIds = new Set(notifications.filter(n => n.type === 'help').map(n => n.student_id))
   const doneIds = new Set(notifications.filter(n => n.type === 'submitted').map(n => n.student_id))
-  const unreadCount = notifications.filter(n => !n.read).length
 
   function playBeep() {
     try {
@@ -119,8 +118,6 @@ export default function LiveClassroomView({
   })
 
   const submittedCount = students.filter(s => submissions.has(s.id)).length
-  const focusedSub = focusedStudent ? submissions.get(focusedStudent) : null
-  const focusedStudentName = students.find(s => s.id === focusedStudent)?.full_name
 
   return (
     <div className="h-screen flex flex-col bg-gray-950 overflow-hidden">
@@ -180,7 +177,7 @@ export default function LiveClassroomView({
               return (
                 <button
                   key={student.id}
-                  onClick={() => setFocusedStudent(student.id)}
+                  onClick={() => router.push(`/teacher/live/${classId}/${questionId}/${student.id}`)}
                   className={`rounded-xl border-2 overflow-hidden text-left transition-all hover:scale-105 hover:shadow-xl ${
                     needsHelp ? 'border-amber-400 shadow-amber-900/50 shadow-lg' :
                     isDone    ? 'border-purple-500' :
@@ -220,80 +217,6 @@ export default function LiveClassroomView({
         )}
       </div>
 
-      {/* Full-screen modal */}
-      {focusedStudent && (
-        <div className="fixed inset-0 z-50 bg-black/90 flex flex-col">
-          {/* Modal header */}
-          <div className="flex items-center justify-between px-6 py-4 bg-gray-900 border-b border-gray-700 flex-shrink-0">
-            <div className="flex items-center gap-4">
-              <button onClick={() => setFocusedStudent(null)} className="text-gray-400 hover:text-white text-2xl leading-none">←</button>
-              <div>
-                <h2 className="font-bold text-white">{focusedStudentName}</h2>
-                <p className="text-xs text-gray-400">{questionTitle}</p>
-              </div>
-              {helpIds.has(focusedStudent) && <span className="bg-amber-500 text-white text-xs px-3 py-1 rounded-full font-bold">🙋 Needs Help</span>}
-              {doneIds.has(focusedStudent) && <span className="bg-purple-600 text-white text-xs px-3 py-1 rounded-full font-bold">✓ Done</span>}
-            </div>
-            <div className="flex items-center gap-3">
-              {/* Prev / Next */}
-              <button
-                onClick={() => {
-                  const idx = filteredStudents.findIndex(s => s.id === focusedStudent)
-                  if (idx > 0) setFocusedStudent(filteredStudents[idx - 1].id)
-                }}
-                disabled={filteredStudents.findIndex(s => s.id === focusedStudent) === 0}
-                className="text-gray-400 hover:text-white disabled:opacity-30 text-sm px-3 py-1.5 bg-gray-800 rounded-lg"
-              >← Prev</button>
-              <span className="text-gray-500 text-xs">
-                {filteredStudents.findIndex(s => s.id === focusedStudent) + 1} / {filteredStudents.length}
-              </span>
-              <button
-                onClick={() => {
-                  const idx = filteredStudents.findIndex(s => s.id === focusedStudent)
-                  if (idx < filteredStudents.length - 1) setFocusedStudent(filteredStudents[idx + 1].id)
-                }}
-                disabled={filteredStudents.findIndex(s => s.id === focusedStudent) === filteredStudents.length - 1}
-                className="text-gray-400 hover:text-white disabled:opacity-30 text-sm px-3 py-1.5 bg-gray-800 rounded-lg"
-              >Next →</button>
-              <Link
-                href={`/teacher/students/${focusedStudent}`}
-                className="text-xs bg-purple-600 hover:bg-purple-500 text-white px-3 py-1.5 rounded-lg"
-              >View profile →</Link>
-              <button onClick={() => setFocusedStudent(null)} className="text-gray-400 hover:text-white text-2xl ml-2">×</button>
-            </div>
-          </div>
-
-          {/* Full board */}
-          <div className="flex-1 flex items-center justify-center p-6 overflow-auto">
-            {focusedSub?.canvas_data ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={focusedSub.canvas_data}
-                alt="Student work"
-                className="max-w-full max-h-full object-contain rounded-xl border border-gray-700 shadow-2xl"
-                style={{ background: 'white' }}
-              />
-            ) : focusedSub?.text_answer ? (
-              <div className="bg-white rounded-xl p-8 max-w-2xl w-full shadow-2xl">
-                <p className="text-gray-800 whitespace-pre-wrap text-base">{focusedSub.text_answer}</p>
-              </div>
-            ) : (
-              <div className="text-center">
-                <p className="text-gray-400 text-lg mb-2">No work submitted yet</p>
-                <p className="text-gray-600 text-sm">This student hasn't submitted anything for this question.</p>
-              </div>
-            )}
-          </div>
-
-          {focusedSub?.updated_at && (
-            <div className="text-center pb-3">
-              <span className="text-xs text-gray-600">
-                Last updated {new Date(focusedSub.updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              </span>
-            </div>
-          )}
-        </div>
-      )}
     </div>
   )
 }
