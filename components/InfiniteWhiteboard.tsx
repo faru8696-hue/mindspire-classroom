@@ -523,7 +523,7 @@ export default function InfiniteWhiteboard({
     if (!isDrawingRef.current) return
     const cp = screenToCanvas(e.clientX, e.clientY)
     if (toolRef.current === 'pen' || toolRef.current === 'highlighter') {
-      currentPath.current = [...currentPath.current, cp]
+      currentPath.current.push(cp)
     } else if (['rectangle', 'circle', 'line', 'arrow'].includes(toolRef.current)) {
       shapeEnd.current = cp
     }
@@ -574,65 +574,195 @@ export default function InfiniteWhiteboard({
     }
   }, [commitObjects, pushHistory])
 
-  // ── Touch handlers ────────────────────────────────────────────
+  // ── Touch handlers (native, non-passive for no lag) ──────────
   const pinchStartDist = useRef<number | null>(null)
   const pinchStartZoom = useRef<number>(1)
-  const lastTouchRef = useRef<{ x: number; y: number } | null>(null)
 
-  const getTouchPos = (touch: Touch) => ({ clientX: touch.clientX, clientY: touch.clientY })
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
 
-  const handleTouchStart = useCallback((e: React.TouchEvent) => {
-    if (e.touches.length === 2) {
-      // Two fingers — pinch-to-zoom setup
-      const dx = e.touches[1].clientX - e.touches[0].clientX
-      const dy = e.touches[1].clientY - e.touches[0].clientY
-      pinchStartDist.current = Math.hypot(dx, dy)
-      pinchStartZoom.current = viewRef.current.zoom
-      return
-    }
-    if (e.touches.length === 1) {
-      const t = e.touches[0]
-      // On pan tool or two-finger pan, use pan behaviour
-      if (toolRef.current === 'pan') {
-        panStart.current = { x: t.clientX, y: t.clientY }
+    const onTouchStart = (e: TouchEvent) => {
+      e.preventDefault()
+      if (e.touches.length === 2) {
+        const dx = e.touches[1].clientX - e.touches[0].clientX
+        const dy = e.touches[1].clientY - e.touches[0].clientY
+        pinchStartDist.current = Math.hypot(dx, dy)
+        pinchStartZoom.current = viewRef.current.zoom
         return
       }
-      lastTouchRef.current = { x: t.clientX, y: t.clientY }
-      handleMouseDown({ clientX: t.clientX, clientY: t.clientY, button: 0 } as React.MouseEvent)
-    }
-  }, [handleMouseDown])
+      if (e.touches.length === 1) {
+        const t = e.touches[0]
+        const canvasPos = screenToCanvas(t.clientX, t.clientY)
+        const rect = containerRef.current?.getBoundingClientRect()
+        const mx = t.clientX - (rect?.left ?? 0)
+        const my = t.clientY - (rect?.top ?? 0)
 
-  const handleTouchMove = useCallback((e: React.TouchEvent) => {
-    e.preventDefault()
-    if (e.touches.length === 2 && pinchStartDist.current !== null) {
-      const dx = e.touches[1].clientX - e.touches[0].clientX
-      const dy = e.touches[1].clientY - e.touches[0].clientY
-      const dist = Math.hypot(dx, dy)
-      const scale = dist / pinchStartDist.current
-      const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2
-      const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2
-      const cp = screenToCanvas(midX, midY)
-      const nz = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, pinchStartZoom.current * scale))
-      const rect = containerRef.current?.getBoundingClientRect()
-      if (rect) {
-        const mx = midX - rect.left, my = midY - rect.top
-        const nv = { panX: mx - cp.x * nz, panY: my - cp.y * nz, zoom: nz }
-        viewRef.current = nv; _setView(nv)
+        if (toolRef.current === 'pan') {
+          panStart.current = { x: t.clientX, y: t.clientY }; return
+        }
+        if (toolRef.current === 'pen' || toolRef.current === 'highlighter') {
+          isDrawingRef.current = true
+          currentPath.current = [canvasPos]
+        } else if (['rectangle', 'circle', 'line', 'arrow'].includes(toolRef.current)) {
+          isDrawingRef.current = true
+          shapeStart.current = canvasPos; shapeEnd.current = canvasPos
+        } else if (toolRef.current === 'pointer') {
+          const v = viewRef.current
+          const HIT = 18
+          const hit = (hx: number, hy: number) => Math.hypot(mx - hx, my - hy) <= HIT
+          const selObj = objsRef.current.find(o => o.id === selIdRef.current)
+          if (selObj && ['image', 'shape', 'sticky'].includes(selObj.type)) {
+            const sx = v.panX + selObj.x * v.zoom, sy = v.panY + selObj.y * v.zoom
+            const sw = (selObj.width ?? 100) * v.zoom, sh = (selObj.height ?? 100) * v.zoom
+            const pad = 8, ll = 28
+            const start = (mode: DragMode) => {
+              dragMode.current = mode; dragObjId.current = selObj.id
+              dragStartMouse.current = { x: mx, y: my }
+              dragStartObj.current = { x: selObj.x, y: selObj.y, width: selObj.width ?? 100, height: selObj.height ?? 100, rotation: selObj.rotation }
+            }
+            if (hit(sx + sw / 2, sy - pad - ll - 6)) { start('rotate'); return }
+            if (hit(sx - pad, sy - pad)) { start('resize-nw'); return }
+            if (hit(sx + sw + pad, sy - pad)) { start('resize-ne'); return }
+            if (hit(sx - pad, sy + sh + pad)) { start('resize-sw'); return }
+            if (hit(sx + sw + pad, sy + sh + pad)) { start('resize-se'); return }
+            if (mx >= sx - pad && mx <= sx + sw + pad && my >= sy - pad && my <= sy + sh + pad) { start('move'); return }
+          }
+          const hitObj = [...objsRef.current].reverse().find(o => {
+            if (!['image', 'shape', 'sticky'].includes(o.type)) return false
+            const sx = v.panX + o.x * v.zoom, sy = v.panY + o.y * v.zoom
+            return mx >= sx && mx <= sx + (o.width ?? 100) * v.zoom && my >= sy && my <= sy + (o.height ?? 100) * v.zoom
+          })
+          selIdRef.current = hitObj?.id ?? null
+          if (hitObj) {
+            dragMode.current = 'move'; dragObjId.current = hitObj.id
+            dragStartMouse.current = { x: mx, y: my }
+            dragStartObj.current = { x: hitObj.x, y: hitObj.y, width: hitObj.width ?? 100, height: hitObj.height ?? 100, rotation: hitObj.rotation }
+          }
+        }
       }
-      return
     }
-    if (e.touches.length === 1) {
-      const t = e.touches[0]
-      handleMouseMove({ clientX: t.clientX, clientY: t.clientY } as React.MouseEvent)
-      lastTouchRef.current = { x: t.clientX, y: t.clientY }
-    }
-  }, [handleMouseMove, screenToCanvas])
 
-  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
-    pinchStartDist.current = null
-    lastTouchRef.current = null
-    handleMouseUp({} as React.MouseEvent)
-  }, [handleMouseUp])
+    const onTouchMove = (e: TouchEvent) => {
+      e.preventDefault()
+      if (e.touches.length === 2 && pinchStartDist.current !== null) {
+        const dx = e.touches[1].clientX - e.touches[0].clientX
+        const dy = e.touches[1].clientY - e.touches[0].clientY
+        const dist = Math.hypot(dx, dy)
+        const scale = dist / pinchStartDist.current
+        const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2
+        const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2
+        const cp = screenToCanvas(midX, midY)
+        const nz = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, pinchStartZoom.current * scale))
+        const rect = containerRef.current?.getBoundingClientRect()
+        if (rect) {
+          const nv = { panX: (midX - rect.left) - cp.x * nz, panY: (midY - rect.top) - cp.y * nz, zoom: nz }
+          viewRef.current = nv; _setView(nv)
+        }
+        return
+      }
+      if (e.touches.length === 1) {
+        const t = e.touches[0]
+        const cp = screenToCanvas(t.clientX, t.clientY)
+        const rect = containerRef.current?.getBoundingClientRect()
+        const mx = t.clientX - (rect?.left ?? 0)
+        const my = t.clientY - (rect?.top ?? 0)
+
+        if (panStart.current) {
+          const dx = t.clientX - panStart.current.x, dy = t.clientY - panStart.current.y
+          const v = viewRef.current
+          const nv = { ...v, panX: v.panX + dx, panY: v.panY + dy }
+          viewRef.current = nv; _setView(nv)
+          panStart.current = { x: t.clientX, y: t.clientY }
+          return
+        }
+        if (dragMode.current && dragObjId.current && dragStartMouse.current && dragStartObj.current) {
+          const v = viewRef.current
+          const dx = (mx - dragStartMouse.current.x) / v.zoom
+          const dy = (my - dragStartMouse.current.y) / v.zoom
+          const s = dragStartObj.current
+          const MIN = 20
+          commitObjects(prev => prev.map(obj => {
+            if (obj.id !== dragObjId.current) return obj
+            switch (dragMode.current) {
+              case 'move': return { ...obj, x: s.x + dx, y: s.y + dy }
+              case 'resize-se': return { ...obj, width: Math.max(MIN, s.width + dx), height: Math.max(MIN, s.height + dy) }
+              case 'resize-sw': { const nw = Math.max(MIN, s.width - dx); return { ...obj, x: s.x + s.width - nw, width: nw, height: Math.max(MIN, s.height + dy) } }
+              case 'resize-ne': { const nh = Math.max(MIN, s.height - dy); return { ...obj, y: s.y + s.height - nh, width: Math.max(MIN, s.width + dx), height: nh } }
+              case 'resize-nw': { const nw = Math.max(MIN, s.width - dx), nh = Math.max(MIN, s.height - dy); return { ...obj, x: s.x + s.width - nw, y: s.y + s.height - nh, width: nw, height: nh } }
+              case 'rotate': {
+                const csx = v.panX + (s.x + s.width / 2) * v.zoom
+                const csy = v.panY + (s.y + s.height / 2) * v.zoom
+                return { ...obj, rotation: Math.atan2(my - csy, mx - csx) * 180 / Math.PI + 90 }
+              }
+              default: return obj
+            }
+          }))
+          return
+        }
+        if (!isDrawingRef.current) return
+        if (toolRef.current === 'pen' || toolRef.current === 'highlighter') {
+          currentPath.current.push(cp) // push avoids copying the whole array
+        } else if (['rectangle', 'circle', 'line', 'arrow'].includes(toolRef.current)) {
+          shapeEnd.current = cp
+        }
+      }
+    }
+
+    const onTouchEnd = (e: TouchEvent) => {
+      e.preventDefault()
+      pinchStartDist.current = null
+      panStart.current = null
+      if (dragMode.current && dragObjId.current) pushHistory()
+      dragMode.current = null; dragObjId.current = null
+      dragStartMouse.current = null; dragStartObj.current = null
+
+      if (!isDrawingRef.current) return
+      isDrawingRef.current = false
+      const t = toolRef.current
+      if (t === 'pen' || t === 'highlighter') {
+        if (currentPath.current.length > 1) {
+          pushHistory()
+          commitObjects(prev => [...prev, {
+            id: `${t}-${Date.now()}`, type: t,
+            x: 0, y: 0, rotation: 0,
+            data: JSON.stringify(currentPath.current),
+            color: colorRef.current,
+            strokeWidth: t === 'highlighter' ? 8 : 3,
+            zIndex: Date.now(),
+          }])
+        }
+        currentPath.current = []
+      } else if (['rectangle', 'circle', 'line', 'arrow'].includes(t)) {
+        if (shapeStart.current && shapeEnd.current) {
+          const w = Math.abs(shapeEnd.current.x - shapeStart.current.x)
+          const h = Math.abs(shapeEnd.current.y - shapeStart.current.y)
+          if (w > 5 || h > 5) {
+            pushHistory()
+            commitObjects(prev => [...prev, {
+              id: `shape-${Date.now()}`, type: 'shape',
+              x: Math.min(shapeStart.current!.x, shapeEnd.current!.x),
+              y: Math.min(shapeStart.current!.y, shapeEnd.current!.y),
+              width: w, height: h, rotation: 0,
+              color: colorRef.current, strokeWidth: 2,
+              shapeType: t as 'rectangle' | 'circle' | 'line' | 'arrow',
+              zIndex: Date.now(),
+            }])
+          }
+        }
+        shapeStart.current = null; shapeEnd.current = null
+      }
+    }
+
+    canvas.addEventListener('touchstart', onTouchStart, { passive: false })
+    canvas.addEventListener('touchmove', onTouchMove, { passive: false })
+    canvas.addEventListener('touchend', onTouchEnd, { passive: false })
+    return () => {
+      canvas.removeEventListener('touchstart', onTouchStart)
+      canvas.removeEventListener('touchmove', onTouchMove)
+      canvas.removeEventListener('touchend', onTouchEnd)
+    }
+  }, [screenToCanvas, commitObjects, pushHistory])
 
   // ── Keyboard shortcuts ────────────────────────────────────────
   useEffect(() => {
@@ -773,9 +903,6 @@ export default function InfiniteWhiteboard({
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
-          onTouchStart={handleTouchStart}
-          onTouchMove={handleTouchMove}
-          onTouchEnd={handleTouchEnd}
         />
       </div>
 
