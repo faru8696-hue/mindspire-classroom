@@ -16,11 +16,15 @@ export default async function TeacherWatchPage({
     supabase.from('profiles').select('id, full_name').eq('id', studentId).single(),
     supabase.from('classes').select('title').eq('id', classId).single(),
     supabase.from('submissions')
-      .select('canvas_data, text_answer')
+      .select('id, canvas_data, text_answer, image_url')
       .eq('question_id', questionId)
       .eq('student_id', studentId)
       .maybeSingle(),
   ])
+
+  const { data: feedback } = submission?.id
+    ? await supabase.from('feedback').select('grade, text_feedback').eq('submission_id', submission.id).maybeSingle()
+    : { data: null }
 
   if (!question || !student) notFound()
 
@@ -65,12 +69,16 @@ export default async function TeacherWatchPage({
           )}
         </div>
 
-        {/* Live whiteboard — fills remaining space */}
-        <div className="flex-1 min-w-0 min-h-0">
+        {/* Live whiteboard + grading */}
+        <div className="flex-1 min-w-0 min-h-0 flex flex-col">
           <TeacherWatchBoard
             questionId={questionId}
             studentId={studentId}
+            submissionId={submission?.id ?? null}
             initialStudentData={submission?.canvas_data ?? null}
+            imageUrl={submission?.image_url ?? null}
+            initialGrade={feedback?.grade ?? null}
+            initialFeedbackText={feedback?.text_feedback ?? null}
           />
         </div>
       </div>
