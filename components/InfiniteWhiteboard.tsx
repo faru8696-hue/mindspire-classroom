@@ -168,7 +168,7 @@ export default function InfiniteWhiteboard({
       // Remote (other user's) objects — drawn first, slightly dimmed
       const remoteObjs = remoteObjsRef.current
       const remoteSorted = [...remoteObjs].sort((a, b) => a.zIndex - b.zIndex)
-      ctx.save(); ctx.globalAlpha = 0.55
+      ctx.save(); ctx.globalAlpha = 1
       for (const obj of remoteSorted) {
         ctx.save()
         ctx.translate(v.panX + obj.x * v.zoom, v.panY + obj.y * v.zoom)
