@@ -574,6 +574,66 @@ export default function InfiniteWhiteboard({
     }
   }, [commitObjects, pushHistory])
 
+  // ── Touch handlers ────────────────────────────────────────────
+  const pinchStartDist = useRef<number | null>(null)
+  const pinchStartZoom = useRef<number>(1)
+  const lastTouchRef = useRef<{ x: number; y: number } | null>(null)
+
+  const getTouchPos = (touch: Touch) => ({ clientX: touch.clientX, clientY: touch.clientY })
+
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length === 2) {
+      // Two fingers — pinch-to-zoom setup
+      const dx = e.touches[1].clientX - e.touches[0].clientX
+      const dy = e.touches[1].clientY - e.touches[0].clientY
+      pinchStartDist.current = Math.hypot(dx, dy)
+      pinchStartZoom.current = viewRef.current.zoom
+      return
+    }
+    if (e.touches.length === 1) {
+      const t = e.touches[0]
+      // On pan tool or two-finger pan, use pan behaviour
+      if (toolRef.current === 'pan') {
+        panStart.current = { x: t.clientX, y: t.clientY }
+        return
+      }
+      lastTouchRef.current = { x: t.clientX, y: t.clientY }
+      handleMouseDown({ clientX: t.clientX, clientY: t.clientY, button: 0 } as React.MouseEvent)
+    }
+  }, [handleMouseDown])
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    e.preventDefault()
+    if (e.touches.length === 2 && pinchStartDist.current !== null) {
+      const dx = e.touches[1].clientX - e.touches[0].clientX
+      const dy = e.touches[1].clientY - e.touches[0].clientY
+      const dist = Math.hypot(dx, dy)
+      const scale = dist / pinchStartDist.current
+      const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2
+      const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2
+      const cp = screenToCanvas(midX, midY)
+      const nz = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, pinchStartZoom.current * scale))
+      const rect = containerRef.current?.getBoundingClientRect()
+      if (rect) {
+        const mx = midX - rect.left, my = midY - rect.top
+        const nv = { panX: mx - cp.x * nz, panY: my - cp.y * nz, zoom: nz }
+        viewRef.current = nv; _setView(nv)
+      }
+      return
+    }
+    if (e.touches.length === 1) {
+      const t = e.touches[0]
+      handleMouseMove({ clientX: t.clientX, clientY: t.clientY } as React.MouseEvent)
+      lastTouchRef.current = { x: t.clientX, y: t.clientY }
+    }
+  }, [handleMouseMove, screenToCanvas])
+
+  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
+    pinchStartDist.current = null
+    lastTouchRef.current = null
+    handleMouseUp({} as React.MouseEvent)
+  }, [handleMouseUp])
+
   // ── Keyboard shortcuts ────────────────────────────────────────
   useEffect(() => {
     const isTyping = () => {
@@ -707,12 +767,15 @@ export default function InfiniteWhiteboard({
 
       {/* Canvas */}
       <div ref={containerRef} className="flex-1 relative overflow-hidden bg-white">
-        <canvas ref={canvasRef} className="absolute inset-0 w-full h-full"
+        <canvas ref={canvasRef} className="absolute inset-0 w-full h-full touch-none"
           style={{ cursor: tool === 'pointer' ? 'default' : tool === 'pan' ? 'grab' : 'crosshair' }}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
         />
       </div>
 
