@@ -887,13 +887,13 @@ export default function InfiniteWhiteboard({
     return () => { supabase.removeChannel(ch) }
   }, [questionId, studentId, role])
 
-  // Broadcast on object changes (debounced, skip images to avoid size limit)
+  // Broadcast on object changes (debounced)
+  // Images are now signed URLs (not base64) so safe to include
   useEffect(() => {
     if (broadcastTimer.current) clearTimeout(broadcastTimer.current)
     broadcastTimer.current = setTimeout(() => {
       const myEvent = role === 'student' ? 'student_objects' : 'teacher_objects'
-      const broadcastable = objsRef.current.filter(o => o.type !== 'image')
-      channelRef.current?.send({ type: 'broadcast', event: myEvent, payload: { objects: broadcastable } })
+      channelRef.current?.send({ type: 'broadcast', event: myEvent, payload: { objects: objsRef.current } })
     }, 150)
   }, [objCount, role])
 
