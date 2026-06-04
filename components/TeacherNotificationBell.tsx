@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 
@@ -24,7 +24,7 @@ export default function TeacherNotificationBell({ initialNotifications }: Props)
   const supabase = createClient()
   const [notifications, setNotifications] = useState<Notification[]>(initialNotifications)
   const [open, setOpen] = useState(false)
-  const audioRef = { current: null as AudioContext | null }
+  const audioRef = useRef<AudioContext | null>(null)
 
   const unread = notifications.filter(n => !n.read)
 
