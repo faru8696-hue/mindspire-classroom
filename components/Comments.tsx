@@ -24,54 +24,67 @@ export default function Comments({ questionId, studentId, currentUserId, current
   const [message, setMessage] = useState('')
   const [sending, setSending] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const channelRef = useRef(supabase.channel(`comments:${questionId}:${studentId}`))
 
   useEffect(() => {
-    loadComments()
+    // Load existing comments
+    supabase
+      .from('comments')
+      .select('*, author:profiles!comments_author_id_fkey(full_name, role)')
+      .eq('question_id', questionId)
+      .eq('student_id', studentId)
+      .order('created_at')
+      .then(({ data }) => setComments((data as unknown as Comment[]) ?? []))
 
-    const channel = supabase
-      .channel(`comments:${questionId}:${studentId}`)
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'comments',
-        filter: `question_id=eq.${questionId}`,
-      }, () => loadComments())
-      .subscribe()
+    // Listen for new comments via Broadcast (bypasses RLS, instant delivery)
+    const ch = channelRef.current
+    ch.on('broadcast', { event: 'new-comment' }, ({ payload }) => {
+      setComments(prev => [...prev, payload as Comment])
+    }).subscribe()
 
-    return () => { supabase.removeChannel(channel) }
+    return () => { supabase.removeChannel(ch) }
   }, [questionId, studentId])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [comments])
 
-  async function loadComments() {
-    const { data, error } = await supabase
-      .from('comments')
-      .select('*, author:profiles!comments_author_id_fkey(full_name, role)')
-      .eq('question_id', questionId)
-      .eq('student_id', studentId)
-      .order('created_at')
-    if (error) console.error('loadComments error:', error)
-    setComments((data as unknown as Comment[]) ?? [])
-  }
-
   async function sendMessage(e: React.FormEvent) {
     e.preventDefault()
     if (!message.trim()) return
     setSending(true)
-    const { error } = await supabase.from('comments').insert({
+    const now = new Date().toISOString()
+    const newComment: Comment = {
+      id: crypto.randomUUID(),
+      message: message.trim(),
+      created_at: now,
+      author_id: currentUserId,
+      author: { full_name: currentUserName, role: '' },
+    }
+
+    // Show immediately for sender
+    setComments(prev => [...prev, newComment])
+    setMessage('')
+
+    // Save to DB
+    const { data: inserted, error } = await supabase.from('comments').insert({
       question_id: questionId,
       student_id: studentId,
       author_id: currentUserId,
-      message: message.trim(),
-    })
+      message: newComment.message,
+    }).select('id').single()
+
     if (error) {
       console.error('Comment send failed:', error)
-      alert('Failed to send comment: ' + error.message)
+      setComments(prev => prev.filter(c => c.id !== newComment.id))
     } else {
-      setMessage('')
-      await loadComments()
+      // Broadcast to other party with real DB id
+      const final = { ...newComment, id: inserted.id }
+      await channelRef.current.send({
+        type: 'broadcast',
+        event: 'new-comment',
+        payload: final,
+      })
     }
     setSending(false)
   }
