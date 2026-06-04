@@ -207,8 +207,11 @@ export default function InfiniteWhiteboard({
         } else if (obj.type === 'image') {
           const src = obj.data || ''
           const cached = imageCache.get(src)
-          if (cached) { ctx.drawImage(cached, 0, 0, obj.width ?? 100, obj.height ?? 100) }
-          else if (src) { const img = new Image(); img.onload = () => imageCache.set(src, img); img.src = src }
+          if (cached?.complete && cached.naturalWidth > 0) {
+            ctx.drawImage(cached, 0, 0, obj.width ?? 100, obj.height ?? 100)
+          } else if (src && !cached) {
+            const img = new Image(); img.src = src; imageCache.set(src, img)
+          }
         }
         ctx.restore()
       }
@@ -262,9 +265,11 @@ export default function InfiniteWhiteboard({
           const src = obj.data || ''
           const cached = imageCache.get(src)
           if (cached) {
-            ctx.drawImage(cached, 0, 0, obj.width ?? 100, obj.height ?? 100)
-          } else if (src) {
-            const img = new Image(); img.onload = () => imageCache.set(src, img); img.src = src
+            if (cached.complete && cached.naturalWidth > 0) {
+              ctx.drawImage(cached, 0, 0, obj.width ?? 100, obj.height ?? 100)
+            }
+          } else if (src && !cached) {
+            const img = new Image(); img.src = src; imageCache.set(src, img)
           }
         }
 
