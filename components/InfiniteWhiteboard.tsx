@@ -438,16 +438,14 @@ export default function InfiniteWhiteboard({
       const { error } = await supabase.storage.from('submissions').upload(path, file, { upsert: true })
       if (error) { console.error('Image upload failed:', error); continue }
 
-      // 3. Get a long-lived signed URL (10 years)
-      const { data: signed } = await supabase.storage.from('submissions').createSignedUrl(path, 60 * 60 * 24 * 365 * 10)
-      if (!signed?.signedUrl) continue
+      // 3. Use public URL (bucket is public, no expiry, no auth token needed)
+      const { data: pub } = supabase.storage.from('submissions').getPublicUrl(path)
+      const publicUrl = pub.publicUrl
 
-      const signedUrl = signed.signedUrl
-
-      // 4. Replace the base64 data with the signed URL in the objects list
-      const signedImg = new Image(); signedImg.src = signedUrl
-      imageCache.set(signedUrl, img) // reuse the already-loaded img element
-      commitObjects(prev => prev.map(o => o.id === id ? { ...o, data: signedUrl } : o))
+      // 4. Replace the base64 data with the public URL in the objects list
+      const pubImg = new Image(); pubImg.src = publicUrl
+      imageCache.set(publicUrl, pubImg)
+      commitObjects(prev => prev.map(o => o.id === id ? { ...o, data: publicUrl } : o))
     }
   }, [commitObjects, pushHistory, studentId, questionId])
 
