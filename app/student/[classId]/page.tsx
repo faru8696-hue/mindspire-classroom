@@ -21,9 +21,14 @@ export default async function ClassPage({ params }: { params: Promise<{ classId:
     : { data: [] }
 
   const topicIds = topics?.map(t => t.id) ?? []
-  const { data: questions } = topicIds.length > 0
-    ? await supabase.from('questions').select('id, topic_id').in('topic_id', topicIds)
-    : { data: [] }
+  const [{ data: allQuestions }, { data: assignments }] = await Promise.all([
+    topicIds.length > 0
+      ? supabase.from('questions').select('id, topic_id').in('topic_id', topicIds)
+      : Promise.resolve({ data: [] }),
+    supabase.from('assignments').select('question_id').eq('class_id', classId),
+  ])
+  const assignedIds = assignments && assignments.length > 0 ? new Set(assignments.map((a: { question_id: string }) => a.question_id)) : null
+  const questions = assignedIds ? allQuestions?.filter(q => assignedIds.has(q.id)) : allQuestions
 
   const questionIds = questions?.map(q => q.id) ?? []
   const { data: submissions } = questionIds.length > 0

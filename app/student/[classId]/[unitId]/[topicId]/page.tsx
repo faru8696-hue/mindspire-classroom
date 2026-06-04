@@ -14,11 +14,17 @@ export default async function TopicPage({ params }: { params: Promise<{ classId:
   const { data: { session } } = await supabase.auth.getSession()
   const studentId = session!.user.id
 
-  const [{ data: topic }, { data: unit }, { data: questions }] = await Promise.all([
+  const [{ data: topic }, { data: unit }, { data: allQuestions }, { data: classRow }] = await Promise.all([
     supabase.from('topics').select('*').eq('id', topicId).single(),
     supabase.from('units').select('title').eq('id', unitId).single(),
     supabase.from('questions').select('*').eq('topic_id', topicId).order('order_index'),
+    supabase.from('classes').select('id').eq('id', classId).single(),
   ])
+
+  // Filter to only assigned questions (if any assignments exist for this class)
+  const { data: assignments } = await supabase.from('assignments').select('question_id').eq('class_id', classId)
+  const assignedIds = assignments && assignments.length > 0 ? new Set(assignments.map((a: { question_id: string }) => a.question_id)) : null
+  const questions = assignedIds ? allQuestions?.filter(q => assignedIds.has(q.id)) : allQuestions
 
   if (!topic) notFound()
 
