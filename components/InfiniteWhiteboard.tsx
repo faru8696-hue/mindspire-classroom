@@ -269,21 +269,48 @@ export default function InfiniteWhiteboard({
         }
 
         // Selection handles
-        if (selId === obj.id && (obj.type === 'image' || obj.type === 'shape' || obj.type === 'sticky')) {
-          const w = obj.width ?? 100, h = obj.height ?? 100
-          const pad = 8 / v.zoom, hs = 9 / v.zoom
+        if (selId === obj.id && (obj.type === 'image' || obj.type === 'shape' || obj.type === 'sticky' || obj.type === 'text')) {
+          const w = obj.type === 'text' ? 160 : (obj.width ?? 100)
+          const h = obj.type === 'text' ? 28 : (obj.height ?? 100)
+          const pad = 10 / v.zoom
+          const hs = 14 / v.zoom  // bigger handles for touch
+          const r = hs / 2
+
+          // Dashed border
           ctx.strokeStyle = '#6d28d9'; ctx.lineWidth = 1.5 / v.zoom
           ctx.setLineDash([5 / v.zoom, 4 / v.zoom])
           ctx.strokeRect(-pad, -pad, w + pad * 2, h + pad * 2)
           ctx.setLineDash([])
-          const corners = [[-pad - hs/2, -pad - hs/2], [w + pad - hs/2, -pad - hs/2], [-pad - hs/2, h + pad - hs/2], [w + pad - hs/2, h + pad - hs/2]]
+
+          // Corner resize handles
+          const corners: [number, number][] = [
+            [-pad - r, -pad - r],
+            [w + pad - r, -pad - r],
+            [-pad - r, h + pad - r],
+            [w + pad - r, h + pad - r],
+          ]
           corners.forEach(([cx, cy]) => {
-            ctx.fillStyle = '#fff'; ctx.fillRect(cx, cy, hs, hs)
-            ctx.strokeStyle = '#6d28d9'; ctx.strokeRect(cx, cy, hs, hs)
+            ctx.fillStyle = '#6d28d9'; ctx.beginPath(); ctx.arc(cx + r, cy + r, r, 0, Math.PI * 2); ctx.fill()
+            ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(cx + r, cy + r, r * 0.55, 0, Math.PI * 2); ctx.fill()
           })
+
+          // Rotate handle (circle above top-centre)
           const ll = 28 / v.zoom, ccx = w / 2
-          ctx.strokeStyle = '#6d28d9'; ctx.beginPath(); ctx.moveTo(ccx, -pad); ctx.lineTo(ccx, -pad - ll); ctx.stroke()
-          ctx.fillStyle = '#6d28d9'; ctx.beginPath(); ctx.arc(ccx, -pad - ll - 6 / v.zoom, 6 / v.zoom, 0, Math.PI * 2); ctx.fill()
+          ctx.strokeStyle = '#6d28d9'; ctx.lineWidth = 1.5 / v.zoom
+          ctx.beginPath(); ctx.moveTo(ccx, -pad); ctx.lineTo(ccx, -pad - ll); ctx.stroke()
+          ctx.fillStyle = '#6d28d9'; ctx.beginPath(); ctx.arc(ccx, -pad - ll - r, r, 0, Math.PI * 2); ctx.fill()
+          // rotation arrow symbol
+          ctx.fillStyle = '#fff'; ctx.font = `bold ${10 / v.zoom}px Arial`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+          ctx.fillText('↻', ccx, -pad - ll - r)
+          ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'
+
+          // X delete button (top-right outside)
+          const xr = 10 / v.zoom
+          const xbx = w + pad + xr, xby = -pad - xr
+          ctx.fillStyle = '#ef4444'; ctx.beginPath(); ctx.arc(xbx, xby, xr, 0, Math.PI * 2); ctx.fill()
+          ctx.fillStyle = '#fff'; ctx.font = `bold ${11 / v.zoom}px Arial`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+          ctx.fillText('×', xbx, xby)
+          ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'
         }
         ctx.restore()
       }
@@ -430,42 +457,57 @@ export default function InfiniteWhiteboard({
 
     if (toolRef.current === 'pointer') {
       const v = viewRef.current
-      const HIT = 12
+      const HIT = 16
       const hit = (hx: number, hy: number) => Math.hypot(mx - hx, my - hy) <= HIT
 
       const selObj = objsRef.current.find(o => o.id === selIdRef.current)
-      if (selObj && (selObj.type === 'image' || selObj.type === 'shape' || selObj.type === 'sticky')) {
+      if (selObj && ['image', 'shape', 'sticky', 'text'].includes(selObj.type)) {
+        const sw = selObj.type === 'text' ? 160 : (selObj.width ?? 100)
+        const sh = selObj.type === 'text' ? 28 : (selObj.height ?? 100)
         const sx = v.panX + selObj.x * v.zoom, sy = v.panY + selObj.y * v.zoom
-        const sw = (selObj.width ?? 100) * v.zoom, sh = (selObj.height ?? 100) * v.zoom
-        const pad = 8, ll = 28
+        const swz = sw * v.zoom, shz = sh * v.zoom
+        const pad = 10, ll = 28
+
+        // X delete button hit
+        const xbx = sx + swz + pad + 10, xby = sy - pad - 10
+        if (hit(xbx, xby)) {
+          pushHistory()
+          commitObjects(prev => prev.filter(o => o.id !== selObj.id))
+          selIdRef.current = null; setSelId(null)
+          return
+        }
 
         const start = (mode: DragMode) => {
           dragMode.current = mode; dragObjId.current = selObj.id
           dragStartMouse.current = { x: mx, y: my }
-          dragStartObj.current = { x: selObj.x, y: selObj.y, width: selObj.width ?? 100, height: selObj.height ?? 100, rotation: selObj.rotation }
+          dragStartObj.current = { x: selObj.x, y: selObj.y, width: sw, height: sh, rotation: selObj.rotation }
         }
 
-        if (hit(sx + sw / 2, sy - pad - ll - 6)) { start('rotate'); return }
+        if (hit(sx + swz / 2, sy - pad - ll - 10)) { start('rotate'); return }
         if (hit(sx - pad, sy - pad)) { start('resize-nw'); return }
-        if (hit(sx + sw + pad, sy - pad)) { start('resize-ne'); return }
-        if (hit(sx - pad, sy + sh + pad)) { start('resize-sw'); return }
-        if (hit(sx + sw + pad, sy + sh + pad)) { start('resize-se'); return }
-        if (mx >= sx - pad && mx <= sx + sw + pad && my >= sy - pad && my <= sy + sh + pad) { start('move'); return }
+        if (hit(sx + swz + pad, sy - pad)) { start('resize-ne'); return }
+        if (hit(sx - pad, sy + shz + pad)) { start('resize-sw'); return }
+        if (hit(sx + swz + pad, sy + shz + pad)) { start('resize-se'); return }
+        if (mx >= sx - pad && mx <= sx + swz + pad && my >= sy - pad && my <= sy + shz + pad) { start('move'); return }
       }
 
       const hitObj = [...objsRef.current].reverse().find(o => {
-        if (!['image', 'shape', 'sticky'].includes(o.type)) return false
+        if (!['image', 'shape', 'sticky', 'text'].includes(o.type)) return false
         const v2 = viewRef.current
+        const sw = o.type === 'text' ? 160 : (o.width ?? 100)
+        const sh = o.type === 'text' ? 28 : (o.height ?? 100)
         const sx = v2.panX + o.x * v2.zoom, sy = v2.panY + o.y * v2.zoom
-        return mx >= sx && mx <= sx + (o.width ?? 100) * v2.zoom && my >= sy && my <= sy + (o.height ?? 100) * v2.zoom
+        return mx >= sx && mx <= sx + sw * v2.zoom && my >= sy && my <= sy + sh * v2.zoom
       })
 
       selIdRef.current = hitObj?.id ?? null
       setSelId(hitObj?.id ?? null)
       if (hitObj) {
+        const sw = hitObj.type === 'text' ? 160 : (hitObj.width ?? 100)
+        const sh = hitObj.type === 'text' ? 28 : (hitObj.height ?? 100)
         dragMode.current = 'move'; dragObjId.current = hitObj.id
         dragStartMouse.current = { x: mx, y: my }
-        dragStartObj.current = { x: hitObj.x, y: hitObj.y, width: hitObj.width ?? 100, height: hitObj.height ?? 100, rotation: hitObj.rotation }
+        dragStartObj.current = { x: hitObj.x, y: hitObj.y, width: sw, height: sh, rotation: hitObj.rotation }
       }
       return
     }
@@ -620,35 +662,48 @@ export default function InfiniteWhiteboard({
           shapeStart.current = canvasPos; shapeEnd.current = canvasPos
         } else if (toolRef.current === 'pointer') {
           const v = viewRef.current
-          const HIT = 18
+          const HIT = 22
           const hit = (hx: number, hy: number) => Math.hypot(mx - hx, my - hy) <= HIT
           const selObj = objsRef.current.find(o => o.id === selIdRef.current)
-          if (selObj && ['image', 'shape', 'sticky'].includes(selObj.type)) {
+          if (selObj && ['image', 'shape', 'sticky', 'text'].includes(selObj.type)) {
+            const sw = selObj.type === 'text' ? 160 : (selObj.width ?? 100)
+            const sh = selObj.type === 'text' ? 28 : (selObj.height ?? 100)
             const sx = v.panX + selObj.x * v.zoom, sy = v.panY + selObj.y * v.zoom
-            const sw = (selObj.width ?? 100) * v.zoom, sh = (selObj.height ?? 100) * v.zoom
-            const pad = 8, ll = 28
+            const swz = sw * v.zoom, shz = sh * v.zoom
+            const pad = 10, ll = 28
+            // X delete button
+            const xbx = sx + swz + pad + 10, xby = sy - pad - 10
+            if (hit(xbx, xby)) {
+              pushHistory()
+              commitObjects(prev => prev.filter(o => o.id !== selObj.id))
+              selIdRef.current = null; setSelId(null); return
+            }
             const start = (mode: DragMode) => {
               dragMode.current = mode; dragObjId.current = selObj.id
               dragStartMouse.current = { x: mx, y: my }
-              dragStartObj.current = { x: selObj.x, y: selObj.y, width: selObj.width ?? 100, height: selObj.height ?? 100, rotation: selObj.rotation }
+              dragStartObj.current = { x: selObj.x, y: selObj.y, width: sw, height: sh, rotation: selObj.rotation }
             }
-            if (hit(sx + sw / 2, sy - pad - ll - 6)) { start('rotate'); return }
+            if (hit(sx + swz / 2, sy - pad - ll - 10)) { start('rotate'); return }
             if (hit(sx - pad, sy - pad)) { start('resize-nw'); return }
-            if (hit(sx + sw + pad, sy - pad)) { start('resize-ne'); return }
-            if (hit(sx - pad, sy + sh + pad)) { start('resize-sw'); return }
-            if (hit(sx + sw + pad, sy + sh + pad)) { start('resize-se'); return }
-            if (mx >= sx - pad && mx <= sx + sw + pad && my >= sy - pad && my <= sy + sh + pad) { start('move'); return }
+            if (hit(sx + swz + pad, sy - pad)) { start('resize-ne'); return }
+            if (hit(sx - pad, sy + shz + pad)) { start('resize-sw'); return }
+            if (hit(sx + swz + pad, sy + shz + pad)) { start('resize-se'); return }
+            if (mx >= sx - pad && mx <= sx + swz + pad && my >= sy - pad && my <= sy + shz + pad) { start('move'); return }
           }
           const hitObj = [...objsRef.current].reverse().find(o => {
-            if (!['image', 'shape', 'sticky'].includes(o.type)) return false
+            if (!['image', 'shape', 'sticky', 'text'].includes(o.type)) return false
+            const sw = o.type === 'text' ? 160 : (o.width ?? 100)
+            const sh = o.type === 'text' ? 28 : (o.height ?? 100)
             const sx = v.panX + o.x * v.zoom, sy = v.panY + o.y * v.zoom
-            return mx >= sx && mx <= sx + (o.width ?? 100) * v.zoom && my >= sy && my <= sy + (o.height ?? 100) * v.zoom
+            return mx >= sx && mx <= sx + sw * v.zoom && my >= sy && my <= sy + sh * v.zoom
           })
-          selIdRef.current = hitObj?.id ?? null
+          selIdRef.current = hitObj?.id ?? null; setSelId(hitObj?.id ?? null)
           if (hitObj) {
+            const sw = hitObj.type === 'text' ? 160 : (hitObj.width ?? 100)
+            const sh = hitObj.type === 'text' ? 28 : (hitObj.height ?? 100)
             dragMode.current = 'move'; dragObjId.current = hitObj.id
             dragStartMouse.current = { x: mx, y: my }
-            dragStartObj.current = { x: hitObj.x, y: hitObj.y, width: hitObj.width ?? 100, height: hitObj.height ?? 100, rotation: hitObj.rotation }
+            dragStartObj.current = { x: hitObj.x, y: hitObj.y, width: sw, height: sh, rotation: hitObj.rotation }
           }
         }
       }
