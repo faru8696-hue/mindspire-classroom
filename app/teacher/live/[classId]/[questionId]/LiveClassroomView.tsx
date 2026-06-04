@@ -1,13 +1,13 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 
 interface Student { id: string; full_name: string }
 interface Submission { id: string; student_id: string; canvas_data: string | null; text_answer: string | null; updated_at: string }
 interface Feedback { submission_id: string; grade: string | null }
-interface StudentNotification { id: string; type: string; student_id: string; question_id: string; class_id: string; created_at: string; read: boolean; student_name?: string; question_title?: string }
+interface StudentNotification { id: string; type: string; student_id: string; question_id: string; class_id: string; created_at: string; read: boolean; student_name?: string }
 
 interface Props {
   classId: string
@@ -22,10 +22,12 @@ interface Props {
 }
 
 const GRADE_COLOR: Record<string, string> = {
-  correct: 'border-green-400 bg-green-50',
-  partial: 'border-amber-400 bg-amber-50',
-  incorrect: 'border-red-400 bg-red-50',
+  correct: 'border-green-400',
+  partial: 'border-amber-400',
+  incorrect: 'border-red-400',
 }
+
+type Filter = 'all' | 'help' | 'done' | 'submitted'
 
 export default function LiveClassroomView({
   classId, questionId, classTitle, questionTitle, questionContent,
@@ -35,27 +37,24 @@ export default function LiveClassroomView({
   const [submissions, setSubmissions] = useState<Map<string, Submission>>(
     () => new Map(initialSubmissions.map(s => [s.student_id, s]))
   )
-  const [grades, setGrades] = useState<Map<string, string>>(
-    () => {
-      const subMap = new Map(initialSubmissions.map(s => [s.id, s.student_id]))
-      const m = new Map<string, string>()
-      for (const f of initialFeedbacks) {
-        if (f.grade) {
-          const sid = subMap.get(f.submission_id)
-          if (sid) m.set(sid, f.grade)
-        }
-      }
-      return m
+  const [grades, setGrades] = useState<Map<string, string>>(() => {
+    const subMap = new Map(initialSubmissions.map(s => [s.id, s.student_id]))
+    const m = new Map<string, string>()
+    for (const f of initialFeedbacks) {
+      if (f.grade) { const sid = subMap.get(f.submission_id); if (sid) m.set(sid, f.grade) }
     }
-  )
+    return m
+  })
   const [notifications, setNotifications] = useState<StudentNotification[]>(initialNotifications)
-  const [selectedStudent, setSelectedStudent] = useState<string | null>(null)
-  const [alertPlayed, setAlertPlayed] = useState(false)
+  const [filter, setFilter] = useState<Filter>('all')
+  // Full-screen modal
+  const [focusedStudent, setFocusedStudent] = useState<string | null>(null)
   const audioRef = useRef<AudioContext | null>(null)
 
-  const unreadNotifs = notifications.filter(n => !n.read)
-  const helpRequests = unreadNotifs.filter(n => n.type === 'help')
-  const doneRequests = unreadNotifs.filter(n => n.type === 'submitted')
+  // Sets of student IDs who need help / clicked done
+  const helpIds = new Set(notifications.filter(n => n.type === 'help').map(n => n.student_id))
+  const doneIds = new Set(notifications.filter(n => n.type === 'submitted').map(n => n.student_id))
+  const unreadCount = notifications.filter(n => !n.read).length
 
   function playBeep() {
     try {
@@ -63,51 +62,35 @@ export default function LiveClassroomView({
       const ctx = audioRef.current
       const osc = ctx.createOscillator()
       const gain = ctx.createGain()
-      osc.connect(gain)
-      gain.connect(ctx.destination)
+      osc.connect(gain); gain.connect(ctx.destination)
       osc.frequency.value = 880
       gain.gain.setValueAtTime(0.3, ctx.currentTime)
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4)
-      osc.start(ctx.currentTime)
-      osc.stop(ctx.currentTime + 0.4)
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5)
+      osc.start(); osc.stop(ctx.currentTime + 0.5)
     } catch {}
   }
 
-  // Realtime: new submissions + grades
   useEffect(() => {
-    const subChannel = supabase.channel(`live-subs:${classId}:${questionId}`)
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'submissions',
-        filter: `question_id=eq.${questionId}`,
-      }, payload => {
+    // Submissions realtime
+    const subCh = supabase.channel(`live-subs:${classId}:${questionId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'submissions', filter: `question_id=eq.${questionId}` }, payload => {
         const row = payload.new as Submission
-        if (students.some(s => s.id === row.student_id)) {
+        if (students.some(s => s.id === row.student_id))
           setSubmissions(prev => new Map(prev).set(row.student_id, row))
-        }
       })
-      .on('postgres_changes', {
-        event: 'UPDATE',
-        schema: 'public',
-        table: 'feedback',
-      }, payload => {
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'feedback' }, payload => {
         const fb = payload.new as { submission_id: string; grade: string | null }
         setSubmissions(prev => {
-          for (const [sid, sub] of prev) {
-            if (sub.id === fb.submission_id && fb.grade) {
+          for (const [sid, sub] of prev)
+            if (sub.id === fb.submission_id && fb.grade)
               setGrades(g => new Map(g).set(sid, fb.grade!))
-            }
-          }
           return prev
         })
       })
       .subscribe()
 
     // Alerts via broadcast
-    const alertChannel = supabase.channel('teacher-alerts', {
-      config: { broadcast: { self: false } },
-    })
+    const alertCh = supabase.channel('teacher-alerts', { config: { broadcast: { self: false } } })
       .on('broadcast', { event: 'student-alert' }, ({ payload }) => {
         const row = payload as StudentNotification
         if (row.question_id === questionId) {
@@ -117,189 +100,200 @@ export default function LiveClassroomView({
       })
       .subscribe()
 
-    return () => {
-      supabase.removeChannel(subChannel)
-      supabase.removeChannel(alertChannel)
-    }
+    return () => { supabase.removeChannel(subCh); supabase.removeChannel(alertCh) }
   }, [classId, questionId])
 
   async function markAllRead() {
-    const ids = unreadNotifs.map(n => n.id)
-    if (ids.length === 0) return
+    const ids = notifications.filter(n => !n.read).map(n => n.id)
+    if (!ids.length) return
     await supabase.from('notifications').update({ read: true }).in('id', ids)
     setNotifications(prev => prev.map(n => ({ ...n, read: true })))
   }
 
-  const submittedCount = students.filter(s => submissions.has(s.id)).length
-  const helpCount = helpRequests.length
+  // Filter students
+  const filteredStudents = students.filter(s => {
+    if (filter === 'help') return helpIds.has(s.id)
+    if (filter === 'done') return doneIds.has(s.id)
+    if (filter === 'submitted') return submissions.has(s.id)
+    return true
+  })
 
-  const selectedSub = selectedStudent ? submissions.get(selectedStudent) : null
+  const submittedCount = students.filter(s => submissions.has(s.id)).length
+  const focusedSub = focusedStudent ? submissions.get(focusedStudent) : null
+  const focusedStudentName = students.find(s => s.id === focusedStudent)?.full_name
 
   return (
-    <div className="h-screen flex flex-col bg-gray-50 overflow-hidden">
+    <div className="h-screen flex flex-col bg-gray-950 overflow-hidden">
       {/* Top bar */}
-      <div className="bg-white border-b border-gray-200 px-5 py-3 flex items-center justify-between flex-shrink-0">
-        <div className="flex items-center gap-3">
-          <Link href="/teacher" className="text-gray-400 hover:text-gray-600 text-sm">← Back</Link>
+      <div className="bg-gray-900 border-b border-gray-700 px-5 py-3 flex items-center justify-between flex-shrink-0">
+        <div className="flex items-center gap-4">
+          <Link href="/teacher" className="text-gray-400 hover:text-white text-sm">← Back</Link>
           <div>
-            <h1 className="font-bold text-gray-900 text-sm">{classTitle} — {questionTitle}</h1>
-            {questionContent && <p className="text-xs text-gray-500">{questionContent}</p>}
+            <h1 className="font-bold text-white text-sm">{classTitle} — {questionTitle}</h1>
+            {questionContent && <p className="text-xs text-gray-400">{questionContent}</p>}
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          {/* Stats */}
-          <span className="text-sm text-gray-600 bg-gray-100 px-3 py-1.5 rounded-full">
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-gray-400 bg-gray-800 px-3 py-1.5 rounded-full">
             {submittedCount}/{students.length} submitted
           </span>
-
-          {/* Help alerts */}
-          {helpCount > 0 && (
-            <button
-              onClick={markAllRead}
-              className="relative bg-amber-500 text-white text-sm font-semibold px-3 py-1.5 rounded-full animate-pulse hover:bg-amber-600 transition-colors"
-            >
-              🙋 {helpCount} need{helpCount === 1 ? 's' : ''} help
+          {helpIds.size > 0 && (
+            <button onClick={() => { setFilter('help'); markAllRead() }}
+              className="bg-amber-500 text-white text-xs font-bold px-3 py-1.5 rounded-full animate-pulse hover:bg-amber-400">
+              🙋 {helpIds.size} need help
             </button>
           )}
-
-          {/* Done alerts */}
-          {doneRequests.length > 0 && (
-            <button
-              onClick={markAllRead}
-              className="bg-purple-600 text-white text-sm font-semibold px-3 py-1.5 rounded-full hover:bg-purple-700 transition-colors"
-            >
-              ✓ {doneRequests.length} done
+          {doneIds.size > 0 && (
+            <button onClick={() => { setFilter('done'); markAllRead() }}
+              className="bg-purple-600 text-white text-xs font-bold px-3 py-1.5 rounded-full hover:bg-purple-500">
+              ✓ {doneIds.size} done
             </button>
-          )}
-
-          {unreadNotifs.length === 0 && (
-            <span className="text-xs text-gray-400">No new alerts</span>
           )}
         </div>
       </div>
 
-      <div className="flex flex-1 min-h-0">
-        {/* Student grid */}
-        <div className="flex-1 overflow-y-auto p-4">
-          {/* Help queue at top */}
-          {helpRequests.length > 0 && (
-            <div className="mb-4 bg-amber-50 border border-amber-300 rounded-xl p-3">
-              <p className="text-sm font-semibold text-amber-800 mb-2">🙋 Help Requests</p>
-              <div className="flex flex-wrap gap-2">
-                {helpRequests.map(n => {
-                  const student = students.find(s => s.id === n.student_id)
-                  return (
-                    <button
-                      key={n.id}
-                      onClick={() => setSelectedStudent(n.student_id)}
-                      className="bg-amber-100 text-amber-800 text-xs font-semibold px-3 py-1.5 rounded-full hover:bg-amber-200 transition-colors"
-                    >
-                      {student?.full_name ?? 'Unknown'}
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-          )}
+      {/* Filter tabs */}
+      <div className="bg-gray-900 border-b border-gray-800 px-5 py-2 flex items-center gap-2">
+        {([['all', `All (${students.length})`], ['help', `🙋 Need Help (${helpIds.size})`], ['done', `✓ Done (${doneIds.size})`], ['submitted', `Submitted (${submittedCount})`]] as [Filter, string][]).map(([f, label]) => (
+          <button key={f} onClick={() => setFilter(f)}
+            className={`text-xs px-3 py-1.5 rounded-full font-medium transition-colors ${filter === f ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}>
+            {label}
+          </button>
+        ))}
+      </div>
 
+      {/* Grid */}
+      <div className="flex-1 overflow-y-auto p-4">
+        {filteredStudents.length === 0 ? (
+          <div className="flex items-center justify-center h-full">
+            <p className="text-gray-500 text-sm">No students match this filter</p>
+          </div>
+        ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
-            {students.map(student => {
+            {filteredStudents.map(student => {
               const sub = submissions.get(student.id)
               const grade = grades.get(student.id)
-              const needsHelp = helpRequests.some(n => n.student_id === student.id)
-              const isDone = doneRequests.some(n => n.student_id === student.id)
-              const isSelected = selectedStudent === student.id
+              const needsHelp = helpIds.has(student.id)
+              const isDone = doneIds.has(student.id)
 
               return (
                 <button
                   key={student.id}
-                  onClick={() => setSelectedStudent(isSelected ? null : student.id)}
-                  className={`rounded-xl border-2 overflow-hidden text-left transition-all hover:shadow-md ${
-                    isSelected ? 'border-purple-500 shadow-lg' :
-                    needsHelp ? 'border-amber-400 shadow-md' :
-                    grade ? GRADE_COLOR[grade] :
-                    sub ? 'border-blue-300 bg-blue-50' :
-                    'border-gray-200 bg-white'
-                  }`}
+                  onClick={() => setFocusedStudent(student.id)}
+                  className={`rounded-xl border-2 overflow-hidden text-left transition-all hover:scale-105 hover:shadow-xl ${
+                    needsHelp ? 'border-amber-400 shadow-amber-900/50 shadow-lg' :
+                    isDone    ? 'border-purple-500' :
+                    grade     ? GRADE_COLOR[grade] :
+                    sub       ? 'border-blue-500' :
+                                'border-gray-700'
+                  } bg-gray-800`}
                 >
-                  {/* Canvas thumbnail */}
-                  <div className="w-full aspect-video bg-gray-100 relative overflow-hidden">
+                  {/* Thumbnail */}
+                  <div className="w-full aspect-video bg-gray-900 relative overflow-hidden">
                     {sub?.canvas_data ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src={sub.canvas_data} alt="" className="w-full h-full object-contain" />
                     ) : sub?.text_answer ? (
-                      <div className="p-2 text-xs text-gray-600 line-clamp-4 overflow-hidden h-full">
-                        {sub.text_answer}
-                      </div>
+                      <div className="p-2 text-xs text-gray-300 overflow-hidden h-full line-clamp-4">{sub.text_answer}</div>
                     ) : (
                       <div className="flex items-center justify-center h-full">
-                        <span className="text-gray-300 text-xs">Empty</span>
+                        <span className="text-gray-600 text-xs">No work yet</span>
                       </div>
                     )}
-
-                    {/* Badges */}
-                    {needsHelp && (
-                      <span className="absolute top-1 right-1 bg-amber-500 text-white text-xs px-1.5 py-0.5 rounded-full font-bold">🙋</span>
-                    )}
-                    {isDone && !needsHelp && (
-                      <span className="absolute top-1 right-1 bg-purple-600 text-white text-xs px-1.5 py-0.5 rounded-full font-bold">✓</span>
-                    )}
-                    {grade && (
-                      <span className={`absolute bottom-1 right-1 text-xs px-1.5 py-0.5 rounded-full font-bold ${
-                        grade === 'correct' ? 'bg-green-500 text-white' :
-                        grade === 'incorrect' ? 'bg-red-500 text-white' :
-                        'bg-amber-500 text-white'
-                      }`}>
-                        {grade === 'correct' ? '✓' : grade === 'incorrect' ? '✗' : '~'}
-                      </span>
-                    )}
+                    {needsHelp && <span className="absolute top-1 right-1 bg-amber-500 text-white text-xs px-1.5 py-0.5 rounded-full font-bold">🙋</span>}
+                    {isDone && !needsHelp && <span className="absolute top-1 right-1 bg-purple-600 text-white text-xs px-1.5 py-0.5 rounded-full font-bold">✓</span>}
+                    {grade && <span className={`absolute bottom-1 left-1 text-xs px-1.5 py-0.5 rounded-full font-bold text-white ${grade === 'correct' ? 'bg-green-500' : grade === 'incorrect' ? 'bg-red-500' : 'bg-amber-500'}`}>{grade === 'correct' ? '✓' : grade === 'incorrect' ? '✗' : '~'}</span>}
+                    {/* Click hint */}
+                    <div className="absolute inset-0 bg-black/0 hover:bg-black/20 transition-colors flex items-center justify-center opacity-0 hover:opacity-100">
+                      <span className="text-white text-xs font-bold bg-black/50 px-2 py-1 rounded-lg">Click to expand</span>
+                    </div>
                   </div>
-
-                  {/* Name */}
-                  <div className="px-2 py-1.5">
-                    <p className="text-xs font-semibold text-gray-800 truncate">{student.full_name}</p>
-                    <p className="text-xs text-gray-400">
-                      {!sub ? 'Not started' : grade ? grade : isDone ? 'Done ✓' : 'In progress'}
-                    </p>
+                  <div className="px-2 py-1.5 bg-gray-800">
+                    <p className="text-xs font-semibold text-white truncate">{student.full_name}</p>
+                    <p className="text-xs text-gray-400">{needsHelp ? '🙋 Needs help' : isDone ? '✓ Done' : grade ? grade : sub ? 'In progress' : 'Not started'}</p>
                   </div>
                 </button>
               )
             })}
           </div>
-        </div>
-
-        {/* Side panel: expanded view of selected student */}
-        {selectedStudent && selectedSub && (
-          <div className="w-80 border-l border-gray-200 bg-white flex flex-col flex-shrink-0 overflow-hidden">
-            <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-              <h2 className="font-semibold text-gray-800 text-sm">
-                {students.find(s => s.id === selectedStudent)?.full_name}
-              </h2>
-              <button onClick={() => setSelectedStudent(null)} className="text-gray-400 hover:text-gray-600 text-lg leading-none">×</button>
-            </div>
-            <div className="flex-1 overflow-y-auto p-3">
-              {selectedSub.canvas_data ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={selectedSub.canvas_data} alt="Student work" className="w-full rounded-lg border border-gray-200" />
-              ) : selectedSub.text_answer ? (
-                <div className="bg-gray-50 rounded-lg p-3 text-sm text-gray-700 whitespace-pre-wrap">{selectedSub.text_answer}</div>
-              ) : null}
-              {selectedSub.updated_at && (
-                <p className="text-xs text-gray-400 mt-2">
-                  Last updated {new Date(selectedSub.updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </p>
-              )}
-              <Link
-                href={`/teacher/students/${selectedStudent}`}
-                className="block mt-3 text-center text-sm text-purple-600 hover:underline"
-              >
-                View full profile →
-              </Link>
-            </div>
-          </div>
         )}
       </div>
+
+      {/* Full-screen modal */}
+      {focusedStudent && (
+        <div className="fixed inset-0 z-50 bg-black/90 flex flex-col">
+          {/* Modal header */}
+          <div className="flex items-center justify-between px-6 py-4 bg-gray-900 border-b border-gray-700 flex-shrink-0">
+            <div className="flex items-center gap-4">
+              <button onClick={() => setFocusedStudent(null)} className="text-gray-400 hover:text-white text-2xl leading-none">←</button>
+              <div>
+                <h2 className="font-bold text-white">{focusedStudentName}</h2>
+                <p className="text-xs text-gray-400">{questionTitle}</p>
+              </div>
+              {helpIds.has(focusedStudent) && <span className="bg-amber-500 text-white text-xs px-3 py-1 rounded-full font-bold">🙋 Needs Help</span>}
+              {doneIds.has(focusedStudent) && <span className="bg-purple-600 text-white text-xs px-3 py-1 rounded-full font-bold">✓ Done</span>}
+            </div>
+            <div className="flex items-center gap-3">
+              {/* Prev / Next */}
+              <button
+                onClick={() => {
+                  const idx = filteredStudents.findIndex(s => s.id === focusedStudent)
+                  if (idx > 0) setFocusedStudent(filteredStudents[idx - 1].id)
+                }}
+                disabled={filteredStudents.findIndex(s => s.id === focusedStudent) === 0}
+                className="text-gray-400 hover:text-white disabled:opacity-30 text-sm px-3 py-1.5 bg-gray-800 rounded-lg"
+              >← Prev</button>
+              <span className="text-gray-500 text-xs">
+                {filteredStudents.findIndex(s => s.id === focusedStudent) + 1} / {filteredStudents.length}
+              </span>
+              <button
+                onClick={() => {
+                  const idx = filteredStudents.findIndex(s => s.id === focusedStudent)
+                  if (idx < filteredStudents.length - 1) setFocusedStudent(filteredStudents[idx + 1].id)
+                }}
+                disabled={filteredStudents.findIndex(s => s.id === focusedStudent) === filteredStudents.length - 1}
+                className="text-gray-400 hover:text-white disabled:opacity-30 text-sm px-3 py-1.5 bg-gray-800 rounded-lg"
+              >Next →</button>
+              <Link
+                href={`/teacher/students/${focusedStudent}`}
+                className="text-xs bg-purple-600 hover:bg-purple-500 text-white px-3 py-1.5 rounded-lg"
+              >View profile →</Link>
+              <button onClick={() => setFocusedStudent(null)} className="text-gray-400 hover:text-white text-2xl ml-2">×</button>
+            </div>
+          </div>
+
+          {/* Full board */}
+          <div className="flex-1 flex items-center justify-center p-6 overflow-auto">
+            {focusedSub?.canvas_data ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={focusedSub.canvas_data}
+                alt="Student work"
+                className="max-w-full max-h-full object-contain rounded-xl border border-gray-700 shadow-2xl"
+                style={{ background: 'white' }}
+              />
+            ) : focusedSub?.text_answer ? (
+              <div className="bg-white rounded-xl p-8 max-w-2xl w-full shadow-2xl">
+                <p className="text-gray-800 whitespace-pre-wrap text-base">{focusedSub.text_answer}</p>
+              </div>
+            ) : (
+              <div className="text-center">
+                <p className="text-gray-400 text-lg mb-2">No work submitted yet</p>
+                <p className="text-gray-600 text-sm">This student hasn't submitted anything for this question.</p>
+              </div>
+            )}
+          </div>
+
+          {focusedSub?.updated_at && (
+            <div className="text-center pb-3">
+              <span className="text-xs text-gray-600">
+                Last updated {new Date(focusedSub.updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
