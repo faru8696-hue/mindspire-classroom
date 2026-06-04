@@ -179,7 +179,9 @@ export default async function AllProgressPage() {
                       const allDone = s.total > 0 && s.submitted === s.total && s.notDone === 0
                       return (
                         <tr key={s.id} className={`border-b border-gray-100 last:border-0 ${i % 2 === 0 ? '' : 'bg-gray-50/40'}`}>
-                          <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">{s.full_name}</td>
+                          <td className="px-4 py-3 font-medium whitespace-nowrap">
+                            <Link href={`/teacher/students/${s.id}`} className="text-purple-700 hover:underline">{s.full_name}</Link>
+                          </td>
                           <td className="px-3 py-3 text-center text-gray-600">{s.submitted}/{s.total}</td>
                           <td className="px-3 py-3 text-center">
                             <span className={`font-semibold ${s.notDone > 0 ? 'text-amber-600' : 'text-gray-300'}`}>{s.notDone}</span>

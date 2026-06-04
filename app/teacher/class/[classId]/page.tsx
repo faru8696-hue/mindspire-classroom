@@ -104,7 +104,9 @@ export default async function ClassDetailPage({ params }: { params: Promise<{ cl
                     const struggling = s.incorrect > 0 && s.incorrect >= s.correct
                     return (
                       <tr key={s.id} className={`border-b border-gray-100 last:border-0 ${i % 2 === 0 ? '' : 'bg-gray-50/50'}`}>
-                        <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">{s.full_name}</td>
+                        <td className="px-4 py-3 font-medium whitespace-nowrap">
+                          <Link href={`/teacher/students/${s.id}`} className="text-purple-700 hover:underline">{s.full_name}</Link>
+                        </td>
                         <td className="px-3 py-3 text-center text-gray-600">{s.submitted}/{s.total}</td>
                         <td className="px-3 py-3 text-center">
                           <span className={`font-semibold ${s.notDone > 0 ? 'text-amber-600' : 'text-gray-400'}`}>{s.notDone}</span>
@@ -166,7 +168,9 @@ export default async function ClassDetailPage({ params }: { params: Promise<{ cl
                       <tbody>
                         {studentSummaries.map((student, i) => (
                           <tr key={student.id} className={`border-b border-gray-50 last:border-0 ${i % 2 === 0 ? '' : 'bg-gray-50/30'}`}>
-                            <td className="px-4 py-2.5 font-medium text-gray-700 whitespace-nowrap">{student.full_name}</td>
+                            <td className="px-4 py-2.5 font-medium whitespace-nowrap">
+                              <Link href={`/teacher/students/${student.id}`} className="text-purple-700 hover:underline">{student.full_name}</Link>
+                            </td>
                             {unitTopics.map(topic => {
                               const tQIds = assignedQuestions.filter(q => q.topic_id === topic.id).map(q => q.id)
                               if (tQIds.length === 0) {
