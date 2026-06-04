@@ -1,11 +1,11 @@
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import AssignQuestionsPanel from './AssignQuestionsPanel'
 
 export default async function ClassDetailPage({ params }: { params: Promise<{ classId: string }> }) {
   const { classId } = await params
-  const supabase = await createClient()
+  const supabase = await createAdminClient()
 
   const [{ data: cls }, { data: students }, { data: units }] = await Promise.all([
     supabase.from('classes').select('*').eq('id', classId).single(),

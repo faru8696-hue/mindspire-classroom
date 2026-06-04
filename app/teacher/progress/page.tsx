@@ -1,8 +1,8 @@
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 
 export default async function AllProgressPage() {
-  const supabase = await createClient()
+  const supabase = await createAdminClient()
 
   const [{ data: classes }, { data: students }] = await Promise.all([
     supabase.from('classes').select('id, title').order('order_index'),
