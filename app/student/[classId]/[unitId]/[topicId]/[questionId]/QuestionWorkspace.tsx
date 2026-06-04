@@ -7,6 +7,7 @@ import DrawingCanvas, { DrawingCanvasHandle } from '@/components/DrawingCanvas'
 interface Props {
   questionId: string
   userId: string
+  classId: string
   submissionId: string | null
   initialSubmission: { canvas_data: string | null; text_answer: string | null; image_url: string | null } | null
   feedback: { text_feedback: string | null; canvas_data: string | null } | null
@@ -26,12 +27,14 @@ const CHEM_CHARS = [
   { label: '½', val: '½' }, { label: '¼', val: '¼' }, { label: '¾', val: '¾' },
 ]
 
-export default function QuestionWorkspace({ questionId, userId, initialSubmission }: Props) {
+export default function QuestionWorkspace({ questionId, userId, classId, initialSubmission }: Props) {
   const supabase = createClient()
   const [tab, setTab] = useState<Tab>('draw')
   const [textAnswer, setTextAnswer] = useState(initialSubmission?.text_answer ?? '')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [helpSent, setHelpSent] = useState(false)
+  const [helpSending, setHelpSending] = useState(false)
   const textRef = useRef<HTMLTextAreaElement>(null)
   const canvasRef = useRef<DrawingCanvasHandle>(null)
 
@@ -48,8 +51,7 @@ export default function QuestionWorkspace({ questionId, userId, initialSubmissio
     }, 0)
   }
 
-  async function handleSubmit() {
-    setSaving(true)
+  async function saveSubmission() {
     const payload = {
       question_id: questionId,
       student_id: userId,
@@ -58,10 +60,44 @@ export default function QuestionWorkspace({ questionId, userId, initialSubmissio
       image_url: null,
       updated_at: new Date().toISOString(),
     }
-    await supabase.from('submissions').upsert(payload, { onConflict: 'question_id,student_id' })
+    const { data } = await supabase.from('submissions').upsert(payload, { onConflict: 'question_id,student_id' }).select('id').single()
+    return data?.id ?? null
+  }
+
+  async function handleSubmit() {
+    setSaving(true)
+    await saveSubmission()
     setSaving(false)
     setSaved(true)
     setTimeout(() => setSaved(false), 3000)
+  }
+
+  async function handleDone() {
+    setSaving(true)
+    await saveSubmission()
+    // Notify teacher
+    await supabase.from('notifications').insert({
+      type: 'submitted',
+      student_id: userId,
+      question_id: questionId,
+      class_id: classId,
+    })
+    setSaving(false)
+    setSaved(true)
+    setTimeout(() => setSaved(false), 3000)
+  }
+
+  async function handleHelp() {
+    setHelpSending(true)
+    await supabase.from('notifications').insert({
+      type: 'help',
+      student_id: userId,
+      question_id: questionId,
+      class_id: classId,
+    })
+    setHelpSending(false)
+    setHelpSent(true)
+    setTimeout(() => setHelpSent(false), 5000)
   }
 
   return (
@@ -99,10 +135,41 @@ export default function QuestionWorkspace({ questionId, userId, initialSubmissio
         )}
       </div>
 
-      <button onClick={handleSubmit} disabled={saving}
-        className={`w-full py-3 rounded-xl font-semibold text-white transition-all ${saved ? 'bg-green-500' : 'bg-purple-600 hover:bg-purple-700'} disabled:opacity-50`}>
-        {saving ? 'Saving...' : saved ? '✓ Saved!' : initialSubmission ? 'Update' : 'Submit Work'}
-      </button>
+      {/* Action buttons */}
+      <div className="flex gap-3">
+        {/* Get Help */}
+        <button
+          onClick={handleHelp}
+          disabled={helpSending || helpSent}
+          className={`flex-1 py-3 rounded-xl font-semibold transition-all text-sm ${
+            helpSent
+              ? 'bg-amber-100 text-amber-700 border border-amber-300'
+              : 'bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-300'
+          } disabled:opacity-60`}
+        >
+          {helpSent ? '🙋 Help request sent!' : helpSending ? 'Sending...' : '🙋 Get Help'}
+        </button>
+
+        {/* Save quietly */}
+        <button
+          onClick={handleSubmit}
+          disabled={saving}
+          className="px-4 py-3 rounded-xl font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 transition-all text-sm disabled:opacity-50"
+        >
+          {saving ? '...' : 'Save'}
+        </button>
+
+        {/* Done - notify teacher */}
+        <button
+          onClick={handleDone}
+          disabled={saving}
+          className={`flex-1 py-3 rounded-xl font-semibold text-white transition-all text-sm ${
+            saved ? 'bg-green-500' : 'bg-purple-600 hover:bg-purple-700'
+          } disabled:opacity-50`}
+        >
+          {saving ? 'Saving...' : saved ? '✓ Submitted!' : '✓ Done — Check my work'}
+        </button>
+      </div>
     </div>
   )
 }

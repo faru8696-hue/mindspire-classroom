@@ -65,6 +65,7 @@ export default async function QuestionPage({ params }: { params: Promise<{ class
           <StudentBoardPage
             questionId={questionId}
             studentId={studentId}
+            classId={classId}
             submissionId={submission?.id ?? null}
             initialStudentData={submission?.canvas_data ?? null}
             initialTeacherData={feedback?.canvas_data ?? null}
