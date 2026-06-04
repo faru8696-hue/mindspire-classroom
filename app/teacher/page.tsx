@@ -118,7 +118,7 @@ export default async function TeacherDashboard() {
       </div>
 
       {/* Quick actions */}
-      <div className="grid md:grid-cols-3 gap-4">
+      <div className="grid md:grid-cols-4 gap-4">
         <Link href="/teacher/whiteboard" className="bg-purple-700 text-white rounded-xl p-5 hover:bg-purple-800 transition-colors">
           <div className="text-3xl mb-2">🖊️</div>
           <h2 className="text-base font-bold mb-1">Live Whiteboard</h2>
@@ -133,6 +133,11 @@ export default async function TeacherDashboard() {
           <div className="text-3xl mb-2">📖</div>
           <h2 className="text-base font-bold mb-1">Manage Content</h2>
           <p className="text-blue-200 text-xs">Add units, topics, and questions</p>
+        </Link>
+        <Link href="/teacher/progress" className="bg-green-700 text-white rounded-xl p-5 hover:bg-green-800 transition-colors">
+          <div className="text-3xl mb-2">📊</div>
+          <h2 className="text-base font-bold mb-1">All Progress</h2>
+          <p className="text-green-200 text-xs">Every student across all classes</p>
         </Link>
       </div>
     </div>
