@@ -84,6 +84,7 @@ export default function InfiniteWhiteboard({
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [liveIndicator, setLiveIndicator] = useState(false)
   const [objCount, setObjCount] = useState(objsRef.current.length)
+  const [broadcastTick, setBroadcastTick] = useState(0)
   const [selId, setSelId] = useState<string | null>(null)
 
   const setTool = (t: Tool) => { toolRef.current = t; _setTool(t) }
@@ -91,10 +92,12 @@ export default function InfiniteWhiteboard({
   const setView = (v: ViewState) => { viewRef.current = v; _setView(v) }
 
   // commitObjects: updates ref (for render) AND state (for save/broadcast)
+  // broadcastTick always increments so broadcasts fire even when only data changes (e.g. base64→URL)
   const commitObjects = useCallback((updater: (prev: DrawObject[]) => DrawObject[]) => {
     const next = updater(objsRef.current)
     objsRef.current = next
     setObjCount(next.length)
+    setBroadcastTick(t => t + 1)
   }, [])
 
   // ── Undo / redo ───────────────────────────────────────────────
@@ -110,6 +113,7 @@ export default function InfiniteWhiteboard({
     const prev = history.current.pop()!
     objsRef.current = prev
     setObjCount(prev.length)
+    setBroadcastTick(t => t + 1)
   }, [])
 
   const doRedo = useCallback(() => {
@@ -118,6 +122,7 @@ export default function InfiniteWhiteboard({
     const next = redoStack.current.pop()!
     objsRef.current = next
     setObjCount(next.length)
+    setBroadcastTick(t => t + 1)
   }, [])
 
   // ── Coordinate helpers ────────────────────────────────────────
@@ -886,14 +891,18 @@ export default function InfiniteWhiteboard({
   }, [questionId, studentId, role])
 
   // Broadcast on object changes (debounced)
-  // Images are now signed URLs (not base64) so safe to include
+  // Strip base64 image data from payload to stay under Supabase's size limit.
+  // broadcastTick increments on every commitObjects call, including base64→URL swaps.
   useEffect(() => {
     if (broadcastTimer.current) clearTimeout(broadcastTimer.current)
     broadcastTimer.current = setTimeout(() => {
       const myEvent = role === 'student' ? 'student_objects' : 'teacher_objects'
-      channelRef.current?.send({ type: 'broadcast', event: myEvent, payload: { objects: objsRef.current } })
+      const objectsToSend = objsRef.current.map(o =>
+        o.type === 'image' && (o.data ?? '').startsWith('data:') ? { ...o, data: '' } : o
+      )
+      channelRef.current?.send({ type: 'broadcast', event: myEvent, payload: { objects: objectsToSend } })
     }, 150)
-  }, [objCount, role])
+  }, [broadcastTick, role])
 
   // ── Auto-save ─────────────────────────────────────────────────
   const doSave = useCallback(async () => {
