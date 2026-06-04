@@ -2,6 +2,7 @@ import { createAdminClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import TeacherWatchBoard from './TeacherWatchBoard'
+import Comments from '@/components/Comments'
 
 export default async function TeacherWatchPage({
   params,
@@ -23,8 +24,10 @@ export default async function TeacherWatchPage({
   ])
 
   const { data: feedback } = submission?.id
-    ? await supabase.from('feedback').select('grade, text_feedback').eq('submission_id', submission.id).maybeSingle()
+    ? await supabase.from('feedback').select('grade, text_feedback, canvas_data').eq('submission_id', submission.id).maybeSingle()
     : { data: null }
+
+  const { data: teacherProfile } = await supabase.from('profiles').select('id, full_name').eq('role', 'teacher').limit(1).single()
 
   if (!question || !student) notFound()
 
@@ -40,18 +43,19 @@ export default async function TeacherWatchPage({
             ← Back to class
           </Link>
           <div>
-            <p className="text-xs text-gray-500">{cls?.title}</p>
+            <p className="text-xs text-gray-500">{cls?.title} — {question.title}</p>
             <h1 className="font-bold text-white">{student.full_name}</h1>
           </div>
         </div>
         <span className="text-xs text-green-400 bg-green-900/40 px-3 py-1.5 rounded-full font-medium">● Live</span>
       </div>
 
-      {/* Question + Board split */}
+      {/* Main content */}
       <div className="flex flex-1 min-h-0">
-        {/* Question panel */}
-        <div className="w-64 bg-gray-900 border-r border-gray-700 flex-shrink-0 overflow-y-auto p-4 space-y-3">
-          <div>
+        {/* Left sidebar: question + written answer + comments */}
+        <div className="w-72 bg-gray-900 border-r border-gray-700 flex-shrink-0 flex flex-col overflow-hidden">
+          {/* Question */}
+          <div className="p-4 border-b border-gray-800 flex-shrink-0">
             <p className="text-xs text-gray-500 uppercase tracking-wide font-semibold mb-2">Question</p>
             <h2 className="text-white font-semibold text-sm leading-relaxed">{question.title}</h2>
             {question.content && (
@@ -59,14 +63,28 @@ export default async function TeacherWatchPage({
             )}
           </div>
 
+          {/* Written answer */}
           {submission?.text_answer && (
-            <div>
+            <div className="p-4 border-b border-gray-800 flex-shrink-0">
               <p className="text-xs text-gray-500 uppercase tracking-wide font-semibold mb-2">Written Answer</p>
-              <div className="bg-gray-800 rounded-lg p-3 text-sm text-gray-300 whitespace-pre-wrap">
+              <div className="bg-gray-800 rounded-lg p-3 text-sm text-gray-300 whitespace-pre-wrap max-h-40 overflow-y-auto">
                 {submission.text_answer}
               </div>
             </div>
           )}
+
+          {/* Comments */}
+          <div className="flex-1 min-h-0 overflow-hidden flex flex-col p-4">
+            <p className="text-xs text-gray-500 uppercase tracking-wide font-semibold mb-2 flex-shrink-0">Comments</p>
+            <div className="flex-1 min-h-0">
+              <Comments
+                questionId={questionId}
+                studentId={studentId}
+                currentUserId={teacherProfile?.id ?? ''}
+                currentUserName={teacherProfile?.full_name ?? 'Teacher'}
+              />
+            </div>
+          </div>
         </div>
 
         {/* Live whiteboard + grading */}
@@ -76,7 +94,6 @@ export default async function TeacherWatchPage({
             studentId={studentId}
             submissionId={submission?.id ?? null}
             initialStudentData={submission?.canvas_data ?? null}
-            imageUrl={submission?.image_url ?? null}
             initialGrade={feedback?.grade ?? null}
             initialFeedbackText={feedback?.text_feedback ?? null}
           />

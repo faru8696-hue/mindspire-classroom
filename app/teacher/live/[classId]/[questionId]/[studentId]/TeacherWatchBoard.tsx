@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import InfiniteWhiteboard from '@/components/InfiniteWhiteboard'
 
@@ -9,7 +9,6 @@ interface Props {
   studentId: string
   submissionId: string | null
   initialStudentData: string | null
-  imageUrl: string | null
   initialGrade: string | null
   initialFeedbackText: string | null
 }
@@ -22,9 +21,20 @@ const GRADES = [
   { value: 'needsmore', label: '🔄 Needs More', cls: 'bg-purple-600 hover:bg-purple-500 text-white', activeCls: 'ring-4 ring-purple-400' },
 ]
 
+// Extract image URLs from canvas JSON (objects with type='image' and a non-empty data URL)
+function extractImages(canvasJson: string | null): string[] {
+  if (!canvasJson) return []
+  try {
+    const objs = JSON.parse(canvasJson) as { type: string; data?: string }[]
+    return objs
+      .filter(o => o.type === 'image' && o.data && !o.data.startsWith('data:'))
+      .map(o => o.data as string)
+  } catch { return [] }
+}
+
 export default function TeacherWatchBoard({
   questionId, studentId, submissionId,
-  initialStudentData, imageUrl,
+  initialStudentData,
   initialGrade, initialFeedbackText,
 }: Props) {
   const supabase = createClient()
@@ -32,12 +42,14 @@ export default function TeacherWatchBoard({
   const [feedbackText, setFeedbackText] = useState(initialFeedbackText ?? '')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
-  const [showImage, setShowImage] = useState(false)
-  // Key forces InfiniteWhiteboard to remount when student saves new data
+  const [lightbox, setLightbox] = useState<string | null>(null)
   const [studentData, setStudentData] = useState(initialStudentData)
   const [boardKey, setBoardKey] = useState(0)
 
-  // Subscribe to student submission updates so teacher sees new images immediately
+  // Extract image URLs from canvas JSON — updates whenever studentData changes
+  const uploadedImages = useMemo(() => extractImages(studentData), [studentData])
+
+  // Subscribe to student submission updates via realtime
   useEffect(() => {
     if (!submissionId) return
     const ch = supabase.channel(`watch-sub:${submissionId}`)
@@ -47,9 +59,9 @@ export default function TeacherWatchBoard({
         table: 'submissions',
         filter: `id=eq.${submissionId}`,
       }, payload => {
-        const newData = (payload.new as { canvas_data: string | null }).canvas_data
-        if (newData && newData !== studentData) {
-          setStudentData(newData)
+        const row = payload.new as { canvas_data: string | null }
+        if (row.canvas_data && row.canvas_data !== studentData) {
+          setStudentData(row.canvas_data)
           setBoardKey(k => k + 1)
         }
       })
@@ -93,7 +105,26 @@ export default function TeacherWatchBoard({
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex-1 min-h-0 relative">
+      {/* Uploaded images strip — shown directly, no button needed */}
+      {uploadedImages.length > 0 && (
+        <div className="bg-gray-800 border-b border-gray-700 px-3 py-2 flex items-center gap-3 overflow-x-auto flex-shrink-0">
+          <span className="text-xs text-gray-400 font-semibold whitespace-nowrap">Uploaded:</span>
+          {uploadedImages.map((url, i) => (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              key={i}
+              src={url}
+              alt={`Student upload ${i + 1}`}
+              className="h-24 w-auto rounded-lg cursor-pointer border border-gray-600 hover:border-blue-400 transition-colors object-contain bg-white"
+              onClick={() => setLightbox(url)}
+            />
+          ))}
+          <span className="text-xs text-gray-500 whitespace-nowrap">Click to enlarge</span>
+        </div>
+      )}
+
+      {/* Whiteboard */}
+      <div className="flex-1 min-h-0">
         <InfiniteWhiteboard
           key={boardKey}
           questionId={questionId}
@@ -103,23 +134,6 @@ export default function TeacherWatchBoard({
           initialTeacherData={null}
           onSaveTeacher={saveTeacher}
         />
-
-        {imageUrl && (
-          <button
-            onClick={() => setShowImage(v => !v)}
-            className="absolute top-3 right-3 z-10 bg-blue-600 hover:bg-blue-500 text-white text-xs px-3 py-1.5 rounded-lg font-medium shadow-lg"
-          >
-            🖼 View Uploaded Image
-          </button>
-        )}
-
-        {showImage && imageUrl && (
-          <div className="absolute inset-0 z-20 bg-black/80 flex items-center justify-center p-6" onClick={() => setShowImage(false)}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={imageUrl} alt="Student uploaded" className="max-w-full max-h-full object-contain rounded-xl shadow-2xl" onClick={e => e.stopPropagation()} />
-            <button onClick={() => setShowImage(false)} className="absolute top-4 right-4 text-white text-2xl bg-black/50 rounded-full w-10 h-10 flex items-center justify-center">×</button>
-          </div>
-        )}
       </div>
 
       {/* Grading bar */}
@@ -153,6 +167,15 @@ export default function TeacherWatchBoard({
           </div>
         </div>
       </div>
+
+      {/* Lightbox */}
+      {lightbox && (
+        <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-6" onClick={() => setLightbox(null)}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={lightbox} alt="Student upload" className="max-w-full max-h-full object-contain rounded-xl shadow-2xl" onClick={e => e.stopPropagation()} />
+          <button onClick={() => setLightbox(null)} className="absolute top-4 right-4 text-white text-2xl bg-black/50 rounded-full w-10 h-10 flex items-center justify-center">×</button>
+        </div>
+      )}
     </div>
   )
 }
