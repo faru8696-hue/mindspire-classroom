@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 
 const imageCache = new Map<string, HTMLImageElement>()
 
-type Tool = 'pointer' | 'pan' | 'pen' | 'highlighter' | 'text' | 'rectangle' | 'circle' | 'line' | 'arrow' | 'sticky'
+type Tool = 'pointer' | 'pan' | 'pen' | 'highlighter' | 'eraser' | 'text' | 'rectangle' | 'circle' | 'line' | 'arrow' | 'sticky'
 type DragMode = 'move' | 'resize-nw' | 'resize-ne' | 'resize-sw' | 'resize-se' | 'rotate'
 
 interface DrawObject {
@@ -84,6 +84,7 @@ export default function InfiniteWhiteboard({
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [liveIndicator, setLiveIndicator] = useState(false)
   const [objCount, setObjCount] = useState(objsRef.current.length)
+  const [selId, setSelId] = useState<string | null>(null)
 
   const setTool = (t: Tool) => { toolRef.current = t; _setTool(t) }
   const setColor = (c: string) => { colorRef.current = c; _setColor(c) }
@@ -460,6 +461,7 @@ export default function InfiniteWhiteboard({
       })
 
       selIdRef.current = hitObj?.id ?? null
+      setSelId(hitObj?.id ?? null)
       if (hitObj) {
         dragMode.current = 'move'; dragObjId.current = hitObj.id
         dragStartMouse.current = { x: mx, y: my }
@@ -468,7 +470,7 @@ export default function InfiniteWhiteboard({
       return
     }
 
-    if (toolRef.current === 'pen' || toolRef.current === 'highlighter') {
+    if (toolRef.current === 'pen' || toolRef.current === 'highlighter' || toolRef.current === 'eraser') {
       isDrawingRef.current = true
       currentPath.current = [canvasPos]
     } else if (['rectangle', 'circle', 'line', 'arrow'].includes(toolRef.current)) {
@@ -524,6 +526,15 @@ export default function InfiniteWhiteboard({
     const cp = screenToCanvas(e.clientX, e.clientY)
     if (toolRef.current === 'pen' || toolRef.current === 'highlighter') {
       currentPath.current.push(cp)
+    } else if (toolRef.current === 'eraser') {
+      const RADIUS = 20 / viewRef.current.zoom
+      commitObjects(prev => prev.filter(obj => {
+        if (obj.type === 'pen' || obj.type === 'highlighter') {
+          const pts = JSON.parse(obj.data || '[]') as { x: number; y: number }[]
+          return !pts.some(p => Math.hypot(p.x - cp.x, p.y - cp.y) < RADIUS)
+        }
+        return true
+      }))
     } else if (['rectangle', 'circle', 'line', 'arrow'].includes(toolRef.current)) {
       shapeEnd.current = cp
     }
@@ -702,7 +713,16 @@ export default function InfiniteWhiteboard({
         }
         if (!isDrawingRef.current) return
         if (toolRef.current === 'pen' || toolRef.current === 'highlighter') {
-          currentPath.current.push(cp) // push avoids copying the whole array
+          currentPath.current.push(cp)
+        } else if (toolRef.current === 'eraser') {
+          const RADIUS = 20 / viewRef.current.zoom
+          commitObjects(prev => prev.filter(obj => {
+            if (obj.type === 'pen' || obj.type === 'highlighter') {
+              const pts = JSON.parse(obj.data || '[]') as { x: number; y: number }[]
+              return !pts.some(p => Math.hypot(p.x - cp.x, p.y - cp.y) < RADIUS)
+            }
+            return true
+          }))
         } else if (['rectangle', 'circle', 'line', 'arrow'].includes(toolRef.current)) {
           shapeEnd.current = cp
         }
@@ -773,14 +793,14 @@ export default function InfiniteWhiteboard({
     const onDown = (e: KeyboardEvent) => {
       if (isTyping()) return
       if (e.code === 'Space') { e.preventDefault(); setTool('pan') }
-      else if (e.key === 'Escape') { selIdRef.current = null }
+      else if (e.key === 'Escape') { selIdRef.current = null; setSelId(null) }
       else if ((e.key === 'z' || e.key === 'Z') && (e.ctrlKey || e.metaKey)) {
         e.preventDefault(); e.shiftKey ? doRedo() : doUndo()
       }
       else if ((e.key === 'Delete' || e.key === 'Backspace') && selIdRef.current) {
         pushHistory()
         commitObjects(prev => prev.filter(o => o.id !== selIdRef.current))
-        selIdRef.current = null
+        selIdRef.current = null; setSelId(null)
       }
     }
     const onUp = (e: KeyboardEvent) => { if (!isTyping() && e.code === 'Space') setTool('pen') }
@@ -856,6 +876,7 @@ export default function InfiniteWhiteboard({
         {tb('pan', '✋ Pan')}
         {tb('pen', '✏️ Pen')}
         {tb('highlighter', '🔆 Highlight')}
+        {tb('eraser', '⬜ Erase')}
         {tb('text', '𝐓 Text')}
         <div className="w-px h-6 bg-gray-200 flex-shrink-0" />
         {tb('rectangle', '▭ Box')}
@@ -876,6 +897,18 @@ export default function InfiniteWhiteboard({
           </span>
         )}
         <div className="ml-auto flex gap-1.5 items-center flex-shrink-0">
+          {objCount > 0 && (
+            <button onClick={() => { pushHistory(); commitObjects(() => []); selIdRef.current = null }}
+              className="px-2 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded text-sm font-medium whitespace-nowrap">
+              🗑 Clear all
+            </button>
+          )}
+          {selId && (
+            <button onClick={() => { pushHistory(); commitObjects(prev => prev.filter(o => o.id !== selIdRef.current)); selIdRef.current = null; setSelId(null) }}
+              className="px-2 py-1 bg-red-500 hover:bg-red-600 text-white rounded text-sm font-medium whitespace-nowrap">
+              🗑 Delete
+            </button>
+          )}
           <button onClick={doUndo} title="Undo (Ctrl+Z)" className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-sm">↩ Undo</button>
           <button onClick={doRedo} title="Redo (Ctrl+Shift+Z)" className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-sm">↪ Redo</button>
           <div className="w-px h-5 bg-gray-200" />
