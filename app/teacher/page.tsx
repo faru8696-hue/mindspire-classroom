@@ -1,5 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/server'
 import Link from 'next/link'
+import LiveNotificationFeed from '@/components/LiveNotificationFeed'
 
 export default async function TeacherDashboard() {
   const supabase = await createAdminClient()
@@ -116,6 +117,9 @@ export default async function TeacherDashboard() {
           </div>
         )}
       </div>
+
+      {/* Live alerts */}
+      <LiveNotificationFeed />
 
       {/* Quick actions */}
       <div className="grid md:grid-cols-4 gap-4">

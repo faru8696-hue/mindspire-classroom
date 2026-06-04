@@ -7,7 +7,7 @@ import Link from 'next/link'
 interface Student { id: string; full_name: string }
 interface Submission { id: string; student_id: string; canvas_data: string | null; text_answer: string | null; updated_at: string }
 interface Feedback { submission_id: string; grade: string | null }
-interface Notification { id: string; type: string; student_id: string; created_at: string; read: boolean }
+interface StudentNotification { id: string; type: string; student_id: string; question_id: string; class_id: string; created_at: string; read: boolean; student_name?: string; question_title?: string }
 
 interface Props {
   classId: string
@@ -18,7 +18,7 @@ interface Props {
   students: Student[]
   initialSubmissions: Submission[]
   initialFeedbacks: Feedback[]
-  initialNotifications: Notification[]
+  initialNotifications: StudentNotification[]
 }
 
 const GRADE_COLOR: Record<string, string> = {
@@ -48,7 +48,7 @@ export default function LiveClassroomView({
       return m
     }
   )
-  const [notifications, setNotifications] = useState<Notification[]>(initialNotifications)
+  const [notifications, setNotifications] = useState<StudentNotification[]>(initialNotifications)
   const [selectedStudent, setSelectedStudent] = useState<string | null>(null)
   const [alertPlayed, setAlertPlayed] = useState(false)
   const audioRef = useRef<AudioContext | null>(null)
@@ -73,9 +73,9 @@ export default function LiveClassroomView({
     } catch {}
   }
 
-  // Realtime: new submissions
+  // Realtime: new submissions + grades
   useEffect(() => {
-    const channel = supabase.channel(`live:${classId}:${questionId}`)
+    const subChannel = supabase.channel(`live-subs:${classId}:${questionId}`)
       .on('postgres_changes', {
         event: '*',
         schema: 'public',
@@ -88,22 +88,11 @@ export default function LiveClassroomView({
         }
       })
       .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'notifications',
-        filter: `question_id=eq.${questionId}`,
-      }, payload => {
-        const row = payload.new as Notification
-        setNotifications(prev => [row, ...prev])
-        playBeep()
-      })
-      .on('postgres_changes', {
         event: 'UPDATE',
         schema: 'public',
         table: 'feedback',
       }, payload => {
         const fb = payload.new as { submission_id: string; grade: string | null }
-        // find which student owns this submission
         setSubmissions(prev => {
           for (const [sid, sub] of prev) {
             if (sub.id === fb.submission_id && fb.grade) {
@@ -115,7 +104,23 @@ export default function LiveClassroomView({
       })
       .subscribe()
 
-    return () => { supabase.removeChannel(channel) }
+    // Alerts via broadcast
+    const alertChannel = supabase.channel('teacher-alerts', {
+      config: { broadcast: { self: false } },
+    })
+      .on('broadcast', { event: 'student-alert' }, ({ payload }) => {
+        const row = payload as StudentNotification
+        if (row.question_id === questionId) {
+          setNotifications(prev => [{ ...row, read: false }, ...prev])
+          playBeep()
+        }
+      })
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(subChannel)
+      supabase.removeChannel(alertChannel)
+    }
   }, [classId, questionId])
 
   async function markAllRead() {

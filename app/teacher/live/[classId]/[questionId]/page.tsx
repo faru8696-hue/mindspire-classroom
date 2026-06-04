@@ -27,7 +27,7 @@ export default async function LiveClassroomPage({ params }: { params: Promise<{ 
 
   const { data: notifications } = await supabase
     .from('notifications')
-    .select('id, type, student_id, created_at, read')
+    .select('id, type, student_id, question_id, class_id, created_at, read')
     .eq('question_id', questionId)
     .eq('class_id', classId)
     .order('created_at', { ascending: false })
@@ -42,7 +42,7 @@ export default async function LiveClassroomPage({ params }: { params: Promise<{ 
       students={students ?? []}
       initialSubmissions={(submissions ?? []).map((s: { id: string; student_id: string; canvas_data: string | null; text_answer: string | null; updated_at: string }) => s)}
       initialFeedbacks={(feedbacks ?? []).map((f: { submission_id: string; grade: string | null }) => f)}
-      initialNotifications={(notifications ?? []).map((n: { id: string; type: string; student_id: string; created_at: string; read: boolean }) => n)}
+      initialNotifications={(notifications ?? []).map((n: { id: string; type: string; student_id: string; question_id: string; class_id: string; created_at: string; read: boolean }) => n)}
     />
   )
 }

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import InfiniteWhiteboard from '@/components/InfiniteWhiteboard'
 
@@ -8,15 +8,21 @@ interface Props {
   questionId: string
   studentId: string
   classId: string
+  studentName: string
+  questionTitle: string
   submissionId: string | null
   initialStudentData: string | null
   initialTeacherData: string | null
 }
 
-export default function StudentBoardPage({ questionId, studentId, classId, initialStudentData, initialTeacherData }: Props) {
+export default function StudentBoardPage({
+  questionId, studentId, classId, studentName, questionTitle,
+  initialStudentData, initialTeacherData,
+}: Props) {
   const supabase = createClient()
   const [helpSent, setHelpSent] = useState(false)
   const [doneSent, setDoneSent] = useState(false)
+  const channelRef = useRef(supabase.channel('teacher-alerts'))
 
   async function saveStudent(dataUrl: string) {
     await supabase.from('submissions').upsert({
@@ -29,24 +35,45 @@ export default function StudentBoardPage({ questionId, studentId, classId, initi
     }, { onConflict: 'question_id,student_id' })
   }
 
-  async function handleHelp() {
-    await supabase.from('notifications').insert({
-      type: 'help',
+  async function sendAlert(type: 'help' | 'submitted') {
+    const now = new Date().toISOString()
+
+    // 1. Save to DB for persistence
+    const { data: inserted, error } = await supabase.from('notifications').insert({
+      type,
       student_id: studentId,
       question_id: questionId,
       class_id: classId,
+    }).select('id').single()
+
+    if (error) console.error('notification insert error:', error)
+
+    // 2. Broadcast on channel so teacher gets it instantly (bypasses RLS)
+    await channelRef.current.send({
+      type: 'broadcast',
+      event: 'student-alert',
+      payload: {
+        id: inserted?.id ?? crypto.randomUUID(),
+        type,
+        student_id: studentId,
+        question_id: questionId,
+        class_id: classId,
+        created_at: now,
+        read: false,
+        student_name: studentName,
+        question_title: questionTitle,
+      },
     })
+  }
+
+  async function handleHelp() {
+    await sendAlert('help')
     setHelpSent(true)
     setTimeout(() => setHelpSent(false), 5000)
   }
 
   async function handleDone() {
-    await supabase.from('notifications').insert({
-      type: 'submitted',
-      student_id: studentId,
-      question_id: questionId,
-      class_id: classId,
-    })
+    await sendAlert('submitted')
     setDoneSent(true)
     setTimeout(() => setDoneSent(false), 5000)
   }
@@ -62,11 +89,10 @@ export default function StudentBoardPage({ questionId, studentId, classId, initi
         onSaveStudent={saveStudent}
       />
 
-      {/* Action bar */}
       <div className="flex gap-2">
         <button
           onClick={handleHelp}
-          className={`flex-1 py-2.5 rounded-xl font-semibold text-sm transition-all border ${
+          className={`flex-1 py-3 rounded-xl font-semibold text-sm transition-all border ${
             helpSent
               ? 'bg-amber-100 text-amber-700 border-amber-300'
               : 'bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-300'
@@ -76,13 +102,11 @@ export default function StudentBoardPage({ questionId, studentId, classId, initi
         </button>
         <button
           onClick={handleDone}
-          className={`flex-1 py-2.5 rounded-xl font-semibold text-sm transition-all ${
-            doneSent
-              ? 'bg-green-500 text-white'
-              : 'bg-purple-600 hover:bg-purple-700 text-white'
+          className={`flex-1 py-3 rounded-xl font-semibold text-sm transition-all ${
+            doneSent ? 'bg-green-500 text-white' : 'bg-purple-600 hover:bg-purple-700 text-white'
           }`}
         >
-          {doneSent ? '✓ Teacher notified!' : '✓ Done — Check my work'}
+          {doneSent ? '✅ Teacher notified!' : '✓ Done — Check my work'}
         </button>
       </div>
     </div>
