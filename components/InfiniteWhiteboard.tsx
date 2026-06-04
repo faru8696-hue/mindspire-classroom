@@ -654,7 +654,7 @@ export default function InfiniteWhiteboard({
         if (toolRef.current === 'pan') {
           panStart.current = { x: t.clientX, y: t.clientY }; return
         }
-        if (toolRef.current === 'pen' || toolRef.current === 'highlighter') {
+        if (toolRef.current === 'pen' || toolRef.current === 'highlighter' || toolRef.current === 'eraser') {
           isDrawingRef.current = true
           currentPath.current = [canvasPos]
         } else if (['rectangle', 'circle', 'line', 'arrow'].includes(toolRef.current)) {
