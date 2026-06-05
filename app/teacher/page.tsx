@@ -175,9 +175,13 @@ export default async function TeacherDashboard() {
                     >
                       {/* Work thumbnail */}
                       <div className="w-full aspect-video bg-gray-100 relative overflow-hidden">
-                        {sub?.canvas_data ? (
+                        {sub?.canvas_data?.startsWith('data:') ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img src={sub.canvas_data} alt="" className="w-full h-full object-contain" />
+                        ) : sub?.canvas_data ? (
+                          <div className="flex items-center justify-center h-full">
+                            <span className="text-purple-400 text-xs font-medium">✏️ Has work</span>
+                          </div>
                         ) : sub?.text_answer ? (
                           <div className="p-1 text-xs text-gray-500 overflow-hidden h-full line-clamp-3">{sub.text_answer}</div>
                         ) : (
