@@ -48,7 +48,7 @@ export default async function StudentLayout({ children }: { children: React.Reac
           <Link href="/student/profile" className="text-purple-200 hover:text-white text-sm transition-colors">Profile</Link>
         </div>
         <div className="flex items-center gap-4">
-          <StudentNotificationBell classIds={enrolledClassIds} />
+          <StudentNotificationBell classIds={enrolledClassIds} studentId={session.user.id} />
           <Link href="/student/profile" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
             {profile.avatar_url ? (
               // eslint-disable-next-line @next/next/no-img-element

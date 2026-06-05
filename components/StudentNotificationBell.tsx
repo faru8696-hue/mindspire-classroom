@@ -10,14 +10,32 @@ interface AssignmentToast {
   class_id: string
   created_at: string
   question_title?: string
+  type: 'assignment' | 'grade'
+  grade?: string
+  feedback?: string
 }
 
-export default function StudentNotificationBell({ classIds }: { classIds: string[] }) {
+export default function StudentNotificationBell({ classIds, studentId }: { classIds: string[], studentId: string }) {
   const supabase = createClient()
   const [toasts, setToasts] = useState<AssignmentToast[]>([])
   const [open, setOpen] = useState(false)
   const [newCount, setNewCount] = useState(0)
   const seenIds = useRef<Set<string>>(new Set())
+  const audioRef = useRef<AudioContext | null>(null)
+
+  function playTone(freq: number) {
+    try {
+      if (!audioRef.current) audioRef.current = new AudioContext()
+      const ctx = audioRef.current
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.connect(gain); gain.connect(ctx.destination)
+      osc.frequency.value = freq
+      gain.gain.setValueAtTime(0.3, ctx.currentTime)
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5)
+      osc.start(); osc.stop(ctx.currentTime + 0.5)
+    } catch {}
+  }
 
   useEffect(() => {
     if (classIds.length === 0) return
@@ -32,24 +50,31 @@ export default function StudentNotificationBell({ classIds }: { classIds: string
           const toastId = row.question_id + ':' + row.class_id
           if (seenIds.current.has(toastId)) return
           seenIds.current.add(toastId)
-
-          // Fetch question title
           const { data: q } = await supabase.from('questions').select('title').eq('id', row.question_id).single()
-          const toast: AssignmentToast = {
-            id: toastId,
-            question_id: row.question_id,
-            class_id: row.class_id,
-            created_at: row.created_at,
-            question_title: q?.title,
-          }
-          setToasts(prev => [toast, ...prev.slice(0, 9)])
+          setToasts(prev => [{ id: toastId, type: 'assignment', question_id: row.question_id, class_id: row.class_id, created_at: row.created_at, question_title: q?.title }, ...prev.slice(0, 9)])
           setNewCount(c => c + 1)
+          playTone(440)
         }
       )
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
   }, [classIds.join(',')])
+
+  // Listen for grade notifications from teacher
+  useEffect(() => {
+    if (!studentId) return
+    const ch = supabase.channel(`student-bell-feedback:${studentId}`)
+      .on('broadcast', { event: 'grade-received' }, ({ payload }) => {
+        const { question_id, grade, feedback } = payload as { question_id: string; grade: string; feedback: string }
+        const toastId = `grade:${question_id}:${Date.now()}`
+        setToasts(prev => [{ id: toastId, type: 'grade', question_id, class_id: '', created_at: new Date().toISOString(), grade, feedback }, ...prev.slice(0, 9)])
+        setNewCount(c => c + 1)
+        playTone(grade === 'correct' ? 660 : grade === 'partial' ? 520 : 330)
+      })
+      .subscribe()
+    return () => { supabase.removeChannel(ch) }
+  }, [studentId])
 
   function handleOpen() {
     setOpen(o => !o)
@@ -94,11 +119,21 @@ export default function StudentNotificationBell({ classIds }: { classIds: string
                   onClick={() => setOpen(false)}
                   className="flex items-start gap-3 px-4 py-3 hover:bg-purple-50 transition-colors"
                 >
-                  <span className="text-purple-500 text-lg flex-shrink-0">📋</span>
+                  <span className="text-lg flex-shrink-0">
+                    {t.type === 'grade' ? (t.grade === 'correct' ? '✅' : t.grade === 'incorrect' ? '❌' : '📝') : '📋'}
+                  </span>
                   <div className="min-w-0">
-                    <p className="text-sm font-medium text-gray-800 truncate">New question assigned</p>
-                    <p className="text-xs text-gray-500 truncate">{t.question_title ?? 'A question was assigned to your class'}</p>
-                    <p className="text-xs text-gray-400 mt-0.5">Tap to view your assignments</p>
+                    {t.type === 'grade' ? (
+                      <>
+                        <p className="text-sm font-medium text-gray-800">Teacher graded your work</p>
+                        <p className="text-xs text-gray-500 truncate capitalize">{t.grade}{t.feedback ? ` — ${t.feedback}` : ''}</p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-sm font-medium text-gray-800 truncate">New question assigned</p>
+                        <p className="text-xs text-gray-500 truncate">{t.question_title ?? 'A question was assigned'}</p>
+                      </>
+                    )}
                   </div>
                 </Link>
               ))}

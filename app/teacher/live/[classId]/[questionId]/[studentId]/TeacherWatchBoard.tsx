@@ -40,8 +40,9 @@ export default function TeacherWatchBoard({
 }: Props) {
   const supabase = createClient()
   const gradeChannel = supabase.channel(`live-grades:${classId}:${questionId}`)
-  // Channel to push grade notifications to the specific student
+  // Channels to push grade notifications to the student (page + bell)
   const studentChannel = supabase.channel(`student-feedback:${studentId}`)
+  const studentBellChannel = supabase.channel(`student-bell-feedback:${studentId}`)
   const [grade, setGrade] = useState<string | null>(initialGrade)
   const [feedbackText, setFeedbackText] = useState(initialFeedbackText ?? '')
   const [saving, setSaving] = useState(false)
@@ -52,6 +53,14 @@ export default function TeacherWatchBoard({
 
   // Extract image URLs from canvas JSON — updates whenever studentData changes
   const uploadedImages = useMemo(() => extractImages(studentData), [studentData])
+
+  // Subscribe broadcast channels so send() works
+  useEffect(() => {
+    gradeChannel.subscribe()
+    studentChannel.subscribe()
+    studentBellChannel.subscribe()
+    return () => { supabase.removeChannel(gradeChannel); supabase.removeChannel(studentChannel); supabase.removeChannel(studentBellChannel) }
+  }, [])
 
   // Subscribe to student submission updates via realtime
   useEffect(() => {
@@ -83,10 +92,9 @@ export default function TeacherWatchBoard({
 
   async function notifyStudent(newGrade: string | null, feedback: string) {
     if (!newGrade) return
-    await studentChannel.send({
-      type: 'broadcast', event: 'grade-received',
-      payload: { question_id: questionId, grade: newGrade, feedback },
-    })
+    const payload = { question_id: questionId, grade: newGrade, feedback }
+    await studentChannel.send({ type: 'broadcast', event: 'grade-received', payload })
+    await studentBellChannel.send({ type: 'broadcast', event: 'grade-received', payload })
   }
 
   async function applyGrade(g: string) {
