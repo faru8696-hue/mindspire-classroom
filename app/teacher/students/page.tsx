@@ -1,5 +1,6 @@
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import Link from 'next/link'
 
 async function approveStudent(formData: FormData) {
   'use server'
@@ -46,9 +47,19 @@ export default async function StudentsPage() {
           <div className="space-y-2">
             {pending!.map((student) => (
               <div key={student.id} className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-center justify-between flex-wrap gap-3">
-                <div>
-                  <p className="font-semibold text-gray-800">{student.full_name}</p>
-                  <p className="text-sm text-gray-500">{student.email}</p>
+                <div className="flex items-center gap-3">
+                  {student.avatar_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={student.avatar_url} alt="" className="w-10 h-10 rounded-full object-cover border border-amber-200 flex-shrink-0" />
+                  ) : (
+                    <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center text-sm font-bold text-amber-600 flex-shrink-0">
+                      {(student.full_name || '?').charAt(0).toUpperCase()}
+                    </div>
+                  )}
+                  <div>
+                    <p className="font-semibold text-gray-800">{student.full_name}</p>
+                    <p className="text-sm text-gray-500">{student.email}</p>
+                  </div>
                 </div>
                 <form action={approveStudent} className="flex items-center gap-2 flex-wrap">
                   <input type="hidden" name="id" value={student.id} />
@@ -74,12 +85,25 @@ export default async function StudentsPage() {
           <div className="space-y-2">
             {approved.map((student) => (
               <div key={student.id} className="bg-white border border-gray-200 rounded-xl p-4 flex items-center justify-between flex-wrap gap-3">
-                <div>
-                  <p className="font-semibold text-gray-800">{student.full_name}</p>
-                  <p className="text-sm text-gray-500">{student.email}</p>
-                  <p className="text-xs text-purple-600 mt-0.5 font-medium">
-                    {classes?.find(c => c.id === student.class_id)?.title ?? 'No class assigned'}
-                  </p>
+                <div className="flex items-center gap-3">
+                  {/* Avatar */}
+                  {student.avatar_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={student.avatar_url} alt="" className="w-10 h-10 rounded-full object-cover border border-gray-200 flex-shrink-0" />
+                  ) : (
+                    <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center text-sm font-bold text-purple-600 flex-shrink-0">
+                      {(student.full_name || '?').charAt(0).toUpperCase()}
+                    </div>
+                  )}
+                  <div>
+                    <Link href={`/teacher/students/${student.id}`} className="font-semibold text-gray-800 hover:text-purple-700 hover:underline">
+                      {student.full_name}
+                    </Link>
+                    <p className="text-sm text-gray-500">{student.email}</p>
+                    <p className="text-xs text-purple-600 mt-0.5 font-medium">
+                      {classes?.find(c => c.id === student.class_id)?.title ?? 'No class assigned'}
+                    </p>
+                  </div>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
                   <form action={assignClass} className="flex items-center gap-2">
