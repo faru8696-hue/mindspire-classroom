@@ -165,22 +165,12 @@ export default function InfiniteWhiteboard({
       for (let x = ox; x < canvas.width; x += gs) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke() }
       for (let y = oy; y < canvas.height; y += gs) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke() }
 
-      // Remote (other user's) objects — drawn first, slightly dimmed
-      const remoteObjs = remoteObjsRef.current
-      const remoteSorted = [...remoteObjs].sort((a, b) => {
-          const typeOrder = (t: string) => t === 'image' ? 0 : 1
-          return typeOrder(a.type) - typeOrder(b.type) || a.zIndex - b.zIndex
-        })
-      ctx.save(); ctx.globalAlpha = 1
-      for (const obj of remoteSorted) {
-        ctx.save()
-        ctx.translate(v.panX + obj.x * v.zoom, v.panY + obj.y * v.zoom)
-        ctx.scale(v.zoom, v.zoom)
-        ctx.rotate((obj.rotation * Math.PI) / 180)
+      // Helper: draw a single object (ctx already translated/scaled/rotated)
+      const drawObj = (obj: DrawObject, isOwn: boolean) => {
         if (obj.type === 'pen' || obj.type === 'highlighter') {
           const pts = JSON.parse(obj.data || '[]') as { x: number; y: number }[]
           if (pts.length > 1) {
-            if (obj.type === 'highlighter') ctx.globalAlpha = 0.25
+            if (obj.type === 'highlighter') ctx.globalAlpha = isOwn ? 0.4 : 0.25
             ctx.strokeStyle = obj.color || '#000'
             ctx.lineWidth = obj.strokeWidth || 2
             ctx.lineCap = 'round'; ctx.lineJoin = 'round'
@@ -221,71 +211,66 @@ export default function InfiniteWhiteboard({
             const img = new Image(); img.src = src; imageCache.set(src, img)
           }
         }
-        ctx.restore()
       }
-      ctx.restore()
 
-      // Own objects
-      const sorted = [...objs].sort((a, b) => {
-          const typeOrder = (t: string) => t === 'image' ? 0 : 1
-          return typeOrder(a.type) - typeOrder(b.type) || a.zIndex - b.zIndex
-        })
-      for (const obj of sorted) {
+      const renderAt = (obj: DrawObject, isOwn: boolean) => {
         ctx.save()
         ctx.translate(v.panX + obj.x * v.zoom, v.panY + obj.y * v.zoom)
         ctx.scale(v.zoom, v.zoom)
         ctx.rotate((obj.rotation * Math.PI) / 180)
+        drawObj(obj, isOwn)
+        ctx.restore()
+      }
 
-        if (obj.type === 'pen' || obj.type === 'highlighter') {
-          const pts = JSON.parse(obj.data || '[]') as { x: number; y: number }[]
-          if (pts.length > 1) {
-            if (obj.type === 'highlighter') ctx.globalAlpha = 0.4
-            ctx.strokeStyle = obj.color || '#000'
-            ctx.lineWidth = obj.strokeWidth || 2
-            ctx.lineCap = 'round'; ctx.lineJoin = 'round'
-            ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y)
-            for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y)
-            ctx.stroke()
-            ctx.globalAlpha = 1
-          }
-        } else if (obj.type === 'shape') {
+      // Render in 3 passes so ALL images are below ALL strokes/shapes regardless of layer:
+      // Pass 1: all images (remote + own), sorted by zIndex
+      const remoteObjs = remoteObjsRef.current
+      const allImages = [
+        ...remoteObjs.filter(o => o.type === 'image'),
+        ...objs.filter(o => o.type === 'image'),
+      ].sort((a, b) => a.zIndex - b.zIndex)
+      for (const obj of allImages) {
+        const isOwn = objs.includes(obj)
+        renderAt(obj, isOwn)
+      }
+
+      // Pass 2: non-image remote objects (student's strokes as seen by teacher, or teacher's as seen by student)
+      const remoteNonImage = remoteObjs.filter(o => o.type !== 'image').sort((a, b) => a.zIndex - b.zIndex)
+      for (const obj of remoteNonImage) renderAt(obj, false)
+
+      // Selection handles for own images (rendered in pass 1 but handles drawn last so they're on top)
+      for (const obj of objs.filter(o => o.type === 'image')) {
+        if (selId === obj.id) {
+          ctx.save()
+          ctx.translate(v.panX + obj.x * v.zoom, v.panY + obj.y * v.zoom)
+          ctx.scale(v.zoom, v.zoom)
+          ctx.rotate((obj.rotation * Math.PI) / 180)
           const w = obj.width ?? 100, h = obj.height ?? 100
-          ctx.strokeStyle = obj.color || '#000'; ctx.lineWidth = obj.strokeWidth || 2
-          if (obj.shapeType === 'rectangle') { ctx.strokeRect(0, 0, w, h) }
-          else if (obj.shapeType === 'circle') { const r = Math.min(w, h) / 2; ctx.beginPath(); ctx.arc(r, r, r, 0, Math.PI * 2); ctx.stroke() }
-          else if (obj.shapeType === 'line') { ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(w, h); ctx.stroke() }
-          else if (obj.shapeType === 'arrow') {
-            const hl = 15, ang = Math.atan2(h, w)
-            ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(w, h); ctx.stroke()
-            ctx.beginPath()
-            ctx.moveTo(w - hl * Math.cos(ang - Math.PI / 6), h - hl * Math.sin(ang - Math.PI / 6))
-            ctx.lineTo(w, h)
-            ctx.lineTo(w - hl * Math.cos(ang + Math.PI / 6), h - hl * Math.sin(ang + Math.PI / 6))
-            ctx.stroke()
-          }
-        } else if (obj.type === 'text') {
-          ctx.fillStyle = obj.color || '#000'; ctx.font = '16px Arial'
-          ctx.fillText(obj.data || '', 0, 20)
-        } else if (obj.type === 'sticky') {
-          const w = obj.width ?? 150, h = obj.height ?? 150
-          ctx.fillStyle = obj.fillColor || '#ffff00'; ctx.fillRect(0, 0, w, h)
-          ctx.strokeStyle = '#ddd'; ctx.lineWidth = 1; ctx.strokeRect(0, 0, w, h)
-          ctx.fillStyle = obj.color || '#000'; ctx.font = '14px Arial'
-          ctx.fillText(obj.data || '', 10, 25)
-        } else if (obj.type === 'image') {
-          const src = obj.data || ''
-          const cached = imageCache.get(src)
-          if (cached) {
-            if (cached.complete && cached.naturalWidth > 0) {
-              ctx.drawImage(cached, 0, 0, obj.width ?? 100, obj.height ?? 100)
-            }
-          } else if (src && !cached) {
-            const img = new Image(); img.src = src; imageCache.set(src, img)
-          }
+          const pad = 10 / v.zoom, hs = 14 / v.zoom, r = hs / 2
+          ctx.strokeStyle = '#6d28d9'; ctx.lineWidth = 1.5 / v.zoom
+          ctx.setLineDash([5 / v.zoom, 4 / v.zoom])
+          ctx.strokeRect(-pad, -pad, w + pad * 2, h + pad * 2)
+          ctx.setLineDash([])
+          const corners: [number, number][] = [[-pad-r,-pad-r],[w+pad-r,-pad-r],[-pad-r,h+pad-r],[w+pad-r,h+pad-r]]
+          corners.forEach(([cx,cy]) => { ctx.fillStyle='#6d28d9';ctx.beginPath();ctx.arc(cx+r,cy+r,r,0,Math.PI*2);ctx.fill();ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(cx+r,cy+r,r*0.55,0,Math.PI*2);ctx.fill() })
+          const ll=28/v.zoom,ccx=w/2;ctx.strokeStyle='#6d28d9';ctx.lineWidth=1.5/v.zoom;ctx.beginPath();ctx.moveTo(ccx,-pad);ctx.lineTo(ccx,-pad-ll);ctx.stroke();ctx.fillStyle='#6d28d9';ctx.beginPath();ctx.arc(ccx,-pad-ll-r,r,0,Math.PI*2);ctx.fill()
+          ctx.fillStyle='#fff';ctx.font=`bold ${10/v.zoom}px Arial`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('↻',ccx,-pad-ll-r);ctx.textAlign='left';ctx.textBaseline='alphabetic'
+          const xr=10/v.zoom,xbx=w+pad+xr,xby=-pad-xr;ctx.fillStyle='#ef4444';ctx.beginPath();ctx.arc(xbx,xby,xr,0,Math.PI*2);ctx.fill();ctx.fillStyle='#fff';ctx.font=`bold ${11/v.zoom}px Arial`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('×',xbx,xby);ctx.textAlign='left';ctx.textBaseline='alphabetic'
+          ctx.restore()
         }
+      }
+
+      // Pass 3: non-image own objects (on top of everything)
+      const ownNonImage = objs.filter(o => o.type !== 'image').sort((a, b) => a.zIndex - b.zIndex)
+      for (const obj of ownNonImage) {
+        renderAt(obj, true)
 
         // Selection handles
         if (selId === obj.id && (obj.type === 'image' || obj.type === 'shape' || obj.type === 'sticky' || obj.type === 'text')) {
+          ctx.save()
+          ctx.translate(v.panX + obj.x * v.zoom, v.panY + obj.y * v.zoom)
+          ctx.scale(v.zoom, v.zoom)
+          ctx.rotate((obj.rotation * Math.PI) / 180)
           const w = obj.type === 'text' ? 160 : (obj.width ?? 100)
           const h = obj.type === 'text' ? 28 : (obj.height ?? 100)
           const pad = 10 / v.zoom
@@ -327,8 +312,8 @@ export default function InfiniteWhiteboard({
           ctx.fillStyle = '#fff'; ctx.font = `bold ${11 / v.zoom}px Arial`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
           ctx.fillText('×', xbx, xby)
           ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'
+          ctx.restore()
         }
-        ctx.restore()
       }
 
       // Live pen/highlighter preview

@@ -122,18 +122,18 @@ export default function LiveClassroomView({
       })
       .subscribe()
 
-    // Alerts via broadcast
-    const alertCh = supabase.channel('teacher-alerts', { config: { broadcast: { self: false } } })
-      .on('broadcast', { event: 'student-alert' }, ({ payload }) => {
-        const row = payload as StudentNotification
-        if (row.question_id === questionId) {
-          setNotifications(prev => [{ ...row, read: false }, ...prev])
-          playBeep()
-        }
-      })
-      .subscribe()
+    // Alerts — listen to the custom event relayed by TeacherNotificationBell
+    // (avoids conflicting Supabase channel subscriptions for 'teacher-alerts')
+    const handleAlert = (e: Event) => {
+      const row = (e as CustomEvent<StudentNotification>).detail
+      if (row.question_id === questionId) {
+        setNotifications(prev => [{ ...row, read: false }, ...prev])
+        playBeep()
+      }
+    }
+    window.addEventListener('teacher-student-alert', handleAlert)
 
-    return () => { supabase.removeChannel(subCh); supabase.removeChannel(gradeCh); supabase.removeChannel(alertCh) }
+    return () => { supabase.removeChannel(subCh); supabase.removeChannel(gradeCh); window.removeEventListener('teacher-student-alert', handleAlert) }
   }, [classId, questionId])
 
   async function markAllRead() {

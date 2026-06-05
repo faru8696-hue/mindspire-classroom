@@ -4,9 +4,10 @@ import Link from 'next/link'
 export default async function AllProgressPage() {
   const supabase = await createAdminClient()
 
-  const [{ data: classes }, { data: students }] = await Promise.all([
+  const [{ data: classes }, { data: allStudents }, { data: allEnrollments }] = await Promise.all([
     supabase.from('classes').select('id, title').order('order_index'),
-    supabase.from('profiles').select('id, full_name, class_id').eq('role', 'student').eq('approved', true).order('full_name'),
+    supabase.from('profiles').select('id, full_name').eq('role', 'student').eq('approved', true).order('full_name'),
+    supabase.from('class_enrollments').select('student_id, class_id'),
   ])
 
   const classIds = classes?.map(c => c.id) ?? []
@@ -34,7 +35,7 @@ export default async function AllProgressPage() {
     : { data: [] }
 
   // Load all submissions + feedback
-  const studentIds = students?.map(s => s.id) ?? []
+  const studentIds = allStudents?.map(s => s.id) ?? []
   const { data: submissions } = studentIds.length > 0 && questionIds.length > 0
     ? await supabase.from('submissions').select('id, student_id, question_id').in('student_id', studentIds).in('question_id', questionIds)
     : { data: [] }
@@ -68,13 +69,19 @@ export default async function AllProgressPage() {
     return assigned && assigned.size > 0 ? classQIds.filter(id => assigned.has(id)) : classQIds
   }
 
-  // Group students by class
-  const studentsByClass = new Map<string, typeof students>()
-  for (const s of students ?? []) {
-    const cid = s.class_id ?? '__none__'
-    if (!studentsByClass.has(cid)) studentsByClass.set(cid, [])
-    studentsByClass.get(cid)!.push(s)
+  const studentMap = new Map((allStudents ?? []).map(s => [s.id, s]))
+  const enrolledStudentIds = new Set((allEnrollments ?? []).map(e => e.student_id))
+
+  // Group students by class using class_enrollments
+  const studentsByClass = new Map<string, { id: string; full_name: string }[]>()
+  for (const e of allEnrollments ?? []) {
+    const profile = studentMap.get(e.student_id)
+    if (!profile) continue
+    if (!studentsByClass.has(e.class_id)) studentsByClass.set(e.class_id, [])
+    studentsByClass.get(e.class_id)!.push(profile)
   }
+  // Sort each class's students alphabetically
+  for (const arr of studentsByClass.values()) arr.sort((a, b) => a.full_name.localeCompare(b.full_name))
 
   // Compute per-student stats
   function getStats(studentId: string, classId: string) {
@@ -91,8 +98,8 @@ export default async function AllProgressPage() {
     return { total: qIds.length, submitted, correct, incorrect, partial, notDone: qIds.length - submitted }
   }
 
-  // Unassigned students
-  const unassigned = studentsByClass.get('__none__') ?? []
+  // Unassigned students (approved but not in any class)
+  const unassigned = (allStudents ?? []).filter(s => !enrolledStudentIds.has(s.id))
 
   return (
     <div className="max-w-7xl mx-auto space-y-8">

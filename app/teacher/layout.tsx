@@ -45,15 +45,14 @@ export default async function TeacherLayout({ children }: { children: React.Reac
 
   return (
     <div className="min-h-screen flex flex-col">
-      <nav className="bg-purple-900 text-white px-6 py-3 flex items-center justify-between shadow-lg">
+      <nav className="sticky top-0 bg-purple-900 text-white px-6 py-3 flex items-center justify-between shadow-lg z-50">
         <div className="flex items-center gap-6">
-          <span className="font-bold text-lg">⚛️ Mindspire Lab</span>
+          <Link href="/teacher" className="font-bold text-lg hover:text-purple-200 transition-colors">⚛️ Mindspire Lab</Link>
           <Link href="/teacher" className="text-purple-200 hover:text-white text-sm transition-colors">Dashboard</Link>
           <Link href="/teacher/progress" className="text-purple-200 hover:text-white text-sm transition-colors">Progress</Link>
           <Link href="/teacher/students" className="text-purple-200 hover:text-white text-sm transition-colors">Students</Link>
           <Link href="/teacher/content" className="text-purple-200 hover:text-white text-sm transition-colors">Content</Link>
           <Link href="/teacher/submissions" className="text-purple-200 hover:text-white text-sm transition-colors">Submissions</Link>
-          <Link href="/teacher/whiteboard" className="text-purple-200 hover:text-white text-sm transition-colors">Whiteboard</Link>
         </div>
         <div className="flex items-center gap-3">
           <TeacherNotificationBell initialNotifications={initialNotifications} />

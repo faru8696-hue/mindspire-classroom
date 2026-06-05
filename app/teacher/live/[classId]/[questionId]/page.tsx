@@ -7,13 +7,18 @@ export default async function LiveClassroomPage({ params }: { params: Promise<{ 
   const { classId, questionId } = await params
   const supabase = await createAdminClient()
 
-  const [{ data: cls }, { data: question }, { data: students }] = await Promise.all([
+  const [{ data: cls }, { data: question }, { data: enrollments }] = await Promise.all([
     supabase.from('classes').select('title').eq('id', classId).single(),
     supabase.from('questions').select('title, content').eq('id', questionId).single(),
-    supabase.from('profiles').select('id, full_name').eq('class_id', classId).eq('role', 'student').eq('approved', true).order('full_name'),
+    supabase.from('class_enrollments').select('student_id').eq('class_id', classId),
   ])
 
   if (!cls || !question) notFound()
+
+  const enrolledIds = enrollments?.map(e => e.student_id) ?? []
+  const { data: students } = enrolledIds.length > 0
+    ? await supabase.from('profiles').select('id, full_name').in('id', enrolledIds).eq('role', 'student').eq('approved', true).order('full_name')
+    : { data: [] }
 
   const studentIds = students?.map(s => s.id) ?? []
   const { data: submissions } = studentIds.length > 0

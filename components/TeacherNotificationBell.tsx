@@ -56,6 +56,8 @@ export default function TeacherNotificationBell({ initialNotifications }: Props)
         playBeep()
         // Auto-dismiss toast after 12s
         setTimeout(() => dismissToast(n.id), 12000)
+        // Relay to other components (e.g. LiveClassroomView) via custom DOM event
+        window.dispatchEvent(new CustomEvent('teacher-student-alert', { detail: n }))
       })
       .subscribe()
     return () => { supabase.removeChannel(channel) }

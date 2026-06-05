@@ -10,6 +10,7 @@ interface Props {
   classId: string
   studentName: string
   questionTitle: string
+  questionContent: string | null
   submissionId: string | null
   initialStudentData: string | null
   initialTeacherData: string | null
@@ -24,12 +25,13 @@ const GRADE_LABEL: Record<string, { text: string; cls: string }> = {
 }
 
 export default function StudentBoardPage({
-  questionId, studentId, classId, studentName, questionTitle,
+  questionId, studentId, classId, studentName, questionTitle, questionContent,
   initialStudentData, initialTeacherData,
 }: Props) {
   const supabase = createClient()
   const [helpSent, setHelpSent] = useState(false)
   const [doneSent, setDoneSent] = useState(false)
+  const [questionCollapsed, setQuestionCollapsed] = useState(false)
   const [gradeToast, setGradeToast] = useState<{ grade: string; feedback: string } | null>(null)
   const channelRef = useRef(supabase.channel('teacher-alerts'))
   const audioRef = useRef<AudioContext | null>(null)
@@ -104,6 +106,37 @@ export default function StudentBoardPage({
 
   return (
     <div className="flex flex-col h-full gap-2 relative">
+      {/* Question — AP exam paper style */}
+      <div className="bg-white border border-gray-300 rounded-lg shadow-sm flex-shrink-0 overflow-hidden">
+        {/* Paper header strip */}
+        <div className="flex items-center justify-between px-4 py-2 bg-gray-50 border-b border-gray-200">
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-bold uppercase tracking-widest text-gray-400">Question</span>
+            <span className="w-px h-3 bg-gray-300" />
+            <span className="text-xs text-gray-400 font-medium">Show all work for full credit</span>
+          </div>
+          <button
+            onClick={() => setQuestionCollapsed(c => !c)}
+            className="text-xs text-gray-400 hover:text-gray-600 font-medium"
+          >
+            {questionCollapsed ? '▼ expand' : '▲ collapse'}
+          </button>
+        </div>
+
+        {!questionCollapsed && (
+          <div className="px-5 py-4">
+            <p className="text-[15px] font-semibold text-gray-900 leading-snug" style={{ fontFamily: 'Georgia, "Times New Roman", serif' }}>
+              {questionTitle}
+            </p>
+            {questionContent && (
+              <p className="mt-2 text-[14px] text-gray-700 leading-relaxed whitespace-pre-wrap" style={{ fontFamily: 'Georgia, "Times New Roman", serif' }}>
+                {questionContent}
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Grade toast notification */}
       {gradeToast && (
         <div className={`absolute top-3 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-5 py-3 rounded-2xl shadow-2xl font-semibold text-sm animate-bounce ${GRADE_LABEL[gradeToast.grade]?.cls ?? 'bg-gray-800 text-white'}`}>

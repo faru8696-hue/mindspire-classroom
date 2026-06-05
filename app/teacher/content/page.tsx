@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import Link from 'next/link'
 
 interface Class { id: string; title: string; order_index: number }
 interface Unit { id: string; title: string; class_id: string }
@@ -160,12 +161,12 @@ export default function ContentPage() {
               </div>
               <div className="space-y-1 overflow-y-auto">
                 {questions.map(q => (
-                  <div key={q.id} className="flex items-start justify-between p-2 rounded-lg hover:bg-gray-50">
+                  <div key={q.id} className="flex items-start justify-between p-2 rounded-lg hover:bg-purple-50 group">
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{q.title}</p>
+                      <Link href={`/teacher/questions/${q.id}`} className="text-sm font-medium text-gray-800 hover:text-purple-700 truncate block">{q.title}</Link>
                       {q.content && <p className="text-xs text-gray-400 truncate">{q.content}</p>}
                     </div>
-                    <button onClick={() => del('questions', q.id, () => loadQuestions(selectedTopic!))} className="text-gray-400 hover:text-red-500 ml-2 text-xs flex-shrink-0">✕</button>
+                    <button onClick={() => del('questions', q.id, () => loadQuestions(selectedTopic!))} className="text-gray-400 hover:text-red-500 text-xs ml-2 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">✕</button>
                   </div>
                 ))}
               </div>

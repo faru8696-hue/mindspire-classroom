@@ -15,12 +15,11 @@ export default async function TeacherDashboard() {
     supabase.from('classes').select('id, title').order('order_index'),
   ])
 
-  // For each class: count enrolled students and get submission/question counts
   const classIds = classes?.map(c => c.id) ?? []
 
-  const [{ data: enrollments }, { data: units }, { data: pendingFeedback }] = await Promise.all([
+  const [{ data: classEnrollments }, { data: units }, { data: pendingFeedback }] = await Promise.all([
     classIds.length > 0
-      ? supabase.from('profiles').select('id, full_name, class_id').eq('role', 'student').eq('approved', true).in('class_id', classIds)
+      ? supabase.from('class_enrollments').select('student_id, class_id').in('class_id', classIds)
       : Promise.resolve({ data: [] }),
     classIds.length > 0
       ? supabase.from('units').select('id, class_id').in('class_id', classIds)
@@ -29,37 +28,86 @@ export default async function TeacherDashboard() {
       .not('id', 'in', supabase.from('feedback').select('submission_id')),
   ])
 
-  const unitIds = units?.map(u => u.id) ?? []
-  const [{ data: topics }, { data: recentSubmissions }] = await Promise.all([
-    unitIds.length > 0
-      ? supabase.from('topics').select('id, unit_id').in('unit_id', unitIds)
-      : Promise.resolve({ data: [] }),
-    supabase.from('submissions')
-      .select('id, created_at, student_id, question_id, profiles!submissions_student_id_fkey(full_name), questions(title, topic_id, topics(unit_id, units(class_id, title: class_id)))')
-      .order('created_at', { ascending: false })
-      .limit(5),
-  ])
+  // Fetch profiles for all enrolled students
+  const enrolledStudentIds = [...new Set((classEnrollments ?? []).map(e => e.student_id))]
+  const { data: studentProfiles } = enrolledStudentIds.length > 0
+    ? await supabase.from('profiles').select('id, full_name, avatar_url, nickname').in('id', enrolledStudentIds)
+    : { data: [] as { id: string; full_name: string; avatar_url: string | null; nickname: string | null }[] }
 
-  const topicIds = topics?.map(t => t.id) ?? []
+  const profileMap = new Map((studentProfiles ?? []).map(p => [p.id, p]))
+
+  const unitIds = units?.map(u => u.id) ?? []
+  const { data: topics } = unitIds.length > 0
+    ? await supabase.from('topics').select('id, unit_id').in('unit_id', unitIds)
+    : { data: [] }
+
+  const topicIds = (topics ?? []).map(t => t.id)
   const { data: questions } = topicIds.length > 0
     ? await supabase.from('questions').select('id, topic_id').in('topic_id', topicIds)
     : { data: [] }
 
+  const questionIds = (questions ?? []).map(q => q.id)
+
+  type LatestSub = { id: string; student_id: string; question_id: string; canvas_data: string | null; text_answer: string | null; updated_at: string }
+  // Latest submission per student (for thumbnails)
+  const { data: latestSubs } = questionIds.length > 0
+    ? await supabase.from('submissions')
+        .select('id, student_id, question_id, canvas_data, text_answer, updated_at')
+        .in('question_id', questionIds)
+        .order('updated_at', { ascending: false })
+    : { data: [] as LatestSub[] }
+
+  // Latest feedback per submission
+  const subIds = (latestSubs ?? []).map(s => s.id)
+  const { data: feedbacks } = subIds.length > 0
+    ? await supabase.from('feedback').select('submission_id, grade').in('submission_id', subIds)
+    : { data: [] }
+
+  const gradeBySubmission = new Map((feedbacks ?? []).map(f => [f.submission_id, f.grade]))
+
+  // Per student: latest submission
+  const latestSubByStudent = new Map<string, LatestSub>()
+  for (const sub of latestSubs ?? []) {
+    if (!latestSubByStudent.has(sub.student_id)) latestSubByStudent.set(sub.student_id, sub)
+  }
+
   // Per-class stats
   const classStats = (classes ?? []).map(cls => {
-    const classUnits = units?.filter(u => u.class_id === cls.id) ?? []
-    const classTopics = topics?.filter(t => classUnits.some(u => u.id === t.unit_id)) ?? []
-    const classQIds = questions?.filter(q => classTopics.some(t => t.id === q.topic_id)).map(q => q.id) ?? []
-    const classStudents = enrollments?.filter(e => e.class_id === cls.id) ?? []
+    const classUnits = (units ?? []).filter(u => u.class_id === cls.id)
+    const classTopics = (topics ?? []).filter(t => classUnits.some(u => u.id === t.unit_id))
+    const classQIds = (questions ?? []).filter(q => classTopics.some(t => t.id === q.topic_id)).map(q => q.id)
+    const classStudents = (classEnrollments ?? [])
+      .filter(e => e.class_id === cls.id)
+      .map(e => ({ ...profileMap.get(e.student_id), id: e.student_id }))
+      .filter(s => s.full_name) // only approved students with profiles
     return {
       ...cls,
       studentCount: classStudents.length,
       questionCount: classQIds.length,
+      students: classStudents as { id: string; full_name: string; avatar_url?: string | null; nickname?: string | null }[],
     }
   })
 
+  const GRADE_BORDER: Record<string, string> = {
+    correct: 'border-green-400',
+    partial: 'border-amber-400',
+    incorrect: 'border-red-400',
+    discussed: 'border-blue-400',
+    needsmore: 'border-purple-400',
+  }
+  const GRADE_BADGE: Record<string, string> = {
+    correct: 'bg-green-500',
+    partial: 'bg-amber-500',
+    incorrect: 'bg-red-500',
+    discussed: 'bg-blue-500',
+    needsmore: 'bg-purple-500',
+  }
+  const GRADE_SYMBOL: Record<string, string> = {
+    correct: '✓', partial: '~', incorrect: '✗', discussed: '💬', needsmore: '🔄',
+  }
+
   return (
-    <div className="max-w-5xl mx-auto space-y-8">
+    <div className="max-w-6xl mx-auto space-y-8">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-purple-900">Teacher Dashboard</h1>
       </div>
@@ -88,34 +136,72 @@ export default async function TeacherDashboard() {
         </Link>
       </div>
 
-      {/* Class cards */}
-      <div>
-        <h2 className="text-lg font-semibold text-gray-800 mb-3">Your Classes</h2>
+      {/* Classroom overview — all students per class */}
+      <div className="space-y-6">
+        <h2 className="text-lg font-semibold text-gray-800">Classroom Overview</h2>
         {classStats.length === 0 ? (
           <p className="text-gray-500 text-sm">No classes yet. <Link href="/teacher/content" className="text-purple-600 underline">Create one →</Link></p>
-        ) : (
-          <div className="grid md:grid-cols-2 gap-4">
-            {classStats.map(cls => (
-              <Link
-                key={cls.id}
-                href={`/teacher/class/${cls.id}`}
-                className="bg-white border border-gray-200 rounded-xl p-6 hover:border-purple-400 hover:shadow-md transition-all group"
-              >
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <h3 className="text-lg font-bold text-gray-800 group-hover:text-purple-800 transition-colors">{cls.title}</h3>
-                    <p className="text-sm text-gray-500 mt-0.5">{cls.studentCount} student{cls.studentCount !== 1 ? 's' : ''} enrolled</p>
-                  </div>
-                  <span className="text-2xl">🏫</span>
-                </div>
-                <div className="flex gap-3 text-sm">
-                  <span className="bg-gray-100 text-gray-600 px-3 py-1 rounded-full">{cls.questionCount} questions</span>
-                  <span className="bg-purple-50 text-purple-700 px-3 py-1 rounded-full font-medium">View progress →</span>
-                </div>
-              </Link>
-            ))}
+        ) : classStats.map(cls => (
+          <div key={cls.id} className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100 bg-gray-50">
+              <div>
+                <h3 className="font-bold text-gray-800">{cls.title}</h3>
+                <p className="text-xs text-gray-500">{cls.studentCount} student{cls.studentCount !== 1 ? 's' : ''} · {cls.questionCount} questions</p>
+              </div>
+              <Link href={`/teacher/class/${cls.id}`} className="text-xs text-purple-600 hover:underline font-medium">Manage class →</Link>
+            </div>
+            {cls.students.length === 0 ? (
+              <p className="text-gray-400 text-sm text-center py-8">No students enrolled</p>
+            ) : (
+              <div className="p-4 grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 xl:grid-cols-9 gap-3">
+                {cls.students.map(student => {
+                  const sub = latestSubByStudent.get(student.id)
+                  const grade = sub ? gradeBySubmission.get(sub.id) ?? null : null
+                  const displayName = (student as { nickname?: string | null }).nickname || student.full_name
+                  const avatarUrl = (student as { avatar_url?: string | null }).avatar_url
+                  return (
+                    <Link
+                      key={student.id}
+                      href={`/teacher/students/${student.id}`}
+                      className={`flex flex-col rounded-xl border-2 overflow-hidden hover:scale-105 hover:shadow-lg transition-all bg-gray-50 ${grade ? GRADE_BORDER[grade] : sub ? 'border-blue-400' : 'border-gray-200'}`}
+                    >
+                      {/* Work thumbnail */}
+                      <div className="w-full aspect-video bg-gray-100 relative overflow-hidden">
+                        {sub?.canvas_data ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={sub.canvas_data} alt="" className="w-full h-full object-contain" />
+                        ) : sub?.text_answer ? (
+                          <div className="p-1 text-xs text-gray-500 overflow-hidden h-full line-clamp-3">{sub.text_answer}</div>
+                        ) : (
+                          <div className="flex items-center justify-center h-full">
+                            <span className="text-gray-300 text-xs">No work</span>
+                          </div>
+                        )}
+                        {grade && (
+                          <span className={`absolute bottom-0.5 right-0.5 text-xs px-1 py-0.5 rounded font-bold text-white ${GRADE_BADGE[grade]}`}>
+                            {GRADE_SYMBOL[grade]}
+                          </span>
+                        )}
+                      </div>
+                      {/* Avatar + name */}
+                      <div className="flex items-center gap-1.5 px-2 py-1.5">
+                        {avatarUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={avatarUrl} alt="" className="w-5 h-5 rounded-full object-cover flex-shrink-0" />
+                        ) : (
+                          <div className="w-5 h-5 rounded-full bg-purple-200 flex items-center justify-center text-xs font-bold text-purple-700 flex-shrink-0">
+                            {displayName.charAt(0).toUpperCase()}
+                          </div>
+                        )}
+                        <span className="text-xs font-medium text-gray-700 truncate">{displayName}</span>
+                      </div>
+                    </Link>
+                  )
+                })}
+              </div>
+            )}
           </div>
-        )}
+        ))}
       </div>
 
       {/* Live alerts */}
@@ -123,11 +209,6 @@ export default async function TeacherDashboard() {
 
       {/* Quick actions */}
       <div className="grid md:grid-cols-4 gap-4">
-        <Link href="/teacher/whiteboard" className="bg-purple-700 text-white rounded-xl p-5 hover:bg-purple-800 transition-colors">
-          <div className="text-3xl mb-2">🖊️</div>
-          <h2 className="text-base font-bold mb-1">Live Whiteboard</h2>
-          <p className="text-purple-200 text-xs">Draw on screen in real time</p>
-        </Link>
         <Link href="/teacher/submissions" className="bg-indigo-700 text-white rounded-xl p-5 hover:bg-indigo-800 transition-colors">
           <div className="text-3xl mb-2">✏️</div>
           <h2 className="text-base font-bold mb-1">Review Work</h2>

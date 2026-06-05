@@ -24,11 +24,11 @@ export default async function UnitPage({ params }: { params: Promise<{ classId: 
     supabase.from('assignments').select('question_id').eq('class_id', classId),
     supabase.from('student_assignments').select('question_id').eq('student_id', studentId),
   ])
-  const classIds = new Set((classAssignments ?? []).map((a: { question_id: string }) => a.question_id))
-  const studentIds2 = new Set((studentAssignments ?? []).map((a: { question_id: string }) => a.question_id))
-  const assignedIds = (classAssignments && classAssignments.length > 0) || (studentAssignments && studentAssignments.length > 0)
-    ? new Set([...classIds, ...studentIds2]) : null
-  const questions = assignedIds ? allQuestions?.filter(q => assignedIds.has(q.id)) : allQuestions
+  const assignedIds = new Set([
+    ...(classAssignments ?? []).map((a: { question_id: string }) => a.question_id),
+    ...(studentAssignments ?? []).map((a: { question_id: string }) => a.question_id),
+  ])
+  const questions = allQuestions?.filter(q => assignedIds.has(q.id)) ?? []
 
   const questionIds = questions?.map(q => q.id) ?? []
   const { data: submissions } = questionIds.length > 0

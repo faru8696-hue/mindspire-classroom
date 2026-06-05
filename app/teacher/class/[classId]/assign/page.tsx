@@ -7,13 +7,18 @@ export default async function AssignStudentsPage({ params }: { params: Promise<{
   const { classId } = await params
   const supabase = await createAdminClient()
 
-  const [{ data: cls }, { data: students }, { data: units }] = await Promise.all([
+  const [{ data: cls }, { data: enrollments }, { data: units }] = await Promise.all([
     supabase.from('classes').select('id, title').eq('id', classId).single(),
-    supabase.from('profiles').select('id, full_name, avatar_url, nickname').eq('class_id', classId).eq('role', 'student').eq('approved', true).order('full_name'),
+    supabase.from('class_enrollments').select('student_id').eq('class_id', classId),
     supabase.from('units').select('id, title, order_index').eq('class_id', classId).order('order_index'),
   ])
 
   if (!cls) notFound()
+
+  const enrolledIds = enrollments?.map(e => e.student_id) ?? []
+  const { data: students } = enrolledIds.length > 0
+    ? await supabase.from('profiles').select('id, full_name, avatar_url, nickname').in('id', enrolledIds).eq('role', 'student').eq('approved', true).order('full_name')
+    : { data: [] as { id: string; full_name: string; avatar_url: string | null; nickname: string | null }[] }
 
   const unitIds = units?.map(u => u.id) ?? []
   const { data: topics } = unitIds.length > 0

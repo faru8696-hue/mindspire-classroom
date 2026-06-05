@@ -29,13 +29,23 @@ export default async function StudentDetailPage({ params }: { params: Promise<{ 
   const parentName = (extProfile as { parent_name?: string } | null)?.parent_name ?? null
   const parentPhone = (extProfile as { parent_phone?: string } | null)?.parent_phone ?? null
 
-  const { data: cls } = student.class_id
-    ? await supabase.from('classes').select('id, title').eq('id', student.class_id).single()
-    : { data: null }
+  // Load all enrolled classes for this student
+  const { data: studentEnrollments } = await supabase
+    .from('class_enrollments')
+    .select('class_id, classes(id, title)')
+    .eq('student_id', studentId)
 
-  // Load full content tree for the student's class
-  const { data: units } = student.class_id
-    ? await supabase.from('units').select('id, title, order_index').eq('class_id', student.class_id).order('order_index')
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const enrolledClasses = (studentEnrollments ?? []).map((e: any) => {
+    const c = e.classes
+    return Array.isArray(c) ? c[0] : c
+  }).filter(Boolean) as { id: string; title: string }[]
+
+  const enrolledClassIds = enrolledClasses.map(c => c.id)
+
+  // Load full content tree for all enrolled classes
+  const { data: units } = enrolledClassIds.length > 0
+    ? await supabase.from('units').select('id, title, order_index, class_id').in('class_id', enrolledClassIds).order('order_index')
     : { data: [] }
 
   const unitIds = units?.map(u => u.id) ?? []
@@ -50,9 +60,9 @@ export default async function StudentDetailPage({ params }: { params: Promise<{ 
 
   const questionIds = questions?.map(q => q.id) ?? []
 
-  // Filter to assigned questions only
-  const { data: assignments } = student.class_id && questionIds.length > 0
-    ? await supabase.from('assignments').select('question_id, due_date').eq('class_id', student.class_id)
+  // Filter to assigned questions only (across all enrolled classes)
+  const { data: assignments } = enrolledClassIds.length > 0 && questionIds.length > 0
+    ? await supabase.from('assignments').select('question_id, due_date').in('class_id', enrolledClassIds)
     : { data: [] }
   const assignedSet = assignments && assignments.length > 0
     ? new Set(assignments.map((a: { question_id: string }) => a.question_id))
@@ -144,10 +154,10 @@ export default async function StudentDetailPage({ params }: { params: Promise<{ 
               <p className="text-sm text-gray-700">{parentPhone}</p>
             </div>
           )}
-          {cls && (
+          {enrolledClasses.length > 0 && (
             <div>
-              <p className="text-xs text-gray-400 uppercase tracking-wide">Class</p>
-              <p className="text-sm text-gray-700">{cls.title}</p>
+              <p className="text-xs text-gray-400 uppercase tracking-wide">Class{enrolledClasses.length > 1 ? 'es' : ''}</p>
+              <p className="text-sm text-gray-700">{enrolledClasses.map(c => c.title).join(', ')}</p>
             </div>
           )}
         </div>
@@ -158,7 +168,7 @@ export default async function StudentDetailPage({ params }: { params: Promise<{ 
         <div className="flex items-start justify-between mt-3">
           <div>
             <h1 className="text-2xl font-bold text-purple-900">{student.full_name}</h1>
-            {cls && <p className="text-sm text-gray-500 mt-0.5">{cls.title}</p>}
+            {enrolledClasses.length > 0 && <p className="text-sm text-gray-500 mt-0.5">{enrolledClasses.map(c => c.title).join(' · ')}</p>}
           </div>
           <div className="flex gap-3 text-sm flex-shrink-0">
             <span className="bg-gray-100 text-gray-600 px-3 py-1.5 rounded-full">{totalSubmitted}/{totalAssigned} submitted</span>
@@ -231,7 +241,7 @@ export default async function StudentDetailPage({ params }: { params: Promise<{ 
 
                         {/* Question info */}
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-gray-800 truncate">{q.title}</p>
+                          <Link href={`/teacher/questions/${q.id}`} className="text-sm font-medium text-gray-800 hover:text-purple-700 hover:underline truncate block">{q.title}</Link>
                           <div className="flex items-center gap-3 mt-0.5 flex-wrap">
                             {dueDate && (
                               <span className="text-xs text-gray-400">Due {new Date(dueDate).toLocaleDateString()}</span>

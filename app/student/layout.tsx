@@ -33,11 +33,10 @@ export default async function StudentLayout({ children }: { children: React.Reac
 
   return (
     <div className="min-h-screen flex flex-col">
-      <nav className="bg-purple-900 text-white px-6 py-3 flex items-center justify-between shadow-lg">
+      <nav className="sticky top-0 bg-purple-900 text-white px-6 py-3 flex items-center justify-between shadow-lg z-50">
         <div className="flex items-center gap-4">
-          <span className="font-bold text-lg">⚛️ Mindspire Lab</span>
-          <Link href="/student" className="text-purple-200 hover:text-white text-sm transition-colors">My Units</Link>
-          <Link href="/student/whiteboard" className="text-purple-200 hover:text-white text-sm transition-colors">Live Board</Link>
+          <Link href="/student" className="font-bold text-lg cursor-pointer hover:opacity-80 transition-opacity">⚛️ Mindspire Lab</Link>
+          <Link href="/student" className="text-purple-200 hover:text-white text-sm transition-colors">My Classes</Link>
           <Link href="/student/profile" className="text-purple-200 hover:text-white text-sm transition-colors">Profile</Link>
         </div>
         <div className="flex items-center gap-4">
