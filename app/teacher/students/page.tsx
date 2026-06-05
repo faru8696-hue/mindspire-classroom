@@ -1,33 +1,33 @@
-import { createClient, createAdminClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import Link from 'next/link'
 
 async function approveStudent(formData: FormData) {
   'use server'
-  const supabase = await createClient()
+  const admin = await createAdminClient()
   const id = formData.get('id') as string
   const classId = formData.get('class_id') as string
-  await supabase.from('profiles').update({ approved: true }).eq('id', id)
+  await admin.from('profiles').update({ approved: true }).eq('id', id)
   if (classId) {
-    await supabase.from('class_enrollments').upsert({ student_id: id, class_id: classId })
+    await admin.from('class_enrollments').upsert({ student_id: id, class_id: classId })
   }
   revalidatePath('/teacher/students')
 }
 
 async function enrollInClass(formData: FormData) {
   'use server'
-  const supabase = await createClient()
+  const admin = await createAdminClient()
   const studentId = formData.get('student_id') as string
   const classId = formData.get('class_id') as string
   if (!classId) return
-  await supabase.from('class_enrollments').upsert({ student_id: studentId, class_id: classId })
+  await admin.from('class_enrollments').upsert({ student_id: studentId, class_id: classId })
   revalidatePath('/teacher/students')
 }
 
 async function unenrollFromClass(formData: FormData) {
   'use server'
-  const supabase = await createClient()
-  await supabase.from('class_enrollments')
+  const admin = await createAdminClient()
+  await admin.from('class_enrollments')
     .delete()
     .eq('student_id', formData.get('student_id') as string)
     .eq('class_id', formData.get('class_id') as string)
@@ -36,10 +36,10 @@ async function unenrollFromClass(formData: FormData) {
 
 async function removeStudent(formData: FormData) {
   'use server'
-  const supabase = await createClient()
+  const admin = await createAdminClient()
   const id = formData.get('id') as string
-  await supabase.from('profiles').update({ approved: false }).eq('id', id)
-  await supabase.from('class_enrollments').delete().eq('student_id', id)
+  await admin.from('profiles').update({ approved: false }).eq('id', id)
+  await admin.from('class_enrollments').delete().eq('student_id', id)
   revalidatePath('/teacher/students')
 }
 
