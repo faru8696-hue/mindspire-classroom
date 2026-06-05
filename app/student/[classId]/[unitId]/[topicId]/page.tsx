@@ -21,9 +21,15 @@ export default async function TopicPage({ params }: { params: Promise<{ classId:
     supabase.from('classes').select('id').eq('id', classId).single(),
   ])
 
-  // Filter to only assigned questions (if any assignments exist for this class)
-  const { data: assignments } = await supabase.from('assignments').select('question_id').eq('class_id', classId)
-  const assignedIds = assignments && assignments.length > 0 ? new Set(assignments.map((a: { question_id: string }) => a.question_id)) : null
+  // Show union of class-level and student-level assignments; if neither exists show all
+  const [{ data: classAssignments }, { data: studentAssignments }] = await Promise.all([
+    supabase.from('assignments').select('question_id').eq('class_id', classId),
+    supabase.from('student_assignments').select('question_id').eq('student_id', studentId),
+  ])
+  const classIds = new Set((classAssignments ?? []).map((a: { question_id: string }) => a.question_id))
+  const studentIds2 = new Set((studentAssignments ?? []).map((a: { question_id: string }) => a.question_id))
+  const assignedIds = (classAssignments && classAssignments.length > 0) || (studentAssignments && studentAssignments.length > 0)
+    ? new Set([...classIds, ...studentIds2]) : null
   const questions = assignedIds ? allQuestions?.filter(q => assignedIds.has(q.id)) : allQuestions
 
   if (!topic) notFound()

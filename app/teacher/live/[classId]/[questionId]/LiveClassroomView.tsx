@@ -221,9 +221,19 @@ export default function LiveClassroomView({
                       <span className="text-white text-xs font-bold bg-black/50 px-2 py-1 rounded-lg">Click to expand</span>
                     </div>
                   </div>
-                  <div className="px-2 py-1.5 bg-gray-800">
-                    <p className="text-xs font-semibold text-white truncate">{student.full_name}</p>
-                    <p className="text-xs text-gray-400">{needsHelp ? '🙋 Needs help' : isDone ? '✓ Done' : grade ? grade : sub ? 'In progress' : 'Not started'}</p>
+                  <div className="px-2 py-1.5 bg-gray-800 flex items-center justify-between gap-1">
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-white truncate">{student.full_name}</p>
+                      <p className="text-xs text-gray-400">{needsHelp ? '🙋 Needs help' : isDone ? '✓ Done' : grade ? grade : sub ? 'In progress' : 'Not started'}</p>
+                    </div>
+                    <Link
+                      href={`/teacher/students/${student.id}`}
+                      onClick={e => e.stopPropagation()}
+                      className="text-gray-500 hover:text-purple-400 flex-shrink-0 text-xs leading-none"
+                      title="View student's questions"
+                    >
+                      ↗
+                    </Link>
                   </div>
                 </button>
               )

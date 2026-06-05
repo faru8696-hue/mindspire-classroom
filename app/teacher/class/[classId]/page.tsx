@@ -76,7 +76,12 @@ export default async function ClassDetailPage({ params }: { params: Promise<{ cl
       <div className="flex items-center gap-3 mb-2">
         <Link href="/teacher" className="text-purple-600 text-sm hover:underline">← Dashboard</Link>
       </div>
-      <h1 className="text-2xl font-bold text-purple-900">{cls.title}</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-purple-900">{cls.title}</h1>
+        <Link href={`/teacher/class/${classId}/assign`} className="text-sm bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg font-medium">
+          Assign to Students →
+        </Link>
+      </div>
 
       {/* Student Progress Table */}
       <section>
