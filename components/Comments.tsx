@@ -51,14 +51,33 @@ export default function Comments({ questionId, studentId, currentUserId, current
       .order('created_at')
       .then(({ data }) => setComments((data as unknown as Comment[]) ?? []))
 
-    // Listen for new comments via Broadcast (bypasses RLS, instant delivery)
+    // Listen for new comments + grade notifications via Broadcast
     const ch = channelRef.current
     ch.on('broadcast', { event: 'new-comment' }, ({ payload }) => {
       const incoming = payload as Comment
-      // Only play sound if the message is from someone else
       if (incoming.author_id !== currentUserId) playPing()
       setComments(prev => [...prev, incoming])
-    }).subscribe()
+    })
+    ch.on('broadcast', { event: 'grade-update' }, ({ payload }) => {
+      const { grade } = payload as { grade: string }
+      // Play a distinct tone for grade notification
+      try {
+        if (!audioRef.current) audioRef.current = new AudioContext()
+        const ctx = audioRef.current
+        const freqs = grade === 'correct' ? [523, 659, 784] : grade === 'partial' ? [523, 659] : [392, 330]
+        freqs.forEach((freq, i) => {
+          const osc = ctx.createOscillator()
+          const gain = ctx.createGain()
+          osc.connect(gain); gain.connect(ctx.destination)
+          osc.frequency.value = freq
+          gain.gain.setValueAtTime(0.3, ctx.currentTime + i * 0.15)
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.15 + 0.4)
+          osc.start(ctx.currentTime + i * 0.15)
+          osc.stop(ctx.currentTime + i * 0.15 + 0.4)
+        })
+      } catch {}
+    })
+    ch.subscribe()
 
     return () => { supabase.removeChannel(ch) }
   }, [questionId, studentId])
