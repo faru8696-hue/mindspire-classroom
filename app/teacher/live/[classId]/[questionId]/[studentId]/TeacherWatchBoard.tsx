@@ -92,10 +92,11 @@ export default function TeacherWatchBoard({
 
   async function notifyStudent(newGrade: string | null, feedback: string) {
     if (!newGrade) return
-    // Insert into student_notifications — student listens via realtime
-    await supabase.from('student_notifications').insert(
-      { student_id: studentId, question_id: questionId, grade: newGrade, feedback: feedback || null, read: false }
-    )
+    await fetch('/api/notify-student', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ studentId, questionId, grade: newGrade, feedback: feedback || null }),
+    })
   }
 
   async function applyGrade(g: string) {

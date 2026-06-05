@@ -66,11 +66,10 @@ export default function StudentNotificationBell({ classIds, studentId }: { class
     if (!studentId) return
     const ch = supabase.channel(`bell-notifs:${studentId}`)
       .on('postgres_changes', {
-        event: '*', schema: 'public', table: 'student_notifications',
-        filter: `student_id=eq.${studentId}`,
+        event: 'INSERT', schema: 'public', table: 'student_notifications',
       }, (payload) => {
-        const row = payload.new as { question_id: string; grade: string | null; feedback: string | null; created_at: string }
-        if (!row.grade) return
+        const row = payload.new as { student_id: string; question_id: string; grade: string | null; feedback: string | null; created_at: string }
+        if (row.student_id !== studentId || !row.grade) return
         const toastId = `grade:${row.question_id}:${Date.now()}`
         setToasts(prev => [{ id: toastId, type: 'grade', question_id: row.question_id, class_id: '', created_at: row.created_at, grade: row.grade!, feedback: row.feedback ?? '' }, ...prev.slice(0, 9)])
         setNewCount(c => c + 1)

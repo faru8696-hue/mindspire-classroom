@@ -67,11 +67,10 @@ export default function StudentGradeNotifications({ studentId }: { studentId: st
   useEffect(() => {
     const ch = supabase.channel(`dashboard-notifs:${studentId}`)
       .on('postgres_changes', {
-        event: '*', schema: 'public', table: 'student_notifications',
-        filter: `student_id=eq.${studentId}`,
+        event: 'INSERT', schema: 'public', table: 'student_notifications',
       }, async (payload) => {
-        const row = payload.new as { id: string; grade: string | null; question_id: string }
-        if (!row.grade) return
+        const row = payload.new as { id: string; student_id: string; grade: string | null; question_id: string }
+        if (row.student_id !== studentId || !row.grade) return
         const { data } = await supabase
           .from('student_notifications')
           .select('id, grade, feedback, read, created_at, question_id, questions(id, title, topic_id, topics(id, unit_id, units(id, class_id, classes(id, title))))')
