@@ -3,8 +3,6 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import StudentsClient from './StudentsClient'
 
-export const dynamic = 'force-dynamic'
-
 async function approveStudent(formData: FormData) {
   'use server'
   const admin = await createAdminClient()
