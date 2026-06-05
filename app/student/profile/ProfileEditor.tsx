@@ -5,15 +5,45 @@ import { createClient } from '@/lib/supabase/client'
 
 interface Props {
   userId: string
+  email: string
   initialFullName: string
   initialNickname: string
   initialAvatarUrl: string | null
+  initialGradeLevel: string
+  initialPhone: string
+  initialParentName: string
+  initialParentPhone: string
 }
 
-export default function ProfileEditor({ userId, initialFullName, initialNickname, initialAvatarUrl }: Props) {
+function Field({ label, value, onChange, type = 'text', placeholder }: {
+  label: string; value: string; onChange: (v: string) => void; type?: string; placeholder?: string
+}) {
+  return (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+      <input
+        type={type}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400 placeholder-gray-400"
+      />
+    </div>
+  )
+}
+
+export default function ProfileEditor({
+  userId, email,
+  initialFullName, initialNickname, initialAvatarUrl,
+  initialGradeLevel, initialPhone, initialParentName, initialParentPhone,
+}: Props) {
   const supabase = createClient()
   const [fullName, setFullName] = useState(initialFullName)
   const [nickname, setNickname] = useState(initialNickname)
+  const [gradeLevel, setGradeLevel] = useState(initialGradeLevel)
+  const [phone, setPhone] = useState(initialPhone)
+  const [parentName, setParentName] = useState(initialParentName)
+  const [parentPhone, setParentPhone] = useState(initialParentPhone)
   const [avatarUrl, setAvatarUrl] = useState<string | null>(initialAvatarUrl)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -39,6 +69,10 @@ export default function ProfileEditor({ userId, initialFullName, initialNickname
     const { error: err } = await supabase.from('profiles').update({
       full_name: fullName,
       nickname: nickname || null,
+      grade_level: gradeLevel || null,
+      phone: phone || null,
+      parent_name: parentName || null,
+      parent_phone: parentPhone || null,
     }).eq('id', userId)
     setSaving(false)
     if (err) { setError(err.message); return }
@@ -46,7 +80,7 @@ export default function ProfileEditor({ userId, initialFullName, initialNickname
     setTimeout(() => setSaved(false), 2000)
   }
 
-  const initials = (fullName || nickname || '?').charAt(0).toUpperCase()
+  const initials = (nickname || fullName || '?').charAt(0).toUpperCase()
 
   return (
     <div className="bg-white rounded-2xl border border-gray-200 p-6 space-y-6">
@@ -55,7 +89,7 @@ export default function ProfileEditor({ userId, initialFullName, initialNickname
         <button
           onClick={() => fileInputRef.current?.click()}
           className="relative w-24 h-24 rounded-full overflow-hidden border-4 border-purple-200 hover:border-purple-400 transition-colors focus:outline-none group"
-          title="Click to change avatar"
+          title="Click to change photo"
         >
           {avatarUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -69,38 +103,35 @@ export default function ProfileEditor({ userId, initialFullName, initialNickname
             <span className="text-white text-xs font-semibold">Change</span>
           </div>
         </button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          className="hidden"
-          onChange={handleAvatarChange}
-        />
-        <p className="text-xs text-gray-400">Click avatar to upload a new photo</p>
+        <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
+        <p className="text-xs text-gray-400">Click to upload a photo</p>
       </div>
 
-      {/* Fields */}
+      {/* Read-only email */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+        <div className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-500 bg-gray-50">{email}</div>
+      </div>
+
+      {/* Section: Your info */}
       <div className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
-          <input
-            value={fullName}
-            onChange={e => setFullName(e.target.value)}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Nickname <span className="text-gray-400 font-normal">(optional)</span></label>
-          <input
-            value={nickname}
-            onChange={e => setNickname(e.target.value)}
-            placeholder="What should we call you?"
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400 placeholder-gray-400"
-          />
-        </div>
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Your Info</p>
+        <Field label="Full Name" value={fullName} onChange={setFullName} placeholder="Your full name" />
+        <Field label="Nickname" value={nickname} onChange={setNickname} placeholder="What should we call you?" />
+        <Field label="Grade Level" value={gradeLevel} onChange={setGradeLevel} placeholder="e.g. 10th grade, Junior…" />
+        <Field label="Phone Number" value={phone} onChange={setPhone} type="tel" placeholder="Your phone number" />
       </div>
 
-      <p className="text-xs text-gray-400 bg-gray-50 rounded-lg px-3 py-2">Phone and grade info managed by your teacher.</p>
+      {/* Section: Parent/Guardian */}
+      <div className="space-y-4">
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Parent / Guardian</p>
+        <Field label="Parent / Guardian Name" value={parentName} onChange={setParentName} placeholder="Full name" />
+        <Field label="Parent / Guardian Phone" value={parentPhone} onChange={setParentPhone} type="tel" placeholder="Phone number" />
+      </div>
+
+      <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+        🔒 Your phone, parent info, and grade level are only visible to your teacher — not to other students.
+      </p>
 
       {error && <p className="text-sm text-red-600">{error}</p>}
 
@@ -109,7 +140,7 @@ export default function ProfileEditor({ userId, initialFullName, initialNickname
         disabled={saving}
         className={`w-full py-2.5 rounded-xl font-semibold text-sm transition-colors ${saved ? 'bg-green-500 text-white' : 'bg-purple-600 hover:bg-purple-500 text-white'} disabled:opacity-60`}
       >
-        {saved ? '✓ Saved!' : saving ? 'Saving...' : 'Save Changes'}
+        {saved ? '✓ Saved!' : saving ? 'Saving…' : 'Save Changes'}
       </button>
     </div>
   )

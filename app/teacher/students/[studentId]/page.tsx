@@ -12,7 +12,7 @@ export default async function StudentDetailPage({ params }: { params: Promise<{ 
   const { studentId } = await params
   const supabase = await createAdminClient()
 
-  const { data: student } = await supabase.from('profiles').select('id, full_name, class_id, nickname, avatar_url, grade_level, phone, email').eq('id', studentId).single()
+  const { data: student } = await supabase.from('profiles').select('id, full_name, class_id, nickname, avatar_url, grade_level, phone, parent_name, parent_phone, email').eq('id', studentId).single()
   if (!student) notFound()
 
   const { data: cls } = student.class_id
@@ -114,8 +114,20 @@ export default async function StudentDetailPage({ params }: { params: Promise<{ 
           )}
           {student.phone && (
             <div>
-              <p className="text-xs text-gray-400 uppercase tracking-wide">Phone</p>
+              <p className="text-xs text-gray-400 uppercase tracking-wide">Student Phone</p>
               <p className="text-sm text-gray-700">{student.phone}</p>
+            </div>
+          )}
+          {(student as { parent_name?: string }).parent_name && (
+            <div>
+              <p className="text-xs text-gray-400 uppercase tracking-wide">Parent / Guardian</p>
+              <p className="text-sm text-gray-700">{(student as { parent_name?: string }).parent_name}</p>
+            </div>
+          )}
+          {(student as { parent_phone?: string }).parent_phone && (
+            <div>
+              <p className="text-xs text-gray-400 uppercase tracking-wide">Parent Phone</p>
+              <p className="text-sm text-gray-700">{(student as { parent_phone?: string }).parent_phone}</p>
             </div>
           )}
           {cls && (
