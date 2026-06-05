@@ -57,23 +57,22 @@ export default function StudentBoardPage({
     return () => { supabase.removeChannel(channelRef.current) }
   }, [])
 
-  // Listen for grade via Postgres Changes on feedback table (reliable, no broadcast needed)
+  // Listen for grade via student_notifications table
   useEffect(() => {
-    if (!submissionId) return
-    const ch = supabase.channel(`feedback-watch:${submissionId}`)
+    const ch = supabase.channel(`student-notifs:${studentId}:${questionId}`)
       .on('postgres_changes', {
-        event: '*', schema: 'public', table: 'feedback',
-        filter: `submission_id=eq.${submissionId}`,
+        event: '*', schema: 'public', table: 'student_notifications',
+        filter: `student_id=eq.${studentId}`,
       }, (payload) => {
-        const row = payload.new as { grade: string | null; text_feedback: string | null }
-        if (!row.grade) return
-        setGradeToast({ grade: row.grade, feedback: row.text_feedback ?? '' })
+        const row = payload.new as { question_id: string; grade: string | null; feedback: string | null }
+        if (!row.grade || row.question_id !== questionId) return
+        setGradeToast({ grade: row.grade, feedback: row.feedback ?? '' })
         playTone(row.grade === 'correct' ? 660 : row.grade === 'partial' ? 520 : 330)
         setTimeout(() => setGradeToast(null), 8000)
       })
       .subscribe()
     return () => { supabase.removeChannel(ch) }
-  }, [submissionId])
+  }, [studentId, questionId])
 
   async function saveStudent(dataUrl: string) {
     const { data } = await supabase.from('submissions').upsert({

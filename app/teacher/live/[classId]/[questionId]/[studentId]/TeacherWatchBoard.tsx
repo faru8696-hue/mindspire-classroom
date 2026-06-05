@@ -92,9 +92,10 @@ export default function TeacherWatchBoard({
 
   async function notifyStudent(newGrade: string | null, feedback: string) {
     if (!newGrade) return
-    const payload = { question_id: questionId, grade: newGrade, feedback }
-    await studentChannel.send({ type: 'broadcast', event: 'grade-received', payload })
-    await studentBellChannel.send({ type: 'broadcast', event: 'grade-received', payload })
+    // Insert into student_notifications — student listens via realtime
+    await supabase.from('student_notifications').insert(
+      { student_id: studentId, question_id: questionId, grade: newGrade, feedback: feedback || null, read: false }
+    )
   }
 
   async function applyGrade(g: string) {
