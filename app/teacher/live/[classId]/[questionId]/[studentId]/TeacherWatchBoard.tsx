@@ -40,6 +40,8 @@ export default function TeacherWatchBoard({
 }: Props) {
   const supabase = createClient()
   const gradeChannel = supabase.channel(`live-grades:${classId}:${questionId}`)
+  // Channel to push grade notifications to the specific student
+  const studentChannel = supabase.channel(`student-feedback:${studentId}`)
   const [grade, setGrade] = useState<string | null>(initialGrade)
   const [feedbackText, setFeedbackText] = useState(initialFeedbackText ?? '')
   const [saving, setSaving] = useState(false)
@@ -79,6 +81,14 @@ export default function TeacherWatchBoard({
     )
   }
 
+  async function notifyStudent(newGrade: string | null, feedback: string) {
+    if (!newGrade) return
+    await studentChannel.send({
+      type: 'broadcast', event: 'grade-received',
+      payload: { question_id: questionId, grade: newGrade, feedback },
+    })
+  }
+
   async function applyGrade(g: string) {
     const newGrade = grade === g ? null : g
     setGrade(newGrade)
@@ -88,11 +98,11 @@ export default function TeacherWatchBoard({
       { submission_id: submissionId, grade: newGrade, text_feedback: feedbackText || null },
       { onConflict: 'submission_id' }
     )
-    // Broadcast so LiveClassroomView updates instantly without relying on postgres_changes
     await gradeChannel.send({
       type: 'broadcast', event: 'grade-update',
       payload: { student_id: studentId, grade: newGrade },
     })
+    await notifyStudent(newGrade, feedbackText)
     setSaving(false)
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
@@ -105,6 +115,7 @@ export default function TeacherWatchBoard({
       { submission_id: submissionId, grade, text_feedback: feedbackText || null },
       { onConflict: 'submission_id' }
     )
+    await notifyStudent(grade, feedbackText)
     setSaving(false)
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)

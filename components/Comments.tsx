@@ -25,6 +25,21 @@ export default function Comments({ questionId, studentId, currentUserId, current
   const [sending, setSending] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const channelRef = useRef(supabase.channel(`comments:${questionId}:${studentId}`))
+  const audioRef = useRef<AudioContext | null>(null)
+
+  function playPing() {
+    try {
+      if (!audioRef.current) audioRef.current = new AudioContext()
+      const ctx = audioRef.current
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.connect(gain); gain.connect(ctx.destination)
+      osc.frequency.value = 740
+      gain.gain.setValueAtTime(0.2, ctx.currentTime)
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3)
+      osc.start(); osc.stop(ctx.currentTime + 0.3)
+    } catch {}
+  }
 
   useEffect(() => {
     // Load existing comments
@@ -39,7 +54,10 @@ export default function Comments({ questionId, studentId, currentUserId, current
     // Listen for new comments via Broadcast (bypasses RLS, instant delivery)
     const ch = channelRef.current
     ch.on('broadcast', { event: 'new-comment' }, ({ payload }) => {
-      setComments(prev => [...prev, payload as Comment])
+      const incoming = payload as Comment
+      // Only play sound if the message is from someone else
+      if (incoming.author_id !== currentUserId) playPing()
+      setComments(prev => [...prev, incoming])
     }).subscribe()
 
     return () => { supabase.removeChannel(ch) }
