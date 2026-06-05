@@ -67,6 +67,18 @@ export default function StudentsClient({
     setLoading(null)
   }
 
+  async function deleteStudent(studentId: string, name: string) {
+    if (!confirm(`Permanently delete ${name}? This will remove all their submissions, grades, and account data. This cannot be undone.`)) return
+    setLoading(`delete-${studentId}`)
+    const res = await fetch('/api/enroll', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ studentId, action: 'delete' }),
+    })
+    if (res.ok) router.refresh()
+    setLoading(null)
+  }
+
   return (
     <div className="space-y-2">
       {error && (
@@ -145,6 +157,13 @@ export default function StudentsClient({
                 className="bg-red-100 hover:bg-red-200 text-red-700 text-sm px-3 py-2 rounded-lg transition-colors disabled:opacity-50"
               >
                 Remove
+              </button>
+              <button
+                onClick={() => deleteStudent(student.id, student.full_name)}
+                disabled={loading === `delete-${student.id}`}
+                className="bg-red-600 hover:bg-red-700 text-white text-sm px-3 py-2 rounded-lg transition-colors disabled:opacity-50"
+              >
+                {loading === `delete-${student.id}` ? 'Deleting...' : 'Delete'}
               </button>
             </div>
           </div>

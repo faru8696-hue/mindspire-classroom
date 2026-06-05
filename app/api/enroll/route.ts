@@ -23,6 +23,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true })
   }
 
+  if (action === 'delete') {
+    // Delete all related data then the auth user
+    await admin.from('notifications').delete().eq('student_id', studentId)
+    await admin.from('class_enrollments').delete().eq('student_id', studentId)
+    await admin.from('student_assignments').delete().eq('student_id', studentId)
+    const { data: subs } = await admin.from('submissions').select('id').eq('student_id', studentId)
+    const subIds = (subs ?? []).map((s: { id: string }) => s.id)
+    if (subIds.length > 0) {
+      await admin.from('feedback').delete().in('submission_id', subIds)
+      await admin.from('submissions').delete().eq('student_id', studentId)
+    }
+    await admin.from('profiles').delete().eq('id', studentId)
+    await admin.auth.admin.deleteUser(studentId)
+    return NextResponse.json({ ok: true })
+  }
+
   if (!classId) {
     return NextResponse.json({ error: 'Missing classId' }, { status: 400 })
   }
