@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation'
-import { createAdminClient, createClient } from '@/lib/supabase/server'
+import { createClient } from '@/lib/supabase/server'
+import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
 import Link from 'next/link'
 import { logout } from '@/app/actions/auth'
 import TeacherNotificationBell from '@/components/TeacherNotificationBell'
@@ -18,7 +19,7 @@ export default async function TeacherLayout({ children }: { children: React.Reac
   if (!profile || profile.role !== 'teacher') redirect('/')
 
   // Load recent unread notifications for the bell
-  const admin = await createAdminClient()
+  const admin = createSupabaseAdmin(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
   const { data: notifs } = await admin
     .from('notifications')
     .select('id, type, student_id, question_id, class_id, created_at, read, profiles:profiles!notifications_student_id_fkey(full_name), questions:questions!notifications_question_id_fkey(title)')

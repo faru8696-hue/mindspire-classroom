@@ -1,9 +1,13 @@
-import { createAdminClient } from '@/lib/supabase/server'
+import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
 import Link from 'next/link'
 import LiveNotificationFeed from '@/components/LiveNotificationFeed'
 
+function adminDb() {
+  return createSupabaseAdmin(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+}
+
 export default async function TeacherDashboard() {
-  const supabase = await createAdminClient()
+  const supabase = adminDb()
 
   const [
     { count: studentCount },
@@ -64,6 +68,14 @@ export default async function TeacherDashboard() {
     .select('id, student_id, question_id, updated_at, profiles(full_name), questions(title, topic_id)')
     .order('updated_at', { ascending: false })
     .limit(8)
+
+  // Recent notifications
+  type RecentNotif = { id: string; type: string; created_at: string; read: boolean; profiles: { full_name: string } | null; questions: { title: string } | null }
+  const { data: recentNotifs } = await supabase
+    .from('notifications')
+    .select('id, type, created_at, read, profiles:profiles!notifications_student_id_fkey(full_name), questions:questions!notifications_question_id_fkey(title)')
+    .order('created_at', { ascending: false })
+    .limit(10)
 
   // Latest feedback per submission
   const subIds = (latestSubs ?? []).map(s => s.id)
@@ -215,6 +227,33 @@ export default async function TeacherDashboard() {
           </div>
         ))}
       </div>
+
+      {/* Notifications panel */}
+      {(recentNotifs ?? []).length > 0 && (
+        <div>
+          <h2 className="text-lg font-semibold text-gray-800 mb-3">🔔 Student Alerts</h2>
+          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden divide-y divide-gray-50">
+            {(recentNotifs as unknown as RecentNotif[]).map(n => {
+              const studentName = Array.isArray(n.profiles) ? n.profiles[0]?.full_name : n.profiles?.full_name
+              const questionTitle = Array.isArray(n.questions) ? n.questions[0]?.title : n.questions?.title
+              const minutesAgo = Math.round((Date.now() - new Date(n.created_at).getTime()) / 60000)
+              const timeLabel = minutesAgo < 60 ? `${minutesAgo}m ago` : minutesAgo < 1440 ? `${Math.round(minutesAgo / 60)}h ago` : `${Math.round(minutesAgo / 1440)}d ago`
+              const icon = n.type === 'help' ? '🆘' : n.type === 'submitted' ? '✅' : '📬'
+              const label = n.type === 'help' ? 'asked for help' : n.type === 'submitted' ? 'submitted work' : n.type
+              return (
+                <div key={n.id} className={`flex items-center gap-4 px-5 py-3 ${n.read ? 'opacity-50' : ''}`}>
+                  <span className="text-xl flex-shrink-0">{icon}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-gray-800"><span className="font-semibold">{studentName}</span> {label}</p>
+                    {questionTitle && <p className="text-xs text-gray-400 truncate">{questionTitle}</p>}
+                  </div>
+                  <span className="text-xs text-gray-400 flex-shrink-0">{timeLabel}</span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Recent submissions feed */}
       {(recentSubs ?? []).length > 0 && (
