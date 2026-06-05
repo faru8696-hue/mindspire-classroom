@@ -1,6 +1,9 @@
 import { createAdminClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
+import StudentsClient from './StudentsClient'
+
+export const dynamic = 'force-dynamic'
 
 async function approveStudent(formData: FormData) {
   'use server'
@@ -11,35 +14,6 @@ async function approveStudent(formData: FormData) {
   if (classId) {
     await admin.from('class_enrollments').upsert({ student_id: id, class_id: classId })
   }
-  redirect('/teacher/students')
-}
-
-async function enrollInClass(formData: FormData) {
-  'use server'
-  const admin = await createAdminClient()
-  const studentId = formData.get('student_id') as string
-  const classId = formData.get('class_id') as string
-  if (!classId) redirect('/teacher/students')
-  await admin.from('class_enrollments').upsert({ student_id: studentId, class_id: classId })
-  redirect('/teacher/students')
-}
-
-async function unenrollFromClass(formData: FormData) {
-  'use server'
-  const admin = await createAdminClient()
-  await admin.from('class_enrollments')
-    .delete()
-    .eq('student_id', formData.get('student_id') as string)
-    .eq('class_id', formData.get('class_id') as string)
-  redirect('/teacher/students')
-}
-
-async function removeStudent(formData: FormData) {
-  'use server'
-  const admin = await createAdminClient()
-  const id = formData.get('id') as string
-  await admin.from('profiles').update({ approved: false }).eq('id', id)
-  await admin.from('class_enrollments').delete().eq('student_id', id)
   redirect('/teacher/students')
 }
 
@@ -106,69 +80,11 @@ export default async function StudentsPage() {
         {!approved?.length ? (
           <p className="text-gray-500">No approved students yet.</p>
         ) : (
-          <div className="space-y-2">
-            {approved.map((student) => {
-              const enrolledClassIds = enrollmentMap.get(student.id) ?? []
-              const enrolledClasses = classes?.filter(c => enrolledClassIds.includes(c.id)) ?? []
-              const unenrolledClasses = classes?.filter(c => !enrolledClassIds.includes(c.id)) ?? []
-
-              return (
-                <div key={student.id} className="bg-white border border-gray-200 rounded-xl p-4 flex items-start justify-between flex-wrap gap-3">
-                  <div className="flex items-center gap-3">
-                    {student.avatar_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={student.avatar_url} alt="" className="w-10 h-10 rounded-full object-cover border border-gray-200 flex-shrink-0" />
-                    ) : (
-                      <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center text-sm font-bold text-purple-600 flex-shrink-0">
-                        {(student.full_name || '?').charAt(0).toUpperCase()}
-                      </div>
-                    )}
-                    <div>
-                      <Link href={`/teacher/students/${student.id}`} className="font-semibold text-gray-800 hover:text-purple-700 hover:underline">
-                        {student.full_name}
-                      </Link>
-                      <p className="text-sm text-gray-500">{student.email}</p>
-                      {/* Enrolled class tags */}
-                      <div className="flex flex-wrap gap-1 mt-1.5">
-                        {enrolledClasses.length === 0 ? (
-                          <span className="text-xs text-gray-400 italic">No classes</span>
-                        ) : enrolledClasses.map(c => (
-                          <form key={c.id} action={unenrollFromClass} className="inline-flex">
-                            <input type="hidden" name="student_id" value={student.id} />
-                            <input type="hidden" name="class_id" value={c.id} />
-                            <button className="inline-flex items-center gap-1 bg-purple-100 text-purple-700 text-xs px-2 py-0.5 rounded-full hover:bg-red-100 hover:text-red-600 transition-colors group">
-                              {c.title}
-                              <span className="text-purple-400 group-hover:text-red-500">✕</span>
-                            </button>
-                          </form>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    {unenrolledClasses.length > 0 && (
-                      <form action={enrollInClass} className="flex items-center gap-2">
-                        <input type="hidden" name="student_id" value={student.id} />
-                        <select name="class_id" className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400">
-                          <option value="">Add to class...</option>
-                          {unenrolledClasses.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}
-                        </select>
-                        <button className="bg-purple-600 hover:bg-purple-700 text-white text-sm px-3 py-2 rounded-lg transition-colors">
-                          Add
-                        </button>
-                      </form>
-                    )}
-                    <form action={removeStudent}>
-                      <input type="hidden" name="id" value={student.id} />
-                      <button className="bg-red-100 hover:bg-red-200 text-red-700 text-sm px-3 py-2 rounded-lg transition-colors">
-                        Remove
-                      </button>
-                    </form>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
+          <StudentsClient
+            approved={(approved ?? []).map(s => ({ id: s.id, full_name: s.full_name, email: s.email, avatar_url: s.avatar_url }))}
+            classes={classes ?? []}
+            initialEnrollments={allEnrollments ?? []}
+          />
         )}
       </div>
     </div>
