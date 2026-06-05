@@ -1,23 +1,27 @@
 'use client'
 
 import { useState, useEffect, Suspense } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
 function ResetPasswordForm() {
   const supabase = createClient()
   const router = useRouter()
-  const searchParams = useSearchParams()
+  const [ready, setReady] = useState(false)
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [status, setStatus] = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
   const [error, setError] = useState('')
 
-  // Supabase sends access_token in the URL hash — exchange it for a session
   useEffect(() => {
-    supabase.auth.onAuthStateChange((event) => {
-      if (event === 'PASSWORD_RECOVERY') setStatus('idle')
+    // Supabase puts the token in the URL hash — we need to let the client SDK
+    // detect the PASSWORD_RECOVERY event before allowing the form to submit
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setReady(true)
+      }
     })
+    return () => subscription.unsubscribe()
   }, [])
 
   async function handleSubmit(e: React.FormEvent) {
@@ -27,8 +31,13 @@ function ResetPasswordForm() {
     setStatus('loading')
     setError('')
     const { error } = await supabase.auth.updateUser({ password })
-    if (error) { setError(error.message); setStatus('error') }
-    else { setStatus('done'); setTimeout(() => router.push('/student'), 2000) }
+    if (error) {
+      setError(error.message)
+      setStatus('error')
+    } else {
+      setStatus('done')
+      setTimeout(() => router.push('/student'), 2000)
+    }
   }
 
   return (
@@ -36,8 +45,15 @@ function ResetPasswordForm() {
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-8 w-full max-w-sm">
         <div className="text-3xl mb-4 text-center">🔐</div>
         <h1 className="text-xl font-bold text-purple-900 text-center mb-6">Set New Password</h1>
+
         {status === 'done' ? (
-          <p className="text-green-600 text-center font-medium">Password updated! Redirecting...</p>
+          <p className="text-green-600 text-center font-medium">✅ Password updated! Redirecting...</p>
+        ) : !ready ? (
+          <div className="text-center text-gray-500 text-sm space-y-3">
+            <div className="animate-spin text-2xl">⏳</div>
+            <p>Verifying your reset link...</p>
+            <p className="text-xs text-gray-400">If this takes too long, the link may have expired. Request a new one from the login page.</p>
+          </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
             <input
