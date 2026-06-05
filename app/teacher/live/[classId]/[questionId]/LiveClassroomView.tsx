@@ -30,7 +30,7 @@ const GRADE_COLOR: Record<string, string> = {
   needsmore: 'border-purple-400',
 }
 
-type Filter = 'all' | 'help' | 'done' | 'submitted'
+type Filter = 'all' | 'help' | 'done' | 'submitted' | 'unchecked'
 
 export default function LiveClassroomView({
   classId, questionId, classTitle, questionTitle, questionContent,
@@ -51,7 +51,26 @@ export default function LiveClassroomView({
   })
   const [notifications, setNotifications] = useState<StudentNotification[]>(initialNotifications)
   const [filter, setFilter] = useState<Filter>('all')
+  const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set())
   const audioRef = useRef<AudioContext | null>(null)
+
+  async function toggleChecked(studentId: string, e: React.MouseEvent) {
+    e.stopPropagation()
+    const wasChecked = checkedIds.has(studentId)
+    setCheckedIds(prev => {
+      const next = new Set(prev)
+      wasChecked ? next.delete(studentId) : next.add(studentId)
+      return next
+    })
+    // Mark notifications read when checked, unread when unchecked
+    const studentNotifIds = notifications.filter(n => n.student_id === studentId && n.question_id === questionId).map(n => n.id)
+    if (studentNotifIds.length) {
+      await supabase.from('notifications').update({ read: !wasChecked }).in('id', studentNotifIds)
+      setNotifications(prev => prev.map(n =>
+        studentNotifIds.includes(n.id) ? { ...n, read: !wasChecked } : n
+      ))
+    }
+  }
 
   // Sets of student IDs who need help / clicked done
   const helpIds = new Set(notifications.filter(n => n.type === 'help').map(n => n.student_id))
@@ -124,15 +143,16 @@ export default function LiveClassroomView({
     setNotifications(prev => prev.map(n => ({ ...n, read: true })))
   }
 
-  // Filter students
+  const submittedCount = students.filter(s => submissions.has(s.id)).length
+  const uncheckedNeedingReview = students.filter(s => (helpIds.has(s.id) || doneIds.has(s.id)) && !checkedIds.has(s.id)).length
+
   const filteredStudents = students.filter(s => {
     if (filter === 'help') return helpIds.has(s.id)
     if (filter === 'done') return doneIds.has(s.id)
     if (filter === 'submitted') return submissions.has(s.id)
+    if (filter === 'unchecked') return (helpIds.has(s.id) || doneIds.has(s.id)) && !checkedIds.has(s.id)
     return true
   })
-
-  const submittedCount = students.filter(s => submissions.has(s.id)).length
 
   return (
     <div className="h-screen flex flex-col bg-gray-950 overflow-hidden">
@@ -146,18 +166,29 @@ export default function LiveClassroomView({
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs text-gray-400 bg-gray-800 px-3 py-1.5 rounded-full">
             {submittedCount}/{students.length} submitted
           </span>
+          {checkedIds.size > 0 && (
+            <span className="text-xs text-green-400 bg-green-900/40 px-3 py-1.5 rounded-full font-semibold">
+              ✅ {checkedIds.size} checked
+            </span>
+          )}
+          {uncheckedNeedingReview > 0 && (
+            <button onClick={() => setFilter('unchecked')}
+              className="bg-red-600 text-white text-xs font-bold px-3 py-1.5 rounded-full animate-pulse hover:bg-red-500">
+              ⚠️ {uncheckedNeedingReview} still need review
+            </button>
+          )}
           {helpIds.size > 0 && (
-            <button onClick={() => { setFilter('help'); markAllRead() }}
-              className="bg-amber-500 text-white text-xs font-bold px-3 py-1.5 rounded-full animate-pulse hover:bg-amber-400">
+            <button onClick={() => setFilter('help')}
+              className="bg-amber-500 text-white text-xs font-bold px-3 py-1.5 rounded-full hover:bg-amber-400">
               🙋 {helpIds.size} need help
             </button>
           )}
           {doneIds.size > 0 && (
-            <button onClick={() => { setFilter('done'); markAllRead() }}
+            <button onClick={() => setFilter('done')}
               className="bg-purple-600 text-white text-xs font-bold px-3 py-1.5 rounded-full hover:bg-purple-500">
               ✓ {doneIds.size} done
             </button>
@@ -167,7 +198,13 @@ export default function LiveClassroomView({
 
       {/* Filter tabs */}
       <div className="bg-gray-900 border-b border-gray-800 px-5 py-2 flex items-center gap-2">
-        {([['all', `All (${students.length})`], ['help', `🙋 Need Help (${helpIds.size})`], ['done', `✓ Done (${doneIds.size})`], ['submitted', `Submitted (${submittedCount})`]] as [Filter, string][]).map(([f, label]) => (
+        {([
+          ['all', `All (${students.length})`],
+          ['unchecked', `⚠️ Unchecked (${uncheckedNeedingReview})`],
+          ['help', `🙋 Help (${helpIds.size})`],
+          ['done', `✓ Done (${doneIds.size})`],
+          ['submitted', `Submitted (${submittedCount})`],
+        ] as [Filter, string][]).map(([f, label]) => (
           <button key={f} onClick={() => setFilter(f)}
             className={`text-xs px-3 py-1.5 rounded-full font-medium transition-colors ${filter === f ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}>
             {label}
@@ -188,54 +225,74 @@ export default function LiveClassroomView({
               const grade = grades.get(student.id)
               const needsHelp = helpIds.has(student.id)
               const isDone = doneIds.has(student.id)
+              const isChecked = checkedIds.has(student.id)
 
               return (
-                <button
-                  key={student.id}
-                  onClick={() => router.push(`/teacher/live/${classId}/${questionId}/${student.id}`)}
-                  className={`rounded-xl border-2 overflow-hidden text-left transition-all hover:scale-105 hover:shadow-xl ${
-                    needsHelp ? 'border-amber-400 shadow-amber-900/50 shadow-lg' :
-                    isDone    ? 'border-purple-500' :
-                    grade     ? GRADE_COLOR[grade] :
-                    sub       ? 'border-blue-500' :
-                                'border-gray-700'
-                  } bg-gray-800`}
-                >
-                  {/* Thumbnail */}
-                  <div className="w-full aspect-video bg-gray-900 relative overflow-hidden">
-                    {sub?.canvas_data ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={sub.canvas_data} alt="" className="w-full h-full object-contain" />
-                    ) : sub?.text_answer ? (
-                      <div className="p-2 text-xs text-gray-300 overflow-hidden h-full line-clamp-4">{sub.text_answer}</div>
-                    ) : (
-                      <div className="flex items-center justify-center h-full">
-                        <span className="text-gray-600 text-xs">No work yet</span>
+                <div key={student.id} className="relative">
+                  <button
+                    onClick={() => router.push(`/teacher/live/${classId}/${questionId}/${student.id}`)}
+                    className={`w-full rounded-xl border-2 overflow-hidden text-left transition-all hover:scale-105 hover:shadow-xl ${
+                      isChecked   ? 'border-green-500 opacity-50' :
+                      needsHelp   ? 'border-amber-400 shadow-amber-900/50 shadow-lg' :
+                      isDone      ? 'border-purple-500' :
+                      grade       ? GRADE_COLOR[grade] :
+                      sub         ? 'border-blue-500' :
+                                    'border-gray-700'
+                    } bg-gray-800`}
+                  >
+                    {/* Thumbnail */}
+                    <div className="w-full aspect-video bg-gray-900 relative overflow-hidden">
+                      {sub?.canvas_data ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={sub.canvas_data} alt="" className="w-full h-full object-contain" />
+                      ) : sub?.text_answer ? (
+                        <div className="p-2 text-xs text-gray-300 overflow-hidden h-full line-clamp-4">{sub.text_answer}</div>
+                      ) : (
+                        <div className="flex items-center justify-center h-full">
+                          <span className="text-gray-600 text-xs">No work yet</span>
+                        </div>
+                      )}
+                      {needsHelp && <span className="absolute top-1 right-1 bg-amber-500 text-white text-xs px-1.5 py-0.5 rounded-full font-bold">🙋</span>}
+                      {isDone && !needsHelp && <span className="absolute top-1 right-1 bg-purple-600 text-white text-xs px-1.5 py-0.5 rounded-full font-bold">✓</span>}
+                      {grade && <span className={`absolute bottom-1 left-1 text-xs px-1.5 py-0.5 rounded-full font-bold text-white ${grade === 'correct' ? 'bg-green-500' : grade === 'incorrect' ? 'bg-red-500' : grade === 'discussed' ? 'bg-blue-500' : grade === 'needsmore' ? 'bg-purple-500' : 'bg-amber-500'}`}>{grade === 'correct' ? '✓' : grade === 'incorrect' ? '✗' : grade === 'discussed' ? '💬' : grade === 'needsmore' ? '🔄' : '~'}</span>}
+                      {/* Checked overlay */}
+                      {isChecked && (
+                        <div className="absolute inset-0 bg-green-900/60 flex items-center justify-center">
+                          <span className="text-green-300 text-2xl font-black">✅</span>
+                        </div>
+                      )}
+                      <div className="absolute inset-0 bg-black/0 hover:bg-black/20 transition-colors flex items-center justify-center opacity-0 hover:opacity-100">
+                        <span className="text-white text-xs font-bold bg-black/50 px-2 py-1 rounded-lg">Open board</span>
                       </div>
-                    )}
-                    {needsHelp && <span className="absolute top-1 right-1 bg-amber-500 text-white text-xs px-1.5 py-0.5 rounded-full font-bold">🙋</span>}
-                    {isDone && !needsHelp && <span className="absolute top-1 right-1 bg-purple-600 text-white text-xs px-1.5 py-0.5 rounded-full font-bold">✓</span>}
-                    {grade && <span className={`absolute bottom-1 left-1 text-xs px-1.5 py-0.5 rounded-full font-bold text-white ${grade === 'correct' ? 'bg-green-500' : grade === 'incorrect' ? 'bg-red-500' : grade === 'discussed' ? 'bg-blue-500' : grade === 'needsmore' ? 'bg-purple-500' : 'bg-amber-500'}`}>{grade === 'correct' ? '✓' : grade === 'incorrect' ? '✗' : grade === 'discussed' ? '💬' : grade === 'needsmore' ? '🔄' : '~'}</span>}
-                    {/* Click hint */}
-                    <div className="absolute inset-0 bg-black/0 hover:bg-black/20 transition-colors flex items-center justify-center opacity-0 hover:opacity-100">
-                      <span className="text-white text-xs font-bold bg-black/50 px-2 py-1 rounded-lg">Click to expand</span>
                     </div>
-                  </div>
-                  <div className="px-2 py-1.5 bg-gray-800 flex items-center justify-between gap-1">
-                    <div className="min-w-0">
-                      <p className="text-xs font-semibold text-white truncate">{student.full_name}</p>
-                      <p className="text-xs text-gray-400">{needsHelp ? '🙋 Needs help' : isDone ? '✓ Done' : grade ? grade : sub ? 'In progress' : 'Not started'}</p>
+                    <div className="px-2 py-1.5 bg-gray-800 flex items-center justify-between gap-1">
+                      <div className="min-w-0">
+                        <p className={`text-xs font-semibold truncate ${isChecked ? 'text-green-400 line-through' : 'text-white'}`}>{student.full_name}</p>
+                        <p className="text-xs text-gray-400">{isChecked ? '✅ Checked' : needsHelp ? '🙋 Needs help' : isDone ? '✓ Done' : grade ? grade : sub ? 'In progress' : 'Not started'}</p>
+                      </div>
+                      <Link
+                        href={`/teacher/students/${student.id}`}
+                        onClick={e => e.stopPropagation()}
+                        className="text-gray-500 hover:text-purple-400 flex-shrink-0 text-xs leading-none"
+                        title="View student's questions"
+                      >
+                        ↗
+                      </Link>
                     </div>
-                    <Link
-                      href={`/teacher/students/${student.id}`}
-                      onClick={e => e.stopPropagation()}
-                      className="text-gray-500 hover:text-purple-400 flex-shrink-0 text-xs leading-none"
-                      title="View student's questions"
-                    >
-                      ↗
-                    </Link>
-                  </div>
-                </button>
+                  </button>
+                  {/* Check button — sits outside the main button */}
+                  <button
+                    onClick={e => toggleChecked(student.id, e)}
+                    className={`absolute top-1 left-1 z-10 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shadow-lg transition-all ${
+                      isChecked
+                        ? 'bg-green-500 text-white hover:bg-red-500'
+                        : 'bg-black/60 text-gray-400 hover:bg-green-500 hover:text-white'
+                    }`}
+                    title={isChecked ? 'Mark unchecked' : 'Mark as checked'}
+                  >
+                    {isChecked ? '✓' : '○'}
+                  </button>
+                </div>
               )
             })}
           </div>
