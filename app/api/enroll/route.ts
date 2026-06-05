@@ -23,6 +23,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true })
   }
 
+  if (action === 'resetPassword') {
+    const { data: user } = await admin.from('profiles').select('email').eq('id', studentId).single()
+    if (!user?.email) return NextResponse.json({ error: 'No email found' }, { status: 404 })
+    const anonClient = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
+    const { error } = await anonClient.auth.resetPasswordForEmail(user.email, {
+      redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL ?? 'https://classroom.mindspirelab.com'}/reset-password`,
+    })
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ ok: true })
+  }
+
   if (action === 'delete') {
     // Delete all related data then the auth user
     await admin.from('notifications').delete().eq('student_id', studentId)

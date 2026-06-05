@@ -67,6 +67,20 @@ export default function StudentsClient({
     setLoading(null)
   }
 
+  async function resetPassword(studentId: string, name: string) {
+    if (!confirm(`Send a password reset email to ${name}?`)) return
+    setLoading(`reset-${studentId}`)
+    const res = await fetch('/api/enroll', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ studentId, action: 'resetPassword' }),
+    })
+    const data = await res.json()
+    if (!res.ok) setError(data.error ?? 'Failed to send reset email')
+    else alert(`Password reset email sent to ${name}`)
+    setLoading(null)
+  }
+
   async function deleteStudent(studentId: string, name: string) {
     if (!confirm(`Permanently delete ${name}? This will remove all their submissions, grades, and account data. This cannot be undone.`)) return
     setLoading(`delete-${studentId}`)
@@ -151,6 +165,13 @@ export default function StudentsClient({
                   </button>
                 </div>
               )}
+              <button
+                onClick={() => resetPassword(student.id, student.full_name)}
+                disabled={loading === `reset-${student.id}`}
+                className="bg-blue-100 hover:bg-blue-200 text-blue-700 text-sm px-3 py-2 rounded-lg transition-colors disabled:opacity-50"
+              >
+                {loading === `reset-${student.id}` ? 'Sending...' : 'Reset Password'}
+              </button>
               <button
                 onClick={() => removeStudent(student.id)}
                 disabled={loading === `remove-${student.id}`}
