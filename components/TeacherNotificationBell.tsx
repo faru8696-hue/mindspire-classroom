@@ -27,6 +27,14 @@ export default function TeacherNotificationBell({ initialNotifications }: Props)
   const [toasts, setToasts] = useState<Notification[]>([])
   const audioRef = useRef<AudioContext | null>(null)
 
+  // Fetch fresh notifications from server on mount (layout data can be stale)
+  useEffect(() => {
+    fetch('/api/notifications')
+      .then(r => r.json())
+      .then(({ notifications: fresh }) => { if (fresh?.length) setNotifications(fresh) })
+      .catch(() => {})
+  }, [])
+
   const unread = notifications.filter(n => !n.read)
 
   function playBeep() {
@@ -64,15 +72,15 @@ export default function TeacherNotificationBell({ initialNotifications }: Props)
   }, [])
 
   async function markRead(id: string) {
-    await supabase.from('notifications').update({ read: true }).eq('id', id)
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n))
+    fetch('/api/notifications', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: [id] }) }).catch(() => {})
   }
 
   async function markAllRead() {
     const ids = unread.map(n => n.id)
     if (!ids.length) return
-    await supabase.from('notifications').update({ read: true }).in('id', ids)
     setNotifications(prev => prev.map(n => ({ ...n, read: true })))
+    fetch('/api/notifications', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }) }).catch(() => {})
   }
 
   return (
