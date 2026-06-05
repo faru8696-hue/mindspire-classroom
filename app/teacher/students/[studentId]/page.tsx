@@ -1,6 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import StudentNotes from './StudentNotes'
 
 const GRADE: Record<string, { label: string; cls: string }> = {
   correct:   { label: '✓ Correct',   cls: 'bg-green-100 text-green-700' },
@@ -184,6 +185,9 @@ export default async function StudentDetailPage({ params }: { params: Promise<{ 
         </div>
         <p className="text-xs text-gray-400 mt-1">{pct}% complete</p>
       </div>
+
+      {/* Private notes */}
+      <StudentNotes studentId={studentId} />
 
       {/* Units */}
       {(units ?? []).length === 0 && (

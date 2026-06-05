@@ -57,6 +57,14 @@ export default async function TeacherDashboard() {
         .order('updated_at', { ascending: false })
     : { data: [] as LatestSub[] }
 
+  // Recent submissions needing feedback (for dashboard feed)
+  type RecentSub = { id: string; student_id: string; question_id: string; updated_at: string; profiles: { full_name: string } | null; questions: { title: string; topic_id: string } | null }
+  const { data: recentSubs } = await supabase
+    .from('submissions')
+    .select('id, student_id, question_id, updated_at, profiles(full_name), questions(title, topic_id)')
+    .order('updated_at', { ascending: false })
+    .limit(8)
+
   // Latest feedback per submission
   const subIds = (latestSubs ?? []).map(s => s.id)
   const { data: feedbacks } = subIds.length > 0
@@ -203,6 +211,44 @@ export default async function TeacherDashboard() {
           </div>
         ))}
       </div>
+
+      {/* Recent submissions feed */}
+      {(recentSubs ?? []).length > 0 && (
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-semibold text-gray-800">Recent Submissions</h2>
+            <Link href="/teacher/submissions" className="text-sm text-purple-600 hover:underline">View all →</Link>
+          </div>
+          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden divide-y divide-gray-50">
+            {(recentSubs as unknown as RecentSub[]).map(sub => {
+              const student = Array.isArray(sub.profiles) ? sub.profiles[0] : sub.profiles
+              const question = Array.isArray(sub.questions) ? sub.questions[0] : sub.questions
+              const minutesAgo = Math.round((Date.now() - new Date(sub.updated_at).getTime()) / 60000)
+              const timeLabel = minutesAgo < 60
+                ? `${minutesAgo}m ago`
+                : minutesAgo < 1440
+                  ? `${Math.round(minutesAgo / 60)}h ago`
+                  : `${Math.round(minutesAgo / 1440)}d ago`
+              return (
+                <Link
+                  key={sub.id}
+                  href={`/teacher/submissions`}
+                  className="flex items-center gap-4 px-5 py-3 hover:bg-purple-50 transition-colors"
+                >
+                  <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center text-sm font-bold text-purple-600 flex-shrink-0">
+                    {(student?.full_name ?? '?').charAt(0).toUpperCase()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-800 truncate">{student?.full_name ?? 'Unknown'}</p>
+                    <p className="text-xs text-gray-400 truncate">{question?.title ?? 'Unknown question'}</p>
+                  </div>
+                  <span className="text-xs text-gray-400 flex-shrink-0">{timeLabel}</span>
+                </Link>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Live alerts */}
       <LiveNotificationFeed />
