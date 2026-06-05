@@ -24,6 +24,7 @@ export default function TeacherNotificationBell({ initialNotifications }: Props)
   const supabase = createClient()
   const [notifications, setNotifications] = useState<Notification[]>(initialNotifications)
   const [open, setOpen] = useState(false)
+  const [toasts, setToasts] = useState<Notification[]>([])
   const audioRef = useRef<AudioContext | null>(null)
 
   const unread = notifications.filter(n => !n.read)
@@ -34,28 +35,29 @@ export default function TeacherNotificationBell({ initialNotifications }: Props)
       const ctx = audioRef.current
       const osc = ctx.createOscillator()
       const gain = ctx.createGain()
-      osc.connect(gain)
-      gain.connect(ctx.destination)
+      osc.connect(gain); gain.connect(ctx.destination)
       osc.frequency.value = 880
       gain.gain.setValueAtTime(0.3, ctx.currentTime)
       gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4)
-      osc.start()
-      osc.stop(ctx.currentTime + 0.4)
+      osc.start(); osc.stop(ctx.currentTime + 0.4)
     } catch {}
   }
 
+  function dismissToast(id: string) {
+    setToasts(prev => prev.filter(t => t.id !== id))
+  }
+
   useEffect(() => {
-    // Use Broadcast channel — no RLS, instant delivery
-    const channel = supabase.channel('teacher-alerts', {
-      config: { broadcast: { self: false } },
-    })
+    const channel = supabase.channel('teacher-alerts', { config: { broadcast: { self: false } } })
       .on('broadcast', { event: 'student-alert' }, ({ payload }) => {
         const n = payload as Notification
         setNotifications(prev => [{ ...n, read: false }, ...prev.slice(0, 49)])
+        setToasts(prev => [{ ...n }, ...prev].slice(0, 5))
         playBeep()
+        // Auto-dismiss toast after 12s
+        setTimeout(() => dismissToast(n.id), 12000)
       })
       .subscribe()
-
     return () => { supabase.removeChannel(channel) }
   }, [])
 
@@ -137,6 +139,35 @@ export default function TeacherNotificationBell({ initialNotifications }: Props)
             </div>
           </div>
         </>
+      )}
+      {/* Floating toasts — visible on any page */}
+      {toasts.length > 0 && (
+        <div className="fixed bottom-5 right-5 z-[100] flex flex-col gap-2 w-72">
+          {toasts.map(t => (
+            <div key={t.id} className={`flex items-start gap-3 px-4 py-3 rounded-xl shadow-2xl border text-sm font-medium ${
+              t.type === 'help'
+                ? 'bg-amber-500 border-amber-400 text-white'
+                : 'bg-purple-600 border-purple-500 text-white'
+            }`}>
+              <span className="text-xl flex-shrink-0">{t.type === 'help' ? '🙋' : '✅'}</span>
+              <div className="flex-1 min-w-0">
+                <p className="font-bold truncate">{t.student_name ?? 'A student'}</p>
+                <p className="text-xs opacity-90">{t.type === 'help' ? 'needs help' : 'done — check their work'}</p>
+                {t.question_title && <p className="text-xs opacity-75 truncate">{t.question_title}</p>}
+              </div>
+              <div className="flex flex-col gap-1 flex-shrink-0 items-end">
+                <Link
+                  href={`/teacher/live/${t.class_id}/${t.question_id}`}
+                  onClick={() => dismissToast(t.id)}
+                  className="text-xs bg-white/20 hover:bg-white/30 px-2 py-1 rounded-lg whitespace-nowrap"
+                >
+                  View →
+                </Link>
+                <button onClick={() => dismissToast(t.id)} className="text-xs opacity-60 hover:opacity-100">dismiss</button>
+              </div>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   )
