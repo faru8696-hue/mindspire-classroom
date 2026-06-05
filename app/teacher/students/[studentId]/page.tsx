@@ -12,8 +12,22 @@ export default async function StudentDetailPage({ params }: { params: Promise<{ 
   const { studentId } = await params
   const supabase = await createAdminClient()
 
-  const { data: student } = await supabase.from('profiles').select('id, full_name, class_id, nickname, avatar_url, grade_level, phone, parent_name, parent_phone, email').eq('id', studentId).single()
-  if (!student) notFound()
+  // Select core fields first; extended fields (parent_name etc.) added via migration
+  const { data: student, error: studentError } = await supabase
+    .from('profiles')
+    .select('id, full_name, class_id, nickname, avatar_url, grade_level, phone, email')
+    .eq('id', studentId)
+    .single()
+  if (!student || studentError) notFound()
+
+  // Fetch extended fields separately so a missing column never causes a 404
+  const { data: extProfile } = await supabase
+    .from('profiles')
+    .select('parent_name, parent_phone')
+    .eq('id', studentId)
+    .single()
+  const parentName = (extProfile as { parent_name?: string } | null)?.parent_name ?? null
+  const parentPhone = (extProfile as { parent_phone?: string } | null)?.parent_phone ?? null
 
   const { data: cls } = student.class_id
     ? await supabase.from('classes').select('id, title').eq('id', student.class_id).single()
@@ -118,16 +132,16 @@ export default async function StudentDetailPage({ params }: { params: Promise<{ 
               <p className="text-sm text-gray-700">{student.phone}</p>
             </div>
           )}
-          {(student as { parent_name?: string }).parent_name && (
+          {parentName && (
             <div>
               <p className="text-xs text-gray-400 uppercase tracking-wide">Parent / Guardian</p>
-              <p className="text-sm text-gray-700">{(student as { parent_name?: string }).parent_name}</p>
+              <p className="text-sm text-gray-700">{parentName}</p>
             </div>
           )}
-          {(student as { parent_phone?: string }).parent_phone && (
+          {parentPhone && (
             <div>
               <p className="text-xs text-gray-400 uppercase tracking-wide">Parent Phone</p>
-              <p className="text-sm text-gray-700">{(student as { parent_phone?: string }).parent_phone}</p>
+              <p className="text-sm text-gray-700">{parentPhone}</p>
             </div>
           )}
           {cls && (
