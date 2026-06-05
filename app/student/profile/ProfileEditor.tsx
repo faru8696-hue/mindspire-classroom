@@ -86,7 +86,8 @@ export default function ProfileEditor({
     if (err) { setError(err.message); return }
     setSaved(true)
     if (required) {
-      setTimeout(() => router.replace('/student'), 1000)
+      // Hard reload so the server layout re-fetches the updated profile
+      setTimeout(() => { window.location.href = '/student' }, 800)
     } else {
       setTimeout(() => setSaved(false), 2000)
     }
