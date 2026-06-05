@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import StudentGradeNotifications from '@/components/StudentGradeNotifications'
 
 export default async function ClassPage({ params }: { params: Promise<{ classId: string }> }) {
   const { classId } = await params
@@ -60,6 +61,7 @@ export default async function ClassPage({ params }: { params: Promise<{ classId:
   return (
     <div className="max-w-3xl mx-auto">
       <h1 className="text-2xl font-bold text-purple-900 mb-6">{cls.title}</h1>
+      <StudentGradeNotifications studentId={studentId} />
 
       {/* Overall progress */}
       {total > 0 && (
