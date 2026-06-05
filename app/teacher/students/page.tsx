@@ -1,5 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/server'
-import { revalidatePath } from 'next/cache'
+import { redirect } from 'next/navigation'
 import Link from 'next/link'
 
 async function approveStudent(formData: FormData) {
@@ -11,7 +11,7 @@ async function approveStudent(formData: FormData) {
   if (classId) {
     await admin.from('class_enrollments').upsert({ student_id: id, class_id: classId })
   }
-  revalidatePath('/teacher/students')
+  redirect('/teacher/students')
 }
 
 async function enrollInClass(formData: FormData) {
@@ -19,9 +19,9 @@ async function enrollInClass(formData: FormData) {
   const admin = await createAdminClient()
   const studentId = formData.get('student_id') as string
   const classId = formData.get('class_id') as string
-  if (!classId) return
+  if (!classId) redirect('/teacher/students')
   await admin.from('class_enrollments').upsert({ student_id: studentId, class_id: classId })
-  revalidatePath('/teacher/students')
+  redirect('/teacher/students')
 }
 
 async function unenrollFromClass(formData: FormData) {
@@ -31,7 +31,7 @@ async function unenrollFromClass(formData: FormData) {
     .delete()
     .eq('student_id', formData.get('student_id') as string)
     .eq('class_id', formData.get('class_id') as string)
-  revalidatePath('/teacher/students')
+  redirect('/teacher/students')
 }
 
 async function removeStudent(formData: FormData) {
@@ -40,7 +40,7 @@ async function removeStudent(formData: FormData) {
   const id = formData.get('id') as string
   await admin.from('profiles').update({ approved: false }).eq('id', id)
   await admin.from('class_enrollments').delete().eq('student_id', id)
-  revalidatePath('/teacher/students')
+  redirect('/teacher/students')
 }
 
 export default async function StudentsPage() {
