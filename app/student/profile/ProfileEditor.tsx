@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
 interface Props {
@@ -38,6 +39,9 @@ export default function ProfileEditor({
   initialGradeLevel, initialPhone, initialParentName, initialParentPhone,
 }: Props) {
   const supabase = createClient()
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const required = searchParams.get('required') === '1'
   const [fullName, setFullName] = useState(initialFullName)
   const [nickname, setNickname] = useState(initialNickname)
   const [gradeLevel, setGradeLevel] = useState(initialGradeLevel)
@@ -64,6 +68,10 @@ export default function ProfileEditor({
   }
 
   async function handleSave() {
+    if (required && (!gradeLevel || !phone || !parentName || !parentPhone)) {
+      setError('Please fill in all required fields: grade level, phone, parent name, and parent phone.')
+      return
+    }
     setSaving(true)
     setError(null)
     const { error: err } = await supabase.from('profiles').update({
@@ -77,7 +85,11 @@ export default function ProfileEditor({
     setSaving(false)
     if (err) { setError(err.message); return }
     setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
+    if (required) {
+      setTimeout(() => router.replace('/student'), 1000)
+    } else {
+      setTimeout(() => setSaved(false), 2000)
+    }
   }
 
   const initials = (nickname || fullName || '?').charAt(0).toUpperCase()
@@ -118,15 +130,15 @@ export default function ProfileEditor({
         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Your Info</p>
         <Field label="Full Name" value={fullName} onChange={setFullName} placeholder="Your full name" />
         <Field label="Nickname" value={nickname} onChange={setNickname} placeholder="What should we call you?" />
-        <Field label="Grade Level" value={gradeLevel} onChange={setGradeLevel} placeholder="e.g. 10th grade, Junior…" />
-        <Field label="Phone Number" value={phone} onChange={setPhone} type="tel" placeholder="Your phone number" />
+        <Field label={`Grade Level${required ? ' *' : ''}`} value={gradeLevel} onChange={setGradeLevel} placeholder="e.g. 10th grade, Junior…" />
+        <Field label={`Phone Number${required ? ' *' : ''}`} value={phone} onChange={setPhone} type="tel" placeholder="Your phone number" />
       </div>
 
       {/* Section: Parent/Guardian */}
       <div className="space-y-4">
         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Parent / Guardian</p>
-        <Field label="Parent / Guardian Name" value={parentName} onChange={setParentName} placeholder="Full name" />
-        <Field label="Parent / Guardian Phone" value={parentPhone} onChange={setParentPhone} type="tel" placeholder="Phone number" />
+        <Field label={`Parent / Guardian Name${required ? ' *' : ''}`} value={parentName} onChange={setParentName} placeholder="Full name" />
+        <Field label={`Parent / Guardian Phone${required ? ' *' : ''}`} value={parentPhone} onChange={setParentPhone} type="tel" placeholder="Phone number" />
       </div>
 
       <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">

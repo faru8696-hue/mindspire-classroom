@@ -2,7 +2,12 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import ProfileEditor from './ProfileEditor'
 
-export default async function StudentProfilePage() {
+export default async function StudentProfilePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ required?: string }>
+}) {
+  const { required } = await searchParams
   const supabase = await createClient()
   const { data: { session } } = await supabase.auth.getSession()
   if (!session) redirect('/login')
@@ -17,6 +22,11 @@ export default async function StudentProfilePage() {
 
   return (
     <div className="max-w-lg mx-auto">
+      {required === '1' && (
+        <div className="mb-5 bg-amber-50 border border-amber-300 rounded-xl px-4 py-3 text-amber-800 text-sm font-medium">
+          📋 Please complete your profile before continuing. All fields below are required.
+        </div>
+      )}
       <h1 className="text-2xl font-bold text-purple-900 mb-6">My Profile</h1>
       <ProfileEditor
         userId={session.user.id}

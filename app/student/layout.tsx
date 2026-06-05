@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { logout } from '@/app/actions/auth'
+import ProfileGate from '@/components/ProfileGate'
 
 export default async function StudentLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
@@ -10,13 +11,16 @@ export default async function StudentLayout({ children }: { children: React.Reac
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('role, full_name, approved, avatar_url, nickname')
+    .select('role, full_name, approved, avatar_url, nickname, grade_level, phone, parent_name, parent_phone')
     .eq('id', session.user.id)
     .single()
 
   if (!profile) redirect('/login')
   if (profile.role === 'teacher') redirect('/teacher')
   if (!profile.approved) redirect('/pending')
+
+  const p = profile as Record<string, string | null | undefined>
+  const profileComplete = !!(p.grade_level && p.phone && p.parent_name && p.parent_phone)
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -46,7 +50,9 @@ export default async function StudentLayout({ children }: { children: React.Reac
           </form>
         </div>
       </nav>
-      <main className="flex-1 p-6">{children}</main>
+      <main className="flex-1 p-6">
+        <ProfileGate profileComplete={profileComplete}>{children}</ProfileGate>
+      </main>
     </div>
   )
 }
