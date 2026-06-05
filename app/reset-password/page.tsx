@@ -1,37 +1,29 @@
 'use client'
 
 import { useState, useEffect, Suspense } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
 function ResetPasswordForm() {
   const supabase = createClient()
   const router = useRouter()
-  const searchParams = useSearchParams()
   const [ready, setReady] = useState(false)
+  const [timedOut, setTimedOut] = useState(false)
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [status, setStatus] = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
   const [error, setError] = useState('')
 
   useEffect(() => {
-    const code = searchParams.get('code')
+    // createBrowserClient auto-exchanges the ?code= param and fires these events
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN') {
+        setReady(true)
+      }
+    })
 
-    if (code) {
-      // PKCE flow — exchange the code for a session
-      supabase.auth.exchangeCodeForSession(code).then(({ error }) => {
-        if (error) setError('Reset link is invalid or expired. Please request a new one.')
-        else setReady(true)
-      })
-    } else {
-      // Implicit flow fallback — wait for PASSWORD_RECOVERY event from hash
-      const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-        if (event === 'PASSWORD_RECOVERY') setReady(true)
-      })
-      // Timeout after 5s
-      const t = setTimeout(() => setError('Reset link is invalid or expired. Please request a new one.'), 5000)
-      return () => { subscription.unsubscribe(); clearTimeout(t) }
-    }
+    const t = setTimeout(() => setTimedOut(true), 8000)
+    return () => { subscription.unsubscribe(); clearTimeout(t) }
   }, [])
 
   async function handleSubmit(e: React.FormEvent) {
@@ -41,13 +33,8 @@ function ResetPasswordForm() {
     setStatus('loading')
     setError('')
     const { error } = await supabase.auth.updateUser({ password })
-    if (error) {
-      setError(error.message)
-      setStatus('error')
-    } else {
-      setStatus('done')
-      setTimeout(() => router.push('/student'), 2000)
-    }
+    if (error) { setError(error.message); setStatus('error') }
+    else { setStatus('done'); setTimeout(() => router.push('/student'), 2000) }
   }
 
   return (
@@ -58,15 +45,15 @@ function ResetPasswordForm() {
 
         {status === 'done' ? (
           <p className="text-green-600 text-center font-medium">✅ Password updated! Redirecting...</p>
-        ) : error && !ready ? (
+        ) : timedOut && !ready ? (
           <div className="text-center space-y-3">
-            <p className="text-red-600 text-sm">{error}</p>
-            <a href="/login" className="text-purple-600 text-sm hover:underline block">Back to login →</a>
+            <p className="text-red-600 text-sm">Reset link is invalid or expired.</p>
+            <a href="/login" className="text-purple-600 text-sm hover:underline block">Request a new one →</a>
           </div>
         ) : !ready ? (
-          <div className="text-center text-gray-500 text-sm space-y-3">
-            <div className="text-2xl animate-spin">⏳</div>
-            <p>Verifying your reset link...</p>
+          <div className="text-center text-gray-400 text-sm space-y-3">
+            <div className="text-2xl">⏳</div>
+            <p>Verifying reset link...</p>
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
