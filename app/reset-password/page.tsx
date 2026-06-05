@@ -1,12 +1,13 @@
 'use client'
 
 import { useState, useEffect, Suspense } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
 function ResetPasswordForm() {
   const supabase = createClient()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [ready, setReady] = useState(false)
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
@@ -14,14 +15,23 @@ function ResetPasswordForm() {
   const [error, setError] = useState('')
 
   useEffect(() => {
-    // Supabase puts the token in the URL hash — we need to let the client SDK
-    // detect the PASSWORD_RECOVERY event before allowing the form to submit
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'PASSWORD_RECOVERY') {
-        setReady(true)
-      }
-    })
-    return () => subscription.unsubscribe()
+    const code = searchParams.get('code')
+
+    if (code) {
+      // PKCE flow — exchange the code for a session
+      supabase.auth.exchangeCodeForSession(code).then(({ error }) => {
+        if (error) setError('Reset link is invalid or expired. Please request a new one.')
+        else setReady(true)
+      })
+    } else {
+      // Implicit flow fallback — wait for PASSWORD_RECOVERY event from hash
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+        if (event === 'PASSWORD_RECOVERY') setReady(true)
+      })
+      // Timeout after 5s
+      const t = setTimeout(() => setError('Reset link is invalid or expired. Please request a new one.'), 5000)
+      return () => { subscription.unsubscribe(); clearTimeout(t) }
+    }
   }, [])
 
   async function handleSubmit(e: React.FormEvent) {
@@ -48,11 +58,15 @@ function ResetPasswordForm() {
 
         {status === 'done' ? (
           <p className="text-green-600 text-center font-medium">✅ Password updated! Redirecting...</p>
+        ) : error && !ready ? (
+          <div className="text-center space-y-3">
+            <p className="text-red-600 text-sm">{error}</p>
+            <a href="/login" className="text-purple-600 text-sm hover:underline block">Back to login →</a>
+          </div>
         ) : !ready ? (
           <div className="text-center text-gray-500 text-sm space-y-3">
-            <div className="animate-spin text-2xl">⏳</div>
+            <div className="text-2xl animate-spin">⏳</div>
             <p>Verifying your reset link...</p>
-            <p className="text-xs text-gray-400">If this takes too long, the link may have expired. Request a new one from the login page.</p>
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
