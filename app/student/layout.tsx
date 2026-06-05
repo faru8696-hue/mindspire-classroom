@@ -10,7 +10,7 @@ export default async function StudentLayout({ children }: { children: React.Reac
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('role, full_name, approved')
+    .select('role, full_name, approved, avatar_url, nickname')
     .eq('id', session.user.id)
     .single()
 
@@ -25,9 +25,20 @@ export default async function StudentLayout({ children }: { children: React.Reac
           <span className="font-bold text-lg">⚛️ Mindspire Lab</span>
           <Link href="/student" className="text-purple-200 hover:text-white text-sm transition-colors">My Units</Link>
           <Link href="/student/whiteboard" className="text-purple-200 hover:text-white text-sm transition-colors">Live Board</Link>
+          <Link href="/student/profile" className="text-purple-200 hover:text-white text-sm transition-colors">Profile</Link>
         </div>
         <div className="flex items-center gap-4">
-          <span className="text-purple-200 text-sm">{profile.full_name}</span>
+          <Link href="/student/profile" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+            {profile.avatar_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={profile.avatar_url} alt="avatar" className="w-7 h-7 rounded-full object-cover border-2 border-purple-400" />
+            ) : (
+              <div className="w-7 h-7 rounded-full bg-purple-400 flex items-center justify-center text-xs font-bold text-white">
+                {((profile.nickname || profile.full_name) ?? '?').charAt(0).toUpperCase()}
+              </div>
+            )}
+            <span className="text-purple-200 text-sm">{profile.nickname || profile.full_name}</span>
+          </Link>
           <form action={logout}>
             <button className="text-sm bg-purple-700 hover:bg-purple-600 px-3 py-1 rounded-lg transition-colors">
               Sign out

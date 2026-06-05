@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import InfiniteWhiteboard from '@/components/InfiniteWhiteboard'
 
 interface Props {
+  classId: string
   questionId: string
   studentId: string
   submissionId: string | null
@@ -33,11 +34,12 @@ function extractImages(canvasJson: string | null): string[] {
 }
 
 export default function TeacherWatchBoard({
-  questionId, studentId, submissionId,
+  classId, questionId, studentId, submissionId,
   initialStudentData,
   initialGrade, initialFeedbackText,
 }: Props) {
   const supabase = createClient()
+  const gradeChannel = supabase.channel(`live-grades:${classId}:${questionId}`)
   const [grade, setGrade] = useState<string | null>(initialGrade)
   const [feedbackText, setFeedbackText] = useState(initialFeedbackText ?? '')
   const [saving, setSaving] = useState(false)
@@ -86,6 +88,11 @@ export default function TeacherWatchBoard({
       { submission_id: submissionId, grade: newGrade, text_feedback: feedbackText || null },
       { onConflict: 'submission_id' }
     )
+    // Broadcast so LiveClassroomView updates instantly without relying on postgres_changes
+    await gradeChannel.send({
+      type: 'broadcast', event: 'grade-update',
+      payload: { student_id: studentId, grade: newGrade },
+    })
     setSaving(false)
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)

@@ -12,7 +12,7 @@ export default async function StudentDetailPage({ params }: { params: Promise<{ 
   const { studentId } = await params
   const supabase = await createAdminClient()
 
-  const { data: student } = await supabase.from('profiles').select('id, full_name, class_id').eq('id', studentId).single()
+  const { data: student } = await supabase.from('profiles').select('id, full_name, class_id, nickname, avatar_url, grade_level, phone, email').eq('id', studentId).single()
   if (!student) notFound()
 
   const { data: cls } = student.class_id
@@ -76,9 +76,59 @@ export default async function StudentDetailPage({ params }: { params: Promise<{ 
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
-      {/* Header */}
+      {/* Back link */}
+      <Link href="/teacher/progress" className="text-purple-600 text-sm hover:underline">← All Progress</Link>
+
+      {/* Profile card */}
+      <div className="bg-white rounded-2xl border border-gray-200 p-6 flex items-start gap-5">
+        {student.avatar_url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={student.avatar_url} alt="avatar" className="w-16 h-16 rounded-full object-cover border-2 border-purple-200 flex-shrink-0" />
+        ) : (
+          <div className="w-16 h-16 rounded-full bg-purple-100 flex items-center justify-center text-2xl font-bold text-purple-600 flex-shrink-0">
+            {((student.nickname || student.full_name) ?? '?').charAt(0).toUpperCase()}
+          </div>
+        )}
+        <div className="flex-1 min-w-0 grid grid-cols-2 gap-x-8 gap-y-1.5">
+          <div>
+            <p className="text-xs text-gray-400 uppercase tracking-wide">Name</p>
+            <p className="text-sm font-semibold text-gray-900">{student.full_name}</p>
+          </div>
+          {student.nickname && (
+            <div>
+              <p className="text-xs text-gray-400 uppercase tracking-wide">Nickname</p>
+              <p className="text-sm text-gray-700">{student.nickname}</p>
+            </div>
+          )}
+          {(student as { email?: string }).email && (
+            <div>
+              <p className="text-xs text-gray-400 uppercase tracking-wide">Email</p>
+              <p className="text-sm text-gray-700">{(student as { email?: string }).email}</p>
+            </div>
+          )}
+          {student.grade_level && (
+            <div>
+              <p className="text-xs text-gray-400 uppercase tracking-wide">Grade Level</p>
+              <p className="text-sm text-gray-700">{student.grade_level}</p>
+            </div>
+          )}
+          {student.phone && (
+            <div>
+              <p className="text-xs text-gray-400 uppercase tracking-wide">Phone</p>
+              <p className="text-sm text-gray-700">{student.phone}</p>
+            </div>
+          )}
+          {cls && (
+            <div>
+              <p className="text-xs text-gray-400 uppercase tracking-wide">Class</p>
+              <p className="text-sm text-gray-700">{cls.title}</p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Stats header */}
       <div>
-        <Link href="/teacher/progress" className="text-purple-600 text-sm hover:underline">← All Progress</Link>
         <div className="flex items-start justify-between mt-3">
           <div>
             <h1 className="text-2xl font-bold text-purple-900">{student.full_name}</h1>

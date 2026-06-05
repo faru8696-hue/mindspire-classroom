@@ -23,9 +23,11 @@ interface Props {
 }
 
 const GRADE_COLOR: Record<string, string> = {
-  correct: 'border-green-400',
-  partial: 'border-amber-400',
+  correct:   'border-green-400',
+  partial:   'border-amber-400',
   incorrect: 'border-red-400',
+  discussed: 'border-blue-400',
+  needsmore: 'border-purple-400',
 }
 
 type Filter = 'all' | 'help' | 'done' | 'submitted'
@@ -88,6 +90,19 @@ export default function LiveClassroomView({
       })
       .subscribe()
 
+    // Grade broadcast subscription
+    const gradeCh = supabase.channel(`live-grades:${classId}:${questionId}`, { config: { broadcast: { self: false } } })
+      .on('broadcast', { event: 'grade-update' }, ({ payload }) => {
+        const { student_id, grade } = payload as { student_id: string; grade: string | null }
+        setGrades(prev => {
+          const next = new Map(prev)
+          if (grade) next.set(student_id, grade)
+          else next.delete(student_id)
+          return next
+        })
+      })
+      .subscribe()
+
     // Alerts via broadcast
     const alertCh = supabase.channel('teacher-alerts', { config: { broadcast: { self: false } } })
       .on('broadcast', { event: 'student-alert' }, ({ payload }) => {
@@ -99,7 +114,7 @@ export default function LiveClassroomView({
       })
       .subscribe()
 
-    return () => { supabase.removeChannel(subCh); supabase.removeChannel(alertCh) }
+    return () => { supabase.removeChannel(subCh); supabase.removeChannel(gradeCh); supabase.removeChannel(alertCh) }
   }, [classId, questionId])
 
   async function markAllRead() {
@@ -200,7 +215,7 @@ export default function LiveClassroomView({
                     )}
                     {needsHelp && <span className="absolute top-1 right-1 bg-amber-500 text-white text-xs px-1.5 py-0.5 rounded-full font-bold">🙋</span>}
                     {isDone && !needsHelp && <span className="absolute top-1 right-1 bg-purple-600 text-white text-xs px-1.5 py-0.5 rounded-full font-bold">✓</span>}
-                    {grade && <span className={`absolute bottom-1 left-1 text-xs px-1.5 py-0.5 rounded-full font-bold text-white ${grade === 'correct' ? 'bg-green-500' : grade === 'incorrect' ? 'bg-red-500' : 'bg-amber-500'}`}>{grade === 'correct' ? '✓' : grade === 'incorrect' ? '✗' : '~'}</span>}
+                    {grade && <span className={`absolute bottom-1 left-1 text-xs px-1.5 py-0.5 rounded-full font-bold text-white ${grade === 'correct' ? 'bg-green-500' : grade === 'incorrect' ? 'bg-red-500' : grade === 'discussed' ? 'bg-blue-500' : grade === 'needsmore' ? 'bg-purple-500' : 'bg-amber-500'}`}>{grade === 'correct' ? '✓' : grade === 'incorrect' ? '✗' : grade === 'discussed' ? '💬' : grade === 'needsmore' ? '🔄' : '~'}</span>}
                     {/* Click hint */}
                     <div className="absolute inset-0 bg-black/0 hover:bg-black/20 transition-colors flex items-center justify-center opacity-0 hover:opacity-100">
                       <span className="text-white text-xs font-bold bg-black/50 px-2 py-1 rounded-lg">Click to expand</span>

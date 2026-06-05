@@ -90,6 +90,7 @@ export default async function TeacherWatchPage({
         {/* Live whiteboard + grading */}
         <div className="flex-1 min-w-0 min-h-0 flex flex-col">
           <TeacherWatchBoard
+            classId={classId}
             questionId={questionId}
             studentId={studentId}
             submissionId={submission?.id ?? null}
