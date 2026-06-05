@@ -61,16 +61,22 @@ export default function StudentNotificationBell({ classIds, studentId }: { class
     return () => { supabase.removeChannel(channel) }
   }, [classIds.join(',')])
 
-  // Listen for grade notifications from teacher
+  // Listen for grade notifications via Postgres Changes on feedback table
   useEffect(() => {
     if (!studentId) return
-    const ch = supabase.channel(`student-bell-feedback:${studentId}`)
-      .on('broadcast', { event: 'grade-received' }, ({ payload }) => {
-        const { question_id, grade, feedback } = payload as { question_id: string; grade: string; feedback: string }
-        const toastId = `grade:${question_id}:${Date.now()}`
-        setToasts(prev => [{ id: toastId, type: 'grade', question_id, class_id: '', created_at: new Date().toISOString(), grade, feedback }, ...prev.slice(0, 9)])
+    const ch = supabase.channel(`bell-grades:${studentId}`)
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'feedback',
+      }, async (payload) => {
+        const row = payload.new as { submission_id: string; grade: string | null; text_feedback: string | null }
+        if (!row.grade) return
+        // Verify this submission belongs to this student
+        const { data: sub } = await supabase.from('submissions').select('question_id, student_id').eq('id', row.submission_id).single()
+        if (!sub || sub.student_id !== studentId) return
+        const toastId = `grade:${row.submission_id}:${Date.now()}`
+        setToasts(prev => [{ id: toastId, type: 'grade', question_id: sub.question_id, class_id: '', created_at: new Date().toISOString(), grade: row.grade!, feedback: row.text_feedback ?? '' }, ...prev.slice(0, 9)])
         setNewCount(c => c + 1)
-        playTone(grade === 'correct' ? 660 : grade === 'partial' ? 520 : 330)
+        playTone(row.grade === 'correct' ? 660 : row.grade === 'partial' ? 520 : 330)
       })
       .subscribe()
     return () => { supabase.removeChannel(ch) }

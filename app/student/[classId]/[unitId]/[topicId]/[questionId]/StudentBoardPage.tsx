@@ -26,13 +26,14 @@ const GRADE_LABEL: Record<string, { text: string; cls: string }> = {
 
 export default function StudentBoardPage({
   questionId, studentId, classId, studentName, questionTitle, questionContent,
-  initialStudentData, initialTeacherData,
+  submissionId: initialSubmissionId, initialStudentData, initialTeacherData,
 }: Props) {
   const supabase = createClient()
   const [helpSent, setHelpSent] = useState(false)
   const [doneSent, setDoneSent] = useState(false)
   const [questionCollapsed, setQuestionCollapsed] = useState(false)
   const [gradeToast, setGradeToast] = useState<{ grade: string; feedback: string } | null>(null)
+  const [submissionId, setSubmissionId] = useState<string | null>(initialSubmissionId ?? null)
   const channelRef = useRef(supabase.channel('teacher-alerts'))
   const audioRef = useRef<AudioContext | null>(null)
 
@@ -56,30 +57,34 @@ export default function StudentBoardPage({
     return () => { supabase.removeChannel(channelRef.current) }
   }, [])
 
-  // Listen for grade notifications from teacher
+  // Listen for grade via Postgres Changes on feedback table (reliable, no broadcast needed)
   useEffect(() => {
-    const ch = supabase.channel(`student-feedback:${studentId}`)
-      .on('broadcast', { event: 'grade-received' }, ({ payload }) => {
-        const { question_id, grade, feedback } = payload as { question_id: string; grade: string; feedback: string }
-        if (question_id !== questionId) return
-        setGradeToast({ grade, feedback })
-        // Happy tone for correct, lower tone otherwise
-        playTone(grade === 'correct' ? 660 : grade === 'partial' ? 520 : 330)
+    if (!submissionId) return
+    const ch = supabase.channel(`feedback-watch:${submissionId}`)
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'feedback',
+        filter: `submission_id=eq.${submissionId}`,
+      }, (payload) => {
+        const row = payload.new as { grade: string | null; text_feedback: string | null }
+        if (!row.grade) return
+        setGradeToast({ grade: row.grade, feedback: row.text_feedback ?? '' })
+        playTone(row.grade === 'correct' ? 660 : row.grade === 'partial' ? 520 : 330)
         setTimeout(() => setGradeToast(null), 8000)
       })
       .subscribe()
     return () => { supabase.removeChannel(ch) }
-  }, [studentId, questionId])
+  }, [submissionId])
 
   async function saveStudent(dataUrl: string) {
-    await supabase.from('submissions').upsert({
+    const { data } = await supabase.from('submissions').upsert({
       question_id: questionId,
       student_id: studentId,
       canvas_data: dataUrl,
       text_answer: null,
       image_url: null,
       updated_at: new Date().toISOString(),
-    }, { onConflict: 'question_id,student_id' })
+    }, { onConflict: 'question_id,student_id' }).select('id').single()
+    if (data?.id && !submissionId) setSubmissionId(data.id)
   }
 
   async function sendAlert(type: 'help' | 'submitted') {
