@@ -1,4 +1,5 @@
-import { createClient, createAdminClient } from '@/lib/supabase/server'
+import { createClient } from '@/lib/supabase/server'
+import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 
@@ -6,7 +7,7 @@ export default async function StudentDashboard() {
   const supabase = await createClient()
   const { data: { session } } = await supabase.auth.getSession()
 
-  const admin = await createAdminClient()
+  const admin = createSupabaseAdmin(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
   const { data: enrollments } = await admin
     .from('class_enrollments')
     .select('class_id, classes(id, title)')

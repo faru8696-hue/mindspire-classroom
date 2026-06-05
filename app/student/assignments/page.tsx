@@ -1,7 +1,14 @@
 import { createClient } from '@/lib/supabase/server'
-import { createAdminClient } from '@/lib/supabase/server'
+import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
+
+function adminDb() {
+  return createSupabaseAdmin(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  )
+}
 
 const GRADE_STYLE = {
   correct:   { label: '✓ Correct',  className: 'bg-green-100 text-green-700' },
@@ -15,7 +22,7 @@ export default async function AssignmentsPage() {
   if (!session) redirect('/login')
   const studentId = session.user.id
 
-  const admin = await createAdminClient()
+  const admin = adminDb()
 
   // 1. Get all enrolled classes
   const { data: enrollments } = await admin

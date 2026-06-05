@@ -1,7 +1,14 @@
 import { createClient } from '@/lib/supabase/server'
-import { createAdminClient } from '@/lib/supabase/server'
+import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import ProfileEditor from './ProfileEditor'
+
+function adminDb() {
+  return createSupabaseAdmin(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  )
+}
 
 export default async function StudentProfilePage({
   searchParams,
@@ -23,7 +30,7 @@ export default async function StudentProfilePage({
   if (!profile) redirect('/login')
 
   // Stats
-  const admin = await createAdminClient()
+  const admin = adminDb()
   const { data: enrollments } = await admin.from('class_enrollments').select('class_id, classes(id, title)').eq('student_id', studentId)
   const enrolledClasses = (enrollments ?? []).map((e: { class_id: string; classes: { id: string; title: string } | { id: string; title: string }[] | null }) => {
     const c = e.classes; return Array.isArray(c) ? c[0] : c

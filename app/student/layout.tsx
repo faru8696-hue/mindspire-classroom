@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { createAdminClient } from '@/lib/supabase/server'
+import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
 import Link from 'next/link'
 import { logout } from '@/app/actions/auth'
 import ProfileGate from '@/components/ProfileGate'
@@ -34,7 +34,7 @@ export default async function StudentLayout({ children }: { children: React.Reac
   const profileComplete = !extColumnsExist || !!(p.grade_level && p.phone && p.parent_name && p.parent_phone)
 
   // Enrolled class IDs for notification bell
-  const admin = await createAdminClient()
+  const admin = createSupabaseAdmin(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
   const { data: enrollments } = await admin.from('class_enrollments').select('class_id').eq('student_id', session.user.id)
   const enrolledClassIds = (enrollments ?? []).map((e: { class_id: string }) => e.class_id)
 
