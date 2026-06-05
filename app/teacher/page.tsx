@@ -149,11 +149,11 @@ export default async function TeacherDashboard() {
           <div className="text-3xl font-bold">{pendingFeedback?.length ?? 0}</div>
           <div className="text-sm font-medium mt-1">Needs Grading</div>
         </Link>
-        <Link href="/teacher/content" className="bg-blue-100 text-blue-800 rounded-xl p-5 hover:opacity-80 transition-opacity">
-          <div className="text-3xl mb-2">📚</div>
-          <div className="text-3xl font-bold">{questions?.length ?? 0}</div>
-          <div className="text-sm font-medium mt-1">Total Questions</div>
-        </Link>
+        <div className="bg-red-100 text-red-800 rounded-xl p-5">
+          <div className="text-3xl mb-2">🆘</div>
+          <div className="text-3xl font-bold">{(recentNotifs as unknown as RecentNotif[])?.filter(n => !n.read).length ?? 0}</div>
+          <div className="text-sm font-medium mt-1">Unread Alerts</div>
+        </div>
       </div>
 
       {/* Classroom overview — all students per class */}
