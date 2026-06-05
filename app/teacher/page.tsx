@@ -70,10 +70,10 @@ export default async function TeacherDashboard() {
     .limit(8)
 
   // Recent notifications
-  type RecentNotif = { id: string; type: string; created_at: string; read: boolean; profiles: { full_name: string } | null; questions: { title: string } | null }
+  type RecentNotif = { id: string; type: string; student_id: string; created_at: string; read: boolean; profiles: { full_name: string } | null; questions: { title: string } | null }
   const { data: recentNotifs } = await supabase
     .from('notifications')
-    .select('id, type, created_at, read, profiles:profiles!notifications_student_id_fkey(full_name), questions:questions!notifications_question_id_fkey(title)')
+    .select('id, type, student_id, created_at, read, profiles:profiles!notifications_student_id_fkey(full_name), questions:questions!notifications_question_id_fkey(title)')
     .order('created_at', { ascending: false })
     .limit(10)
 
@@ -241,14 +241,14 @@ export default async function TeacherDashboard() {
               const icon = n.type === 'help' ? '🆘' : n.type === 'submitted' ? '✅' : '📬'
               const label = n.type === 'help' ? 'asked for help' : n.type === 'submitted' ? 'submitted work' : n.type
               return (
-                <div key={n.id} className={`flex items-center gap-4 px-5 py-3 ${n.read ? 'opacity-50' : ''}`}>
+                <Link key={n.id} href={`/teacher/students/${n.student_id}`} className={`flex items-center gap-4 px-5 py-3 hover:bg-purple-50 transition-colors ${n.read ? 'opacity-50' : ''}`}>
                   <span className="text-xl flex-shrink-0">{icon}</span>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm text-gray-800"><span className="font-semibold">{studentName}</span> {label}</p>
                     {questionTitle && <p className="text-xs text-gray-400 truncate">{questionTitle}</p>}
                   </div>
                   <span className="text-xs text-gray-400 flex-shrink-0">{timeLabel}</span>
-                </div>
+                </Link>
               )
             })}
           </div>

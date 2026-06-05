@@ -50,6 +50,12 @@ export default function StudentBoardPage({
     } catch {}
   }
 
+  // Subscribe the alert broadcast channel so send() works
+  useEffect(() => {
+    channelRef.current.subscribe()
+    return () => { supabase.removeChannel(channelRef.current) }
+  }, [])
+
   // Listen for grade notifications from teacher
   useEffect(() => {
     const ch = supabase.channel(`student-feedback:${studentId}`)

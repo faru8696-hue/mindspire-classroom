@@ -23,9 +23,8 @@ export default async function TeacherLayout({ children }: { children: React.Reac
   const { data: notifs } = await admin
     .from('notifications')
     .select('id, type, student_id, question_id, class_id, created_at, read, profiles:profiles!notifications_student_id_fkey(full_name), questions:questions!notifications_question_id_fkey(title)')
-    .eq('read', false)
     .order('created_at', { ascending: false })
-    .limit(20)
+    .limit(30)
 
   const initialNotifications = (notifs ?? []).map((n: {
     id: string; type: string; student_id: string; question_id: string; class_id: string;
