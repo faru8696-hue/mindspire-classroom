@@ -11,7 +11,7 @@ export default async function StudentLayout({ children }: { children: React.Reac
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('role, full_name, approved, avatar_url, nickname, grade_level, phone, parent_name, parent_phone')
+    .select('role, full_name, approved, avatar_url, nickname, grade_level, phone')
     .eq('id', session.user.id)
     .single()
 
@@ -19,8 +19,17 @@ export default async function StudentLayout({ children }: { children: React.Reac
   if (profile.role === 'teacher') redirect('/teacher')
   if (!profile.approved) redirect('/pending')
 
-  const p = profile as Record<string, string | null | undefined>
-  const profileComplete = !!(p.grade_level && p.phone && p.parent_name && p.parent_phone)
+  // Fetch extended fields separately — these columns require a migration and may not exist yet
+  const { data: extProfile } = await supabase
+    .from('profiles')
+    .select('parent_name, parent_phone')
+    .eq('id', session.user.id)
+    .maybeSingle()
+
+  const p = { ...profile, ...(extProfile ?? {}) } as Record<string, string | null | undefined>
+  // Only enforce gate if ALL extended columns exist (i.e. migration has been run)
+  const extColumnsExist = extProfile !== null && 'parent_name' in (extProfile ?? {})
+  const profileComplete = !extColumnsExist || !!(p.grade_level && p.phone && p.parent_name && p.parent_phone)
 
   return (
     <div className="min-h-screen flex flex-col">
