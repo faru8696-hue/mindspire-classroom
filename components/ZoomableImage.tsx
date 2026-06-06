@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 
 interface Props {
   src: string
@@ -10,9 +11,12 @@ interface Props {
 
 export default function ZoomableImage({ src, alt = '', className = '' }: Props) {
   const [open, setOpen] = useState(false)
+  const [mounted, setMounted] = useState(false)
   const [scale, setScale] = useState(1)
   const [pos, setPos] = useState({ x: 0, y: 0 })
   const dragRef = useRef<{ x: number; y: number; px: number; py: number } | null>(null)
+
+  useEffect(() => { setMounted(true) }, [])
 
   function openLightbox() { setScale(1); setPos({ x: 0, y: 0 }); setOpen(true) }
   function close() { setOpen(false) }
@@ -50,14 +54,9 @@ export default function ZoomableImage({ src, alt = '', className = '' }: Props) 
 
   const btn = 'w-9 h-9 rounded-full bg-white/15 hover:bg-white/30 text-white text-lg font-bold flex items-center justify-center leading-none transition-colors'
 
-  return (
-    <>
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={src} alt={alt} onClick={openLightbox} className={`${className} cursor-zoom-in`} />
-
-      {open && (
+  const lightbox = open ? (
         <div
-          className="fixed inset-0 z-[200] bg-black/90 flex items-center justify-center"
+          className="fixed inset-0 z-[2000] bg-black/90 flex items-center justify-center"
           onClick={close}
           onWheel={onWheel}
         >
@@ -88,7 +87,13 @@ export default function ZoomableImage({ src, alt = '', className = '' }: Props) 
             Scroll or use +/− to zoom · double-click to toggle · drag to pan · Esc to close
           </p>
         </div>
-      )}
+  ) : null
+
+  return (
+    <>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={src} alt={alt} onClick={openLightbox} className={`${className} cursor-zoom-in`} />
+      {mounted && lightbox ? createPortal(lightbox, document.body) : null}
     </>
   )
 }
