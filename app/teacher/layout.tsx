@@ -6,6 +6,7 @@ import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
 import Link from 'next/link'
 import { logout } from '@/app/actions/auth'
 import TeacherNotificationBell from '@/components/TeacherNotificationBell'
+import TeacherClassNav from '@/components/TeacherClassNav'
 
 export default async function TeacherLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
@@ -22,6 +23,7 @@ export default async function TeacherLayout({ children }: { children: React.Reac
 
   // Load recent unread notifications for the bell
   const admin = createSupabaseAdmin(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+  const { data: classList } = await admin.from('classes').select('id, title').order('order_index')
   const { data: notifs } = await admin
     .from('notifications')
     .select('id, type, student_id, question_id, class_id, created_at, read, profiles:profiles!notifications_student_id_fkey(full_name), questions:questions!notifications_question_id_fkey(title)')
@@ -51,6 +53,7 @@ export default async function TeacherLayout({ children }: { children: React.Reac
         <div className="flex items-center gap-6">
           <Link href="/teacher" className="font-bold text-lg hover:text-purple-200 transition-colors">⚛️ Mindspire Lab</Link>
           <Link href="/teacher" className="text-purple-200 hover:text-white text-sm transition-colors">Dashboard</Link>
+          <TeacherClassNav classes={classList ?? []} />
           <Link href="/teacher/students" className="text-purple-200 hover:text-white text-sm transition-colors">Students</Link>
           <Link href="/teacher/content" className="text-purple-200 hover:text-white text-sm transition-colors">Content</Link>
           <Link href="/teacher/submissions" className="text-purple-200 hover:text-white text-sm transition-colors">Submissions</Link>
