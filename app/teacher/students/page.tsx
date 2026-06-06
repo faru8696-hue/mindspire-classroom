@@ -7,10 +7,12 @@ async function approveStudent(formData: FormData) {
   'use server'
   const admin = await createAdminClient()
   const id = formData.get('id') as string
-  const classId = formData.get('class_id') as string
+  // Fall back to the class the student applied for if the teacher left the dropdown untouched
+  const classId = (formData.get('class_id') as string) || (formData.get('pending_class_id') as string)
   await admin.from('profiles').update({ approved: true }).eq('id', id)
   if (classId) {
-    await admin.from('class_enrollments').upsert({ student_id: id, class_id: classId })
+    const { error } = await admin.from('class_enrollments').upsert({ student_id: id, class_id: classId })
+    if (error) throw new Error(`Enrollment failed: ${error.message}`)
   }
   redirect('/teacher/students')
 }
@@ -73,6 +75,7 @@ export default async function StudentsPage() {
                     <div className="flex items-center gap-2 flex-wrap">
                       <form action={approveStudent} className="flex items-center gap-2 flex-wrap">
                         <input type="hidden" name="id" value={student.id} />
+                        <input type="hidden" name="pending_class_id" value={student.pending_class_id ?? ''} />
                         <select
                           name="class_id"
                           defaultValue={student.pending_class_id ?? ''}
