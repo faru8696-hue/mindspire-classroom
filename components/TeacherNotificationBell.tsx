@@ -26,12 +26,20 @@ export default function TeacherNotificationBell({ initialNotifications }: Props)
   const [open, setOpen] = useState(false)
   const [toasts, setToasts] = useState<Notification[]>([])
   const audioRef = useRef<AudioContext | null>(null)
+  // Track which notification ids we've already surfaced, so the broadcast
+  // (instant) and the polling fallback (durable) never double-toast.
+  const seenRef = useRef<Set<string>>(new Set(initialNotifications.map(n => n.id)))
 
-  // Fetch fresh notifications from server on mount (layout data can be stale)
+  // Seed from server on mount (layout data can be stale) — no toasts for existing.
   useEffect(() => {
     fetch('/api/notifications')
       .then(r => r.json())
-      .then(({ notifications: fresh }) => { if (fresh?.length) setNotifications(fresh) })
+      .then(({ notifications: fresh }) => {
+        if (fresh?.length) {
+          fresh.forEach((n: Notification) => seenRef.current.add(n.id))
+          setNotifications(fresh)
+        }
+      })
       .catch(() => {})
   }, [])
 
@@ -55,19 +63,55 @@ export default function TeacherNotificationBell({ initialNotifications }: Props)
     setToasts(prev => prev.filter(t => t.id !== id))
   }
 
+  // Surface a fresh notification: toast + beep + relay to any live view.
+  function surface(n: Notification) {
+    setToasts(prev => [{ ...n }, ...prev].slice(0, 5))
+    playBeep()
+    setTimeout(() => dismissToast(n.id), 12000)
+    window.dispatchEvent(new CustomEvent('teacher-student-alert', { detail: n }))
+  }
+
+  // Instant path: realtime broadcast from the student.
   useEffect(() => {
     const channel = supabase.channel('teacher-alerts', { config: { broadcast: { self: false } } })
       .on('broadcast', { event: 'student-alert' }, ({ payload }) => {
         const n = payload as Notification
+        if (seenRef.current.has(n.id)) return
+        seenRef.current.add(n.id)
         setNotifications(prev => [{ ...n, read: false }, ...prev.slice(0, 49)])
-        setToasts(prev => [{ ...n }, ...prev].slice(0, 5))
-        playBeep()
-        setTimeout(() => dismissToast(n.id), 12000)
-        window.dispatchEvent(new CustomEvent('teacher-student-alert', { detail: n }))
+        surface(n)
       })
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
+  }, [])
+
+  // Durable fallback: poll the server so missed broadcasts (backgrounded
+  // tab, idle socket, navigating between pages) still get surfaced.
+  useEffect(() => {
+    const poll = async () => {
+      try {
+        const res = await fetch('/api/notifications')
+        const { notifications: fresh } = await res.json()
+        if (!fresh?.length) return
+        setNotifications(prev => {
+          const map = new Map(prev.map(n => [n.id, n]))
+          for (const n of fresh as Notification[]) map.set(n.id, n)
+          return [...map.values()]
+            .sort((a, b) => b.created_at.localeCompare(a.created_at))
+            .slice(0, 50)
+        })
+        // Oldest first so the newest toast lands on top.
+        for (const n of [...(fresh as Notification[])].reverse()) {
+          if (!seenRef.current.has(n.id)) {
+            seenRef.current.add(n.id)
+            if (!n.read) surface(n)
+          }
+        }
+      } catch {}
+    }
+    const id = setInterval(poll, 12000)
+    return () => clearInterval(id)
   }, [])
 
   async function markRead(id: string) {
