@@ -34,7 +34,7 @@ function extractImages(canvasJson: string | null): string[] {
 }
 
 export default function TeacherWatchBoard({
-  classId, questionId, studentId, submissionId,
+  classId, questionId, studentId,
   initialStudentData,
   initialGrade, initialFeedbackText,
 }: Props) {
@@ -59,25 +59,32 @@ export default function TeacherWatchBoard({
     return () => { supabase.removeChannel(gradeChannel); supabase.removeChannel(gradeNotifChannel) }
   }, [])
 
-  // Subscribe to student submission updates via realtime
+  // Pull the student's latest saved work via the service-role API on an interval.
+  // We can't use realtime postgres_changes here: the submissions table is RLS-gated
+  // with no working SELECT policy, so the teacher client never receives those events
+  // — which left the live board blank for already-saved work until the student drew
+  // again (the only path that updates it is the in-memory broadcast while drawing).
+  // Polling the service-role endpoint reliably surfaces saved work even when the
+  // student isn't actively drawing. Remount the board (boardKey) only when the data
+  // actually changed so the teacher's in-progress feedback isn't disrupted.
   useEffect(() => {
-    if (!submissionId) return
-    const ch = supabase.channel(`watch-sub:${submissionId}`)
-      .on('postgres_changes', {
-        event: 'UPDATE',
-        schema: 'public',
-        table: 'submissions',
-        filter: `id=eq.${submissionId}`,
-      }, payload => {
-        const row = payload.new as { canvas_data: string | null }
-        if (row.canvas_data && row.canvas_data !== studentData) {
-          setStudentData(row.canvas_data)
+    let active = true
+    let last = studentData
+    async function poll() {
+      try {
+        const res = await fetch(`/api/submission?questionId=${questionId}&studentId=${studentId}`)
+        if (!res.ok || !active) return
+        const { canvasData } = await res.json() as { canvasData: string | null }
+        if (canvasData && canvasData !== last) {
+          last = canvasData
+          setStudentData(canvasData)
           setBoardKey(k => k + 1)
         }
-      })
-      .subscribe()
-    return () => { supabase.removeChannel(ch) }
-  }, [submissionId])
+      } catch {}
+    }
+    const interval = setInterval(poll, 4000)
+    return () => { active = false; clearInterval(interval) }
+  }, [questionId, studentId])
 
   async function saveTeacher(dataUrl: string) {
     // Service-role API write — the feedback table is not writable by the client under RLS.
