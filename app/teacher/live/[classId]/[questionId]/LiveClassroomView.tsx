@@ -9,12 +9,16 @@ interface Submission { id: string; student_id: string; canvas_data: string | nul
 interface Feedback { submission_id: string; grade: string | null }
 interface StudentNotification { id: string; type: string; student_id: string; question_id: string; class_id: string; created_at: string; read: boolean; student_name?: string }
 
+interface ClassQuestion { id: string; title: string; topicTitle: string }
+
 interface Props {
   classId: string
   questionId: string
   classTitle: string
   questionTitle: string
   questionContent: string | null
+  allQuestions: ClassQuestion[]
+  questionHelp: Record<string, number>
   students: Student[]
   initialSubmissions: Submission[]
   initialFeedbacks: Feedback[]
@@ -33,9 +37,11 @@ type Filter = 'all' | 'help' | 'done' | 'submitted' | 'unchecked'
 
 export default function LiveClassroomView({
   classId, questionId, classTitle, questionTitle, questionContent,
-  students, initialSubmissions, initialFeedbacks, initialNotifications,
+  allQuestions, questionHelp, students, initialSubmissions, initialFeedbacks, initialNotifications,
 }: Props) {
   const supabase = createClient()
+  const [helpByQuestion, setHelpByQuestion] = useState<Record<string, number>>(questionHelp)
+  const [switcherOpen, setSwitcherOpen] = useState(false)
   const [submissions, setSubmissions] = useState<Map<string, Submission>>(
     () => new Map(initialSubmissions.map(s => [s.student_id, s]))
   )
@@ -61,12 +67,20 @@ export default function LiveClassroomView({
       return next
     })
     // Mark notifications read when checked, unread when unchecked
-    const studentNotifIds = notifications.filter(n => n.student_id === studentId && n.question_id === questionId).map(n => n.id)
+    const studentNotifs = notifications.filter(n => n.student_id === studentId && n.question_id === questionId)
+    const studentNotifIds = studentNotifs.map(n => n.id)
+    const helpDelta = studentNotifs.filter(n => n.type === 'help' && n.read === wasChecked).length
     if (studentNotifIds.length) {
       await supabase.from('notifications').update({ read: !wasChecked }).in('id', studentNotifIds)
       setNotifications(prev => prev.map(n =>
         studentNotifIds.includes(n.id) ? { ...n, read: !wasChecked } : n
       ))
+      if (helpDelta) {
+        setHelpByQuestion(prev => ({
+          ...prev,
+          [questionId]: Math.max(0, (prev[questionId] ?? 0) + (wasChecked ? helpDelta : -helpDelta)),
+        }))
+      }
     }
   }
 
@@ -124,6 +138,9 @@ export default function LiveClassroomView({
     // (avoids conflicting Supabase channel subscriptions for 'teacher-alerts')
     const handleAlert = (e: Event) => {
       const row = (e as CustomEvent<StudentNotification>).detail
+      if (row.class_id === classId && row.type === 'help') {
+        setHelpByQuestion(prev => ({ ...prev, [row.question_id]: (prev[row.question_id] ?? 0) + 1 }))
+      }
       if (row.question_id === questionId) {
         setNotifications(prev => [{ ...row, read: false }, ...prev])
         playBeep()
@@ -141,6 +158,7 @@ export default function LiveClassroomView({
     setNotifications(prev => prev.map(n => ({ ...n, read: true })))
   }
 
+  const otherHelp = allQuestions.reduce((sum, q) => q.id !== questionId ? sum + (helpByQuestion[q.id] ?? 0) : sum, 0)
   const submittedCount = students.filter(s => submissions.has(s.id)).length
   const uncheckedNeedingReview = students.filter(s => (helpIds.has(s.id) || doneIds.has(s.id)) && !checkedIds.has(s.id)).length
 
@@ -156,11 +174,61 @@ export default function LiveClassroomView({
     <div className="h-screen flex flex-col bg-gray-950 overflow-hidden">
       {/* Top bar */}
       <div className="bg-gray-900 border-b border-gray-700 px-5 py-3 flex items-center justify-between flex-shrink-0">
-        <div className="flex items-center gap-4">
-          <Link href="/teacher" className="text-gray-400 hover:text-white text-sm">← Back</Link>
-          <div>
-            <h1 className="font-bold text-white text-sm">{classTitle} — {questionTitle}</h1>
-            {questionContent && <p className="text-xs text-gray-400">{questionContent}</p>}
+        <div className="flex items-center gap-4 min-w-0">
+          <Link href="/teacher" className="text-gray-400 hover:text-white text-sm flex-shrink-0">← Back</Link>
+          <div className="relative min-w-0">
+            <button
+              onClick={() => setSwitcherOpen(o => !o)}
+              className="flex items-center gap-2 text-left hover:bg-gray-800 rounded-lg px-2 py-1 -mx-2 transition-colors"
+            >
+              <div className="min-w-0">
+                <p className="text-[10px] uppercase tracking-widest text-gray-500 leading-none mb-0.5">{classTitle}</p>
+                <h1 className="font-bold text-white text-sm flex items-center gap-1.5 truncate">
+                  <span className="truncate">{questionTitle}</span>
+                  <span className="text-gray-500 flex-shrink-0">▾</span>
+                </h1>
+              </div>
+              {otherHelp > 0 && (
+                <span className="flex-shrink-0 bg-amber-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+                  🙋 {otherHelp} on other Qs
+                </span>
+              )}
+            </button>
+
+            {switcherOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setSwitcherOpen(false)} />
+                <div className="absolute left-0 top-full mt-2 w-96 max-h-[70vh] overflow-y-auto bg-gray-900 border border-gray-700 rounded-xl shadow-2xl z-50 py-1">
+                  <p className="px-3 py-2 text-[10px] uppercase tracking-widest text-gray-500 border-b border-gray-800">Jump to question</p>
+                  {allQuestions.map(q => {
+                    const help = helpByQuestion[q.id] ?? 0
+                    const isCurrent = q.id === questionId
+                    return (
+                      <button
+                        key={q.id}
+                        onClick={() => { if (!isCurrent) window.location.href = `/teacher/live/${classId}/${q.id}` }}
+                        className={`w-full text-left px-3 py-2 flex items-center justify-between gap-2 transition-colors ${
+                          isCurrent ? 'bg-purple-600/20' : 'hover:bg-gray-800'
+                        }`}
+                      >
+                        <div className="min-w-0">
+                          {q.topicTitle && <p className="text-[10px] text-gray-500 truncate">{q.topicTitle}</p>}
+                          <p className={`text-xs font-medium truncate ${isCurrent ? 'text-purple-300' : 'text-gray-200'}`}>
+                            {isCurrent && '● '}{q.title}
+                          </p>
+                        </div>
+                        {help > 0 && (
+                          <span className="flex-shrink-0 bg-amber-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+                            🙋 {help}
+                          </span>
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
+              </>
+            )}
+            {questionContent && <p className="text-xs text-gray-400 truncate max-w-xl">{questionContent}</p>}
           </div>
         </div>
 

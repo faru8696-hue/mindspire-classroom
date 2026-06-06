@@ -7,13 +7,51 @@ export default async function LiveClassroomPage({ params }: { params: Promise<{ 
   const { classId, questionId } = await params
   const supabase = await createAdminClient()
 
-  const [{ data: cls }, { data: question }, { data: enrollments }] = await Promise.all([
+  const [{ data: cls }, { data: question }, { data: enrollments }, { data: units }] = await Promise.all([
     supabase.from('classes').select('title').eq('id', classId).single(),
     supabase.from('questions').select('title, content').eq('id', questionId).single(),
     supabase.from('class_enrollments').select('student_id').eq('class_id', classId),
+    supabase.from('units').select('id, title, order_index').eq('class_id', classId),
   ])
 
   if (!cls || !question) notFound()
+
+  // All questions in this class (class → units → topics → questions), ordered
+  const unitIds = (units ?? []).map(u => u.id)
+  const { data: topics } = unitIds.length > 0
+    ? await supabase.from('topics').select('id, title, unit_id, order_index').in('unit_id', unitIds)
+    : { data: [] as { id: string; title: string; unit_id: string; order_index: number }[] }
+  const topicIds = (topics ?? []).map(t => t.id)
+  const { data: classQuestions } = topicIds.length > 0
+    ? await supabase.from('questions').select('id, title, topic_id, order_index').in('topic_id', topicIds)
+    : { data: [] as { id: string; title: string; topic_id: string; order_index: number }[] }
+
+  const unitOrder = new Map((units ?? []).map(u => [u.id, u.order_index ?? 0]))
+  const topicById = new Map((topics ?? []).map(t => [t.id, t]))
+  const allQuestions = (classQuestions ?? [])
+    .map(q => {
+      const t = topicById.get(q.topic_id)
+      return {
+        id: q.id,
+        title: q.title,
+        topicTitle: t?.title ?? '',
+        _u: t ? (unitOrder.get(t.unit_id) ?? 0) : 0,
+        _t: t?.order_index ?? 0,
+        _q: q.order_index ?? 0,
+      }
+    })
+    .sort((a, b) => a._u - b._u || a._t - b._t || a._q - b._q)
+    .map(({ id, title, topicTitle }) => ({ id, title, topicTitle }))
+
+  // Unread help counts per question across the whole class
+  const { data: classHelp } = await supabase
+    .from('notifications')
+    .select('question_id, type, read')
+    .eq('class_id', classId)
+    .eq('type', 'help')
+    .eq('read', false)
+  const questionHelp: Record<string, number> = {}
+  for (const n of classHelp ?? []) questionHelp[n.question_id] = (questionHelp[n.question_id] ?? 0) + 1
 
   const enrolledIds = enrollments?.map(e => e.student_id) ?? []
   const { data: students } = enrolledIds.length > 0
@@ -44,6 +82,8 @@ export default async function LiveClassroomPage({ params }: { params: Promise<{ 
       classTitle={cls.title}
       questionTitle={question.title}
       questionContent={question.content}
+      allQuestions={allQuestions}
+      questionHelp={questionHelp}
       students={students ?? []}
       initialSubmissions={(submissions ?? []).map((s: { id: string; student_id: string; canvas_data: string | null; text_answer: string | null; updated_at: string }) => s)}
       initialFeedbacks={(feedbacks ?? []).map((f: { submission_id: string; grade: string | null }) => f)}
