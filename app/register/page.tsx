@@ -14,7 +14,7 @@ const CLASS_INFO: Record<string, { icon: string; who: string }> = {
   },
   'ap chem advanced': {
     icon: '🔬',
-    who: 'For students who have previously completed regular or honors chemistry.',
+    who: 'For students who have taken regular or honors chemistry in high school.',
   },
   'ap chem': {
     icon: '⚗️',
@@ -24,9 +24,9 @@ const CLASS_INFO: Record<string, { icon: string; who: string }> = {
 
 function getInfo(title: string) {
   const key = title.toLowerCase().trim()
-  for (const [k, v] of Object.entries(CLASS_INFO)) {
-    if (key.includes(k)) return v
-  }
+  if (key.includes('advanced')) return CLASS_INFO['ap chem advanced']
+  if (key.includes('honors')) return CLASS_INFO['honors chem']
+  if (key.includes('ap chem')) return CLASS_INFO['ap chem']
   return { icon: '📚', who: '' }
 }
 
