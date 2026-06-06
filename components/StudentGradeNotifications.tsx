@@ -1,15 +1,15 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 
 interface Notif {
   id: string
-  grade: string
+  type: string
+  grade: string | null
   feedback: string | null
-  question_id: string
   question_title: string
+  class_title: string | null
   href: string
   created_at: string
   read: boolean
@@ -25,9 +25,16 @@ const GRADE_STYLE: Record<string, { icon: string; cls: string; label: string }> 
   assignment: { icon: '📋', cls: 'border-purple-300 bg-purple-50', label: 'New assignment' },
 }
 
+function styleKey(n: Notif): string {
+  if (n.type === 'assignment') return 'assignment'
+  if (n.type === 'comment') return 'comment'
+  return n.grade ?? 'comment'
+}
+
 export default function StudentGradeNotifications({ studentId }: { studentId: string }) {
-  const supabase = createClient()
   const [notifs, setNotifs] = useState<Notif[]>([])
+  const seen = useRef<Set<string>>(new Set())
+  const firstLoad = useRef(true)
   const audioRef = useRef<AudioContext | null>(null)
 
   function playTone(freq: number) {
@@ -47,47 +54,30 @@ export default function StudentGradeNotifications({ studentId }: { studentId: st
     } catch {}
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function buildNotif(n: any): Notif {
-    const q = Array.isArray(n.questions) ? n.questions[0] : n.questions
-    const topic = Array.isArray(q?.topics) ? q.topics[0] : q?.topics
-    const unit = Array.isArray(topic?.units) ? topic.units[0] : topic?.units
-    const cls = Array.isArray(unit?.classes) ? unit.classes[0] : unit?.classes
-    const href = cls?.id && unit?.id && topic?.id && q?.id
-      ? `/student/${cls.id}/${unit.id}/${topic.id}/${q.id}`
-      : '/student/assignments'
-    const gradeKey = n.type === 'assignment' ? 'assignment' : (n.grade ?? (n.type === 'comment' ? 'comment' : 'comment'))
-    return { id: n.id, grade: gradeKey, feedback: n.feedback, question_id: n.question_id, question_title: q?.title ?? 'Question', href, created_at: n.created_at, read: n.read }
-  }
-
   useEffect(() => {
-    supabase
-      .from('student_notifications')
-      .select('id, grade, feedback, read, created_at, question_id, questions(id, title, topic_id, topics(id, unit_id, units(id, class_id, classes(id, title))))')
-      .eq('student_id', studentId)
-      .order('created_at', { ascending: false })
-      .limit(5)
-      .then(({ data }) => { if (data?.length) setNotifs(data.map(buildNotif)) })
-  }, [studentId])
-
-  useEffect(() => {
-    const ch = supabase.channel(`dashboard-notifs:${studentId}`)
-      .on('postgres_changes', {
-        event: 'INSERT', schema: 'public', table: 'student_notifications',
-      }, async (payload) => {
-        const row = payload.new as { id: string; student_id: string; grade: string | null; question_id: string }
-        if (row.student_id !== studentId) return
-        const { data } = await supabase
-          .from('student_notifications')
-          .select('id, grade, feedback, read, created_at, question_id, questions(id, title, topic_id, topics(id, unit_id, units(id, class_id, classes(id, title))))')
-          .eq('id', row.id)
-          .single()
-        if (!data) return
-        setNotifs(prev => [buildNotif(data), ...prev.filter(n => n.id !== row.id).slice(0, 4)])
-        playTone(!row.grade || row.grade === 'comment' ? 740 : row.grade === 'correct' ? 660 : row.grade === 'partial' ? 520 : 330)
-      })
-      .subscribe()
-    return () => { supabase.removeChannel(ch) }
+    let active = true
+    async function load() {
+      try {
+        const res = await fetch('/api/student-notifications')
+        if (!res.ok) return
+        const { notifications } = await res.json() as { notifications: Notif[] }
+        if (!active) return
+        // Play a tone for newly-seen notifications (skip the very first load)
+        if (!firstLoad.current) {
+          const fresh = notifications.filter(n => !seen.current.has(n.id))
+          if (fresh.length) {
+            const g = fresh[0].grade
+            playTone(fresh[0].type === 'assignment' ? 520 : !g || g === 'comment' ? 740 : g === 'correct' ? 660 : g === 'partial' ? 520 : 330)
+          }
+        }
+        notifications.forEach(n => seen.current.add(n.id))
+        firstLoad.current = false
+        setNotifs(notifications.slice(0, 5))
+      } catch {}
+    }
+    load()
+    const interval = setInterval(load, 15000)
+    return () => { active = false; clearInterval(interval) }
   }, [studentId])
 
   if (notifs.length === 0) return null
@@ -100,7 +90,7 @@ export default function StudentGradeNotifications({ studentId }: { studentId: st
       </div>
       <div className="space-y-2">
         {notifs.map(n => {
-          const style = GRADE_STYLE[n.grade] ?? { icon: '📝', cls: 'border-gray-300 bg-gray-50', label: n.grade }
+          const style = GRADE_STYLE[styleKey(n)] ?? { icon: '📝', cls: 'border-gray-300 bg-gray-50', label: n.grade ?? 'Update' }
           return (
             <Link key={n.id} href={n.href} className={`flex items-center gap-3 border-l-4 rounded-xl px-4 py-3 hover:opacity-80 transition-opacity ${style.cls} ${!n.read ? 'ring-2 ring-purple-200' : ''}`}>
               <span className="text-xl flex-shrink-0">{style.icon}</span>

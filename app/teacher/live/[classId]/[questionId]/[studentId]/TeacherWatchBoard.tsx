@@ -80,27 +80,25 @@ export default function TeacherWatchBoard({
   }, [submissionId])
 
   async function saveTeacher(dataUrl: string) {
-    if (!submissionId) return
     // Service-role API write — the feedback table is not writable by the client under RLS.
+    // The route resolves (and creates if needed) the submission, so no submissionId is required.
     await fetch('/api/grade', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ submissionId, canvasData: dataUrl }),
+      body: JSON.stringify({ studentId, questionId, canvasData: dataUrl }),
     })
   }
 
   async function persistGrade(newGrade: string | null, feedback: string) {
-    if (!submissionId) return
     // Save grade + feedback and notify the student via the service-role API.
-    await fetch('/api/grade', {
+    const res = await fetch('/api/grade', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        submissionId,
-        grade: newGrade,
-        textFeedback: feedback || null,
         studentId,
         questionId,
+        grade: newGrade,
+        textFeedback: feedback || null,
         notify: true,
       }),
     })
@@ -112,26 +110,29 @@ export default function TeacherWatchBoard({
     if (newGrade) {
       await gradeNotifChannel.send({ type: 'broadcast', event: 'grade-update', payload: { grade: newGrade, feedback } })
     }
+    return res.ok
   }
 
   async function applyGrade(g: string) {
     const newGrade = grade === g ? null : g
     setGrade(newGrade)
-    if (!submissionId) return
     setSaving(true)
-    await persistGrade(newGrade, feedbackText)
+    const ok = await persistGrade(newGrade, feedbackText)
     setSaving(false)
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
+    if (ok) {
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    }
   }
 
   async function saveFeedback() {
-    if (!submissionId) return
     setSaving(true)
-    await persistGrade(grade, feedbackText)
+    const ok = await persistGrade(grade, feedbackText)
     setSaving(false)
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
+    if (ok) {
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    }
   }
 
   return (
@@ -171,6 +172,14 @@ export default function TeacherWatchBoard({
       <div className="bg-gray-900 border-t border-gray-700 px-4 py-3 flex-shrink-0">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs text-gray-400 font-semibold mr-1">Grade:</span>
+          {(() => {
+            const current = GRADES.find(g => g.value === grade)
+            return (
+              <span className={`text-xs px-2.5 py-1 rounded-lg font-bold mr-1 ${current ? 'bg-white/15 text-white' : 'bg-gray-800 text-gray-500'}`}>
+                {current ? current.label.replace(/^[^\s]+\s/, '') : 'Not graded'}
+              </span>
+            )
+          })()}
           {GRADES.map(g => (
             <button
               key={g.value}

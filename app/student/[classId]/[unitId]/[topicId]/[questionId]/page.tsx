@@ -49,10 +49,12 @@ export default async function QuestionPage({ params }: { params: Promise<{ class
   }
 
   const gradeInfo = feedback?.grade ? ({
-    correct: { label: '✓ Correct', cls: 'bg-green-100 text-green-700 border-green-200' },
-    partial: { label: '~ Partially correct', cls: 'bg-amber-100 text-amber-700 border-amber-200' },
-    incorrect: { label: '✗ Incorrect', cls: 'bg-red-100 text-red-700 border-red-200' },
-  } as Record<string, { label: string; cls: string }>)[feedback.grade] : null
+    correct:   { label: 'Correct', icon: '✅', cls: 'bg-green-100 text-green-800 border-green-300' },
+    partial:   { label: 'Partially correct', icon: '🟡', cls: 'bg-amber-100 text-amber-800 border-amber-300' },
+    discussed: { label: 'Discussed', icon: '💬', cls: 'bg-blue-100 text-blue-800 border-blue-300' },
+    incorrect: { label: 'Incorrect', icon: '❌', cls: 'bg-red-100 text-red-800 border-red-300' },
+    needsmore: { label: 'Needs more work', icon: '🔄', cls: 'bg-purple-100 text-purple-800 border-purple-300' },
+  } as Record<string, { label: string; icon: string; cls: string }>)[feedback.grade] : null
 
   return (
     <div className="max-w-7xl mx-auto space-y-3">
@@ -72,11 +74,6 @@ export default async function QuestionPage({ params }: { params: Promise<{ class
           {question.content && <p className="text-gray-600 mt-1">{question.content}</p>}
         </div>
         <div className="flex items-center gap-3 flex-shrink-0">
-          {gradeInfo && (
-            <span className={`px-3 py-1.5 rounded-lg text-sm font-bold border ${gradeInfo.cls}`}>
-              {gradeInfo.label}
-            </span>
-          )}
           <div className="flex items-center gap-1.5">
             {prevId ? (
               <Link href={`/student/${classId}/${unitId}/${topicId}/${prevId}`}
@@ -103,6 +100,22 @@ export default async function QuestionPage({ params }: { params: Promise<{ class
           </div>
         </div>
       </div>
+
+      {/* Grade banner — clearly shows the student's result for this question */}
+      {gradeInfo ? (
+        <div className={`flex items-center gap-3 rounded-xl border-2 px-4 py-3 ${gradeInfo.cls}`}>
+          <span className="text-2xl">{gradeInfo.icon}</span>
+          <div>
+            <p className="text-sm font-bold leading-tight">Your grade: {gradeInfo.label}</p>
+            {feedback?.text_feedback && <p className="text-sm mt-0.5">{feedback.text_feedback}</p>}
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-center gap-3 rounded-xl border-2 border-gray-200 bg-gray-50 px-4 py-3 text-gray-500">
+          <span className="text-2xl">⏳</span>
+          <p className="text-sm font-medium">Not graded yet — your teacher will review your work.</p>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
         {/* Board — takes 3/4 width */}
