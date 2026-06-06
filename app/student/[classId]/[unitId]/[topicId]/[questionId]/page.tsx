@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import Comments from '@/components/Comments'
@@ -42,7 +42,9 @@ export default async function QuestionPage({ params }: { params: Promise<{ class
 
   let feedback = null
   if (submission?.id) {
-    const { data: fb } = await supabase.from('feedback').select('*').eq('submission_id', submission.id).maybeSingle()
+    // Read via service-role: the feedback table is not readable by the student client under RLS.
+    const admin = await createAdminClient()
+    const { data: fb } = await admin.from('feedback').select('*').eq('submission_id', submission.id).maybeSingle()
     feedback = fb
   }
 

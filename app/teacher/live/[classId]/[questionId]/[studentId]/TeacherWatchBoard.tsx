@@ -81,22 +81,37 @@ export default function TeacherWatchBoard({
 
   async function saveTeacher(dataUrl: string) {
     if (!submissionId) return
-    await supabase.from('feedback').upsert(
-      { submission_id: submissionId, canvas_data: dataUrl },
-      { onConflict: 'submission_id' }
-    )
-  }
-
-  async function notifyStudent(newGrade: string | null, feedback: string) {
-    if (!newGrade) return
-    // Send on grade-notif channel — student's Comments component subscribes to this
-    await gradeNotifChannel.send({ type: 'broadcast', event: 'grade-update', payload: { grade: newGrade, feedback } })
-    // Also persist to student_notifications for bell + history
-    fetch('/api/notify-student', {
+    // Service-role API write — the feedback table is not writable by the client under RLS.
+    await fetch('/api/grade', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ studentId, questionId, grade: newGrade, feedback: feedback || null }),
+      body: JSON.stringify({ submissionId, canvasData: dataUrl }),
     })
+  }
+
+  async function persistGrade(newGrade: string | null, feedback: string) {
+    if (!submissionId) return
+    // Save grade + feedback and notify the student via the service-role API.
+    await fetch('/api/grade', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        submissionId,
+        grade: newGrade,
+        textFeedback: feedback || null,
+        studentId,
+        questionId,
+        notify: true,
+      }),
+    })
+    // Live broadcasts so the teacher live view and the student board update instantly.
+    await gradeChannel.send({
+      type: 'broadcast', event: 'grade-update',
+      payload: { student_id: studentId, grade: newGrade },
+    })
+    if (newGrade) {
+      await gradeNotifChannel.send({ type: 'broadcast', event: 'grade-update', payload: { grade: newGrade, feedback } })
+    }
   }
 
   async function applyGrade(g: string) {
@@ -104,15 +119,7 @@ export default function TeacherWatchBoard({
     setGrade(newGrade)
     if (!submissionId) return
     setSaving(true)
-    await supabase.from('feedback').upsert(
-      { submission_id: submissionId, grade: newGrade, text_feedback: feedbackText || null },
-      { onConflict: 'submission_id' }
-    )
-    await gradeChannel.send({
-      type: 'broadcast', event: 'grade-update',
-      payload: { student_id: studentId, grade: newGrade },
-    })
-    await notifyStudent(newGrade, feedbackText)
+    await persistGrade(newGrade, feedbackText)
     setSaving(false)
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
@@ -121,11 +128,7 @@ export default function TeacherWatchBoard({
   async function saveFeedback() {
     if (!submissionId) return
     setSaving(true)
-    await supabase.from('feedback').upsert(
-      { submission_id: submissionId, grade, text_feedback: feedbackText || null },
-      { onConflict: 'submission_id' }
-    )
-    await notifyStudent(grade, feedbackText)
+    await persistGrade(grade, feedbackText)
     setSaving(false)
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
