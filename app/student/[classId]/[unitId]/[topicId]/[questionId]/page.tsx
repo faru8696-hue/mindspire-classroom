@@ -37,13 +37,16 @@ export default async function QuestionPage({ params }: { params: Promise<{ class
   const nextId = idx >= 0 && idx < seq.length - 1 ? seq[idx + 1].id : null
   const position = idx >= 0 ? { current: idx + 1, total: seq.length } : null
 
-  const { data: submission } = await supabase
+  // Read submission + feedback via service-role. The submissions table has no
+  // working SELECT policy for students under RLS, so the RLS client returns null
+  // — which used to load an empty board and let auto-save overwrite the student's
+  // saved work with '[]'. Service-role read (scoped to this student) loads it reliably.
+  const admin = await createAdminClient()
+  const { data: submission } = await admin
     .from('submissions').select('*').eq('question_id', questionId).eq('student_id', studentId).maybeSingle()
 
   let feedback = null
   if (submission?.id) {
-    // Read via service-role: the feedback table is not readable by the student client under RLS.
-    const admin = await createAdminClient()
     const { data: fb } = await admin.from('feedback').select('*').eq('submission_id', submission.id).maybeSingle()
     feedback = fb
   }
