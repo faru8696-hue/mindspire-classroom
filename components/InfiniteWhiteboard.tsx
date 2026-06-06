@@ -86,11 +86,14 @@ export default function InfiniteWhiteboard({
   // Each user owns their own layer; the other user's layer is read-only
   const ownData = role === 'student' ? initialStudentData : initialTeacherData
   const remoteData = role === 'student' ? initialTeacherData : initialStudentData
+  // Teacher annotations default to red so they stand out from the student's
+  // (black) work; students keep black.
+  const defaultColor = role === 'teacher' ? '#dc2626' : '#000000'
   const objsRef = useRef<DrawObject[]>(loadSaved(ownData))
   const remoteObjsRef = useRef<DrawObject[]>(loadSaved(remoteData))
   const viewRef = useRef<ViewState>({ panX: 0, panY: 0, zoom: 1 })
   const toolRef = useRef<Tool>('pen')
-  const colorRef = useRef('#000000')
+  const colorRef = useRef(defaultColor)
   const selIdRef = useRef<string | null>(null)
   const isDrawingRef = useRef(false)
   const currentPath = useRef<{ x: number; y: number }[]>([])
@@ -106,7 +109,7 @@ export default function InfiniteWhiteboard({
 
   // ── React state only for UI controls that need re-render ──
   const [tool, _setTool] = useState<Tool>('pen')
-  const [color, _setColor] = useState('#000000')
+  const [color, _setColor] = useState(defaultColor)
   const [view, _setView] = useState<ViewState>({ panX: 0, panY: 0, zoom: 1 })
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [liveIndicator, setLiveIndicator] = useState(false)
