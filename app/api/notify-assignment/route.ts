@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
+import { getCaller } from '@/lib/supabase/server'
 
 const admin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -7,6 +8,11 @@ const admin = createClient(
 )
 
 export async function POST(req: NextRequest) {
+  const caller = await getCaller()
+  if (caller?.profile?.role !== 'teacher') {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+  }
+
   const { classId, studentIds, questionId, questionTitle } = await req.json()
 
   // Resolve student list — either explicit list or all enrolled in class

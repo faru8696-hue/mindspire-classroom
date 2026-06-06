@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
+import { getCaller } from '@/lib/supabase/server'
 
 function adminClient() {
   return createClient(
@@ -9,6 +10,11 @@ function adminClient() {
 }
 
 export async function POST(req: NextRequest) {
+  const caller = await getCaller()
+  if (caller?.profile?.role !== 'teacher') {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+  }
+
   const { studentId, classId, action } = await req.json()
 
   if (!studentId) {

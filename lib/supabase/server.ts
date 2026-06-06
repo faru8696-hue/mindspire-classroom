@@ -32,3 +32,18 @@ export async function createAdminClient() {
     { auth: { persistSession: false, autoRefreshToken: false } }
   )
 }
+
+// Reads the logged-in user (from request cookies) and their profile.
+// Returns null if there is no valid session. Use this in API route handlers
+// to authorize the caller before doing any privileged work.
+export async function getCaller() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return null
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('id, role, approved')
+    .eq('id', user.id)
+    .single()
+  return { user, profile }
+}

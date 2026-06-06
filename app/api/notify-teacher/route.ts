@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
+import { getCaller } from '@/lib/supabase/server'
 
 const admin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -7,9 +8,19 @@ const admin = createClient(
 )
 
 export async function POST(req: NextRequest) {
+  const caller = await getCaller()
+  if (!caller?.user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+  }
+
   const { studentId, questionId, studentName, message } = await req.json()
   if (!studentId || !questionId) {
     return NextResponse.json({ error: 'Missing fields' }, { status: 400 })
+  }
+
+  // A student may only notify the teacher about their own work.
+  if (caller.profile?.role !== 'teacher' && caller.user.id !== studentId) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
   // Look up classId via question → topic → unit → class
