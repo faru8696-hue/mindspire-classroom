@@ -28,6 +28,18 @@ export async function POST(req: NextRequest) {
     .eq('student_id', studentId)
     .maybeSingle()
 
+  // The grade as it stood before this call — used to detect a real grade change
+  // so we only append a history row when the grade actually moves.
+  let previousGrade: string | null = null
+  if (existing?.id) {
+    const { data: prevFb } = await admin
+      .from('feedback')
+      .select('grade')
+      .eq('submission_id', existing.id)
+      .maybeSingle()
+    previousGrade = prevFb?.grade ?? null
+  }
+
   if (existing?.id) {
     submissionId = existing.id
   } else {
@@ -53,6 +65,22 @@ export async function POST(req: NextRequest) {
   if (error) {
     console.error('grade upsert error:', error)
     return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+
+  // Append to the grade history whenever a grade is applied and it actually
+  // changed (including the first grade). This is what makes "improvement over
+  // time" possible — the feedback row only ever holds the latest grade.
+  if (grade && grade !== previousGrade) {
+    const { error: histErr } = await admin.from('grade_history').insert({
+      student_id: studentId,
+      question_id: questionId,
+      submission_id: submissionId,
+      grade,
+      text_feedback: textFeedback || null,
+      teacher_id: caller.user.id,
+    })
+    // Don't fail grading if history logging fails (e.g. table not yet created).
+    if (histErr) console.error('grade_history insert error:', histErr)
   }
 
   // Persist a student notification when an actual grade was applied
