@@ -40,8 +40,7 @@ export default function TeacherWatchBoard({
 }: Props) {
   const supabase = createClient()
   const gradeChannel = supabase.channel(`live-grades:${classId}:${questionId}`)
-  // Use same channel as comments — student is already subscribed to it
-  const commentsChannel = supabase.channel(`comments:${questionId}:${studentId}`)
+  const gradeNotifChannel = supabase.channel(`grade-notif:${questionId}:${studentId}`)
   const [grade, setGrade] = useState<string | null>(initialGrade)
   const [feedbackText, setFeedbackText] = useState(initialFeedbackText ?? '')
   const [saving, setSaving] = useState(false)
@@ -56,8 +55,8 @@ export default function TeacherWatchBoard({
   // Subscribe broadcast channels so send() works
   useEffect(() => {
     gradeChannel.subscribe()
-    commentsChannel.subscribe()
-    return () => { supabase.removeChannel(gradeChannel); supabase.removeChannel(commentsChannel) }
+    gradeNotifChannel.subscribe()
+    return () => { supabase.removeChannel(gradeChannel); supabase.removeChannel(gradeNotifChannel) }
   }, [])
 
   // Subscribe to student submission updates via realtime
@@ -90,8 +89,8 @@ export default function TeacherWatchBoard({
 
   async function notifyStudent(newGrade: string | null, feedback: string) {
     if (!newGrade) return
-    // Send on comments channel — student is already subscribed to it
-    await commentsChannel.send({ type: 'broadcast', event: 'grade-update', payload: { grade: newGrade, feedback } })
+    // Send on grade-notif channel — student's Comments component subscribes to this
+    await gradeNotifChannel.send({ type: 'broadcast', event: 'grade-update', payload: { grade: newGrade, feedback } })
     // Also persist to student_notifications for bell + history
     fetch('/api/notify-student', {
       method: 'POST',

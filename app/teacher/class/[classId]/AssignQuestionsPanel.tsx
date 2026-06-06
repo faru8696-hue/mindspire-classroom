@@ -38,9 +38,15 @@ export default function AssignQuestionsPanel({ classId, units, topics, questions
       }
     } else {
       const due = dueDateInputs.get(questionId) || null
+      const q = questions.find(q => q.id === questionId)
       const { error } = await supabase.from('assignments').insert({ question_id: questionId, class_id: classId, due_date: due || null })
       if (!error) {
         setAssignments(prev => new Map(prev).set(questionId, due))
+        fetch('/api/notify-assignment', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ classId, questionId, questionTitle: q?.title }),
+        })
       }
     }
     setSaving(null)

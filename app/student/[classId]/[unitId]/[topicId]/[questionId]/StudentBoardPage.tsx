@@ -22,6 +22,8 @@ const GRADE_LABEL: Record<string, { text: string; cls: string }> = {
   discussed: { text: '💬 Discussed',        cls: 'bg-blue-500 text-white' },
   incorrect: { text: '✗ Incorrect',         cls: 'bg-red-500 text-white' },
   needsmore: { text: '🔄 Needs more work',  cls: 'bg-purple-600 text-white' },
+  comment:    { text: '💬 Teacher comment',   cls: 'bg-blue-600 text-white' },
+  assignment: { text: '📋 New question!',    cls: 'bg-purple-600 text-white' },
 }
 
 export default function StudentBoardPage({
@@ -41,13 +43,16 @@ export default function StudentBoardPage({
     try {
       if (!audioRef.current) audioRef.current = new AudioContext()
       const ctx = audioRef.current
-      const osc = ctx.createOscillator()
-      const gain = ctx.createGain()
-      osc.connect(gain); gain.connect(ctx.destination)
-      osc.frequency.value = freq
-      gain.gain.setValueAtTime(0.3, ctx.currentTime)
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration)
-      osc.start(); osc.stop(ctx.currentTime + duration)
+      const play = () => {
+        const osc = ctx.createOscillator()
+        const gain = ctx.createGain()
+        osc.connect(gain); gain.connect(ctx.destination)
+        osc.frequency.value = freq
+        gain.gain.setValueAtTime(0.3, ctx.currentTime)
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration)
+        osc.start(); osc.stop(ctx.currentTime + duration)
+      }
+      if (ctx.state === 'suspended') { ctx.resume().then(play) } else { play() }
     } catch {}
   }
 
@@ -57,18 +62,27 @@ export default function StudentBoardPage({
     return () => { supabase.removeChannel(channelRef.current) }
   }, [])
 
-  // Listen for grade via student_notifications table
+  // Listen for grade + comment notifications via student_notifications table
   useEffect(() => {
     const ch = supabase.channel(`student-notifs:${studentId}`)
       .on('postgres_changes', {
         event: 'INSERT', schema: 'public', table: 'student_notifications',
       }, (payload) => {
-        const row = payload.new as { student_id: string; question_id: string; grade: string | null; feedback: string | null }
+        const row = payload.new as { student_id: string; question_id: string; grade: string | null; feedback: string | null; type?: string }
         if (row.student_id !== studentId) return
-        if (!row.grade) return
-        setGradeToast({ grade: row.grade, feedback: row.feedback ?? '' })
-        playTone(row.grade === 'correct' ? 660 : row.grade === 'partial' ? 520 : 330)
-        setTimeout(() => setGradeToast(null), 8000)
+        if (row.type === 'assignment') {
+          playTone(520)
+          setGradeToast({ grade: 'assignment', feedback: row.feedback ?? 'New question assigned' })
+          setTimeout(() => setGradeToast(null), 8000)
+        } else if (row.type === 'comment' || !row.grade) {
+          playTone(740)
+          setGradeToast({ grade: 'comment', feedback: row.feedback ?? 'Teacher left a comment' })
+          setTimeout(() => setGradeToast(null), 8000)
+        } else {
+          setGradeToast({ grade: row.grade, feedback: row.feedback ?? '' })
+          playTone(row.grade === 'correct' ? 660 : row.grade === 'partial' ? 520 : 330)
+          setTimeout(() => setGradeToast(null), 8000)
+        }
       })
       .subscribe()
     return () => { supabase.removeChannel(ch) }

@@ -238,8 +238,8 @@ export default async function TeacherDashboard() {
               const questionTitle = Array.isArray(n.questions) ? n.questions[0]?.title : n.questions?.title
               const minutesAgo = Math.round((Date.now() - new Date(n.created_at).getTime()) / 60000)
               const timeLabel = minutesAgo < 60 ? `${minutesAgo}m ago` : minutesAgo < 1440 ? `${Math.round(minutesAgo / 60)}h ago` : `${Math.round(minutesAgo / 1440)}d ago`
-              const icon = n.type === 'help' ? '🆘' : n.type === 'submitted' ? '✅' : '📬'
-              const label = n.type === 'help' ? 'asked for help' : n.type === 'submitted' ? 'submitted work' : n.type
+              const icon = n.type === 'help' ? '🆘' : n.type === 'submitted' ? '✅' : n.type === 'comment' ? '💬' : '📬'
+              const label = n.type === 'help' ? 'asked for help' : n.type === 'submitted' ? 'submitted work' : n.type === 'comment' ? 'left a comment' : n.type
               return (
                 <Link key={n.id} href={`/teacher/live/${n.class_id}/${n.question_id}`} className={`flex items-center gap-4 px-5 py-3 hover:bg-purple-50 transition-colors ${n.read ? 'opacity-50' : ''}`}>
                   <span className="text-xl flex-shrink-0">{icon}</span>

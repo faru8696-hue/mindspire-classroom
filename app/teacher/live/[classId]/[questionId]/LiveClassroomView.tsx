@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 
 interface Student { id: string; full_name: string }
 interface Submission { id: string; student_id: string; canvas_data: string | null; text_answer: string | null; updated_at: string }
@@ -37,7 +36,6 @@ export default function LiveClassroomView({
   students, initialSubmissions, initialFeedbacks, initialNotifications,
 }: Props) {
   const supabase = createClient()
-  const router = useRouter()
   const [submissions, setSubmissions] = useState<Map<string, Submission>>(
     () => new Map(initialSubmissions.map(s => [s.student_id, s]))
   )
@@ -230,7 +228,7 @@ export default function LiveClassroomView({
               return (
                 <div key={student.id} className="relative">
                   <button
-                    onClick={() => router.push(`/teacher/live/${classId}/${questionId}/${student.id}`)}
+                    onClick={() => { window.location.href = `/teacher/live/${classId}/${questionId}/${student.id}` }}
                     className={`w-full rounded-xl border-2 overflow-hidden text-left transition-all hover:scale-105 hover:shadow-xl ${
                       isChecked   ? 'border-green-500 opacity-50' :
                       needsHelp   ? 'border-amber-400 shadow-amber-900/50 shadow-lg' :

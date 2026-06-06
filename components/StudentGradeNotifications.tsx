@@ -16,11 +16,13 @@ interface Notif {
 }
 
 const GRADE_STYLE: Record<string, { icon: string; cls: string; label: string }> = {
-  correct:   { icon: '✅', cls: 'border-green-400 bg-green-50',   label: 'Correct!' },
-  partial:   { icon: '🟡', cls: 'border-amber-400 bg-amber-50',   label: 'Partially correct' },
-  discussed: { icon: '💬', cls: 'border-blue-400 bg-blue-50',     label: 'Discussed' },
-  incorrect: { icon: '❌', cls: 'border-red-400 bg-red-50',       label: 'Incorrect' },
-  needsmore: { icon: '🔄', cls: 'border-purple-400 bg-purple-50', label: 'Needs more work' },
+  correct:    { icon: '✅', cls: 'border-green-400 bg-green-50',   label: 'Correct!' },
+  partial:    { icon: '🟡', cls: 'border-amber-400 bg-amber-50',   label: 'Partially correct' },
+  discussed:  { icon: '💬', cls: 'border-blue-400 bg-blue-50',     label: 'Discussed' },
+  incorrect:  { icon: '❌', cls: 'border-red-400 bg-red-50',       label: 'Incorrect' },
+  needsmore:  { icon: '🔄', cls: 'border-purple-400 bg-purple-50', label: 'Needs more work' },
+  comment:    { icon: '💬', cls: 'border-blue-300 bg-blue-50',     label: 'Teacher comment' },
+  assignment: { icon: '📋', cls: 'border-purple-300 bg-purple-50', label: 'New assignment' },
 }
 
 export default function StudentGradeNotifications({ studentId }: { studentId: string }) {
@@ -32,13 +34,16 @@ export default function StudentGradeNotifications({ studentId }: { studentId: st
     try {
       if (!audioRef.current) audioRef.current = new AudioContext()
       const ctx = audioRef.current
-      const osc = ctx.createOscillator()
-      const gain = ctx.createGain()
-      osc.connect(gain); gain.connect(ctx.destination)
-      osc.frequency.value = freq
-      gain.gain.setValueAtTime(0.3, ctx.currentTime)
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5)
-      osc.start(); osc.stop(ctx.currentTime + 0.5)
+      const play = () => {
+        const osc = ctx.createOscillator()
+        const gain = ctx.createGain()
+        osc.connect(gain); gain.connect(ctx.destination)
+        osc.frequency.value = freq
+        gain.gain.setValueAtTime(0.3, ctx.currentTime)
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5)
+        osc.start(); osc.stop(ctx.currentTime + 0.5)
+      }
+      if (ctx.state === 'suspended') { ctx.resume().then(play) } else { play() }
     } catch {}
   }
 
@@ -51,7 +56,8 @@ export default function StudentGradeNotifications({ studentId }: { studentId: st
     const href = cls?.id && unit?.id && topic?.id && q?.id
       ? `/student/${cls.id}/${unit.id}/${topic.id}/${q.id}`
       : '/student/assignments'
-    return { id: n.id, grade: n.grade, feedback: n.feedback, question_id: n.question_id, question_title: q?.title ?? 'Question', href, created_at: n.created_at, read: n.read }
+    const gradeKey = n.type === 'assignment' ? 'assignment' : (n.grade ?? (n.type === 'comment' ? 'comment' : 'comment'))
+    return { id: n.id, grade: gradeKey, feedback: n.feedback, question_id: n.question_id, question_title: q?.title ?? 'Question', href, created_at: n.created_at, read: n.read }
   }
 
   useEffect(() => {
@@ -70,7 +76,7 @@ export default function StudentGradeNotifications({ studentId }: { studentId: st
         event: 'INSERT', schema: 'public', table: 'student_notifications',
       }, async (payload) => {
         const row = payload.new as { id: string; student_id: string; grade: string | null; question_id: string }
-        if (row.student_id !== studentId || !row.grade) return
+        if (row.student_id !== studentId) return
         const { data } = await supabase
           .from('student_notifications')
           .select('id, grade, feedback, read, created_at, question_id, questions(id, title, topic_id, topics(id, unit_id, units(id, class_id, classes(id, title))))')
@@ -78,7 +84,7 @@ export default function StudentGradeNotifications({ studentId }: { studentId: st
           .single()
         if (!data) return
         setNotifs(prev => [buildNotif(data), ...prev.filter(n => n.id !== row.id).slice(0, 4)])
-        playTone(row.grade === 'correct' ? 660 : row.grade === 'partial' ? 520 : 330)
+        playTone(!row.grade || row.grade === 'comment' ? 740 : row.grade === 'correct' ? 660 : row.grade === 'partial' ? 520 : 330)
       })
       .subscribe()
     return () => { supabase.removeChannel(ch) }

@@ -62,12 +62,11 @@ export default function TeacherNotificationBell({ initialNotifications }: Props)
         setNotifications(prev => [{ ...n, read: false }, ...prev.slice(0, 49)])
         setToasts(prev => [{ ...n }, ...prev].slice(0, 5))
         playBeep()
-        // Auto-dismiss toast after 12s
         setTimeout(() => dismissToast(n.id), 12000)
-        // Relay to other components (e.g. LiveClassroomView) via custom DOM event
         window.dispatchEvent(new CustomEvent('teacher-student-alert', { detail: n }))
       })
       .subscribe()
+
     return () => { supabase.removeChannel(channel) }
   }, [])
 
@@ -117,13 +116,13 @@ export default function TeacherNotificationBell({ initialNotifications }: Props)
                   key={n.id ?? i}
                   className={`flex items-start gap-3 px-4 py-3 border-b border-gray-50 last:border-0 ${n.read ? '' : 'bg-purple-50'}`}
                 >
-                  <span className="text-lg flex-shrink-0 mt-0.5">{n.type === 'help' ? '🙋' : '✅'}</span>
+                  <span className="text-lg flex-shrink-0 mt-0.5">{n.type === 'help' ? '🙋' : n.type === 'comment' ? '💬' : '✅'}</span>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-gray-800">
                       {n.student_name ?? 'A student'}
                     </p>
                     <p className="text-xs text-gray-600">
-                      {n.type === 'help' ? 'needs help' : 'is done — check their work'}
+                      {n.type === 'help' ? 'needs help' : n.type === 'comment' ? 'left a comment' : 'is done — check their work'}
                     </p>
                     {n.question_title && (
                       <p className="text-xs text-gray-400 truncate mt-0.5">{n.question_title}</p>
@@ -157,12 +156,14 @@ export default function TeacherNotificationBell({ initialNotifications }: Props)
             <div key={t.id} className={`flex items-start gap-3 px-4 py-3 rounded-xl shadow-2xl border text-sm font-medium ${
               t.type === 'help'
                 ? 'bg-amber-500 border-amber-400 text-white'
+                : t.type === 'comment'
+                ? 'bg-blue-600 border-blue-500 text-white'
                 : 'bg-purple-600 border-purple-500 text-white'
             }`}>
-              <span className="text-xl flex-shrink-0">{t.type === 'help' ? '🙋' : '✅'}</span>
+              <span className="text-xl flex-shrink-0">{t.type === 'help' ? '🙋' : t.type === 'comment' ? '💬' : '✅'}</span>
               <div className="flex-1 min-w-0">
                 <p className="font-bold truncate">{t.student_name ?? 'A student'}</p>
-                <p className="text-xs opacity-90">{t.type === 'help' ? 'needs help' : 'done — check their work'}</p>
+                <p className="text-xs opacity-90">{t.type === 'help' ? 'needs help' : t.type === 'comment' ? 'left a comment' : 'done — check their work'}</p>
                 {t.question_title && <p className="text-xs opacity-75 truncate">{t.question_title}</p>}
               </div>
               <div className="flex flex-col gap-1 flex-shrink-0 items-end">

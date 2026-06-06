@@ -4,6 +4,8 @@ import { notFound } from 'next/navigation'
 import TeacherWatchBoard from './TeacherWatchBoard'
 import Comments from '@/components/Comments'
 
+export const dynamic = 'force-dynamic'
+
 export default async function TeacherWatchPage({
   params,
 }: {

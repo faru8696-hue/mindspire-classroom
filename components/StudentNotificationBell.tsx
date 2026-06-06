@@ -27,13 +27,16 @@ export default function StudentNotificationBell({ classIds, studentId }: { class
     try {
       if (!audioRef.current) audioRef.current = new AudioContext()
       const ctx = audioRef.current
-      const osc = ctx.createOscillator()
-      const gain = ctx.createGain()
-      osc.connect(gain); gain.connect(ctx.destination)
-      osc.frequency.value = freq
-      gain.gain.setValueAtTime(0.3, ctx.currentTime)
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5)
-      osc.start(); osc.stop(ctx.currentTime + 0.5)
+      const play = () => {
+        const osc = ctx.createOscillator()
+        const gain = ctx.createGain()
+        osc.connect(gain); gain.connect(ctx.destination)
+        osc.frequency.value = freq
+        gain.gain.setValueAtTime(0.3, ctx.currentTime)
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5)
+        osc.start(); osc.stop(ctx.currentTime + 0.5)
+      }
+      if (ctx.state === 'suspended') { ctx.resume().then(play) } else { play() }
     } catch {}
   }
 
@@ -68,12 +71,13 @@ export default function StudentNotificationBell({ classIds, studentId }: { class
       .on('postgres_changes', {
         event: 'INSERT', schema: 'public', table: 'student_notifications',
       }, (payload) => {
-        const row = payload.new as { student_id: string; question_id: string; grade: string | null; feedback: string | null; created_at: string }
-        if (row.student_id !== studentId || !row.grade) return
-        const toastId = `grade:${row.question_id}:${Date.now()}`
-        setToasts(prev => [{ id: toastId, type: 'grade', question_id: row.question_id, class_id: '', created_at: row.created_at, grade: row.grade!, feedback: row.feedback ?? '' }, ...prev.slice(0, 9)])
+        const row = payload.new as { student_id: string; question_id: string; grade: string | null; feedback: string | null; created_at: string; type?: string }
+        if (row.student_id !== studentId) return
+        const toastId = `notif:${row.question_id}:${Date.now()}`
+        const notifType = row.type === 'assignment' ? 'assignment' : 'grade'
+        setToasts(prev => [{ id: toastId, type: notifType, question_id: row.question_id, class_id: '', created_at: row.created_at, grade: row.grade ?? row.type ?? 'comment', feedback: row.feedback ?? '' }, ...prev.slice(0, 9)])
         setNewCount(c => c + 1)
-        playTone(row.grade === 'correct' ? 660 : row.grade === 'partial' ? 520 : 330)
+        playTone(row.type === 'assignment' ? 520 : row.type === 'comment' ? 740 : row.grade === 'correct' ? 660 : row.grade === 'partial' ? 520 : 330)
       })
       .subscribe()
     return () => { supabase.removeChannel(ch) }
@@ -123,18 +127,23 @@ export default function StudentNotificationBell({ classIds, studentId }: { class
                   className="flex items-start gap-3 px-4 py-3 hover:bg-purple-50 transition-colors"
                 >
                   <span className="text-lg flex-shrink-0">
-                    {t.type === 'grade' ? (t.grade === 'correct' ? '✅' : t.grade === 'incorrect' ? '❌' : '📝') : '📋'}
+                    {t.type === 'assignment' ? '📋' : t.grade === 'correct' ? '✅' : t.grade === 'incorrect' ? '❌' : t.grade === 'comment' ? '💬' : '📝'}
                   </span>
                   <div className="min-w-0">
-                    {t.type === 'grade' ? (
+                    {t.type === 'assignment' ? (
                       <>
-                        <p className="text-sm font-medium text-gray-800">Teacher graded your work</p>
-                        <p className="text-xs text-gray-500 truncate capitalize">{t.grade}{t.feedback ? ` — ${t.feedback}` : ''}</p>
+                        <p className="text-sm font-medium text-gray-800 truncate">New question assigned</p>
+                        <p className="text-xs text-gray-500 truncate">{t.feedback || t.question_title || 'A question was assigned'}</p>
+                      </>
+                    ) : t.grade === 'comment' ? (
+                      <>
+                        <p className="text-sm font-medium text-gray-800">Teacher left a comment</p>
+                        <p className="text-xs text-gray-500 truncate">{t.feedback}</p>
                       </>
                     ) : (
                       <>
-                        <p className="text-sm font-medium text-gray-800 truncate">New question assigned</p>
-                        <p className="text-xs text-gray-500 truncate">{t.question_title ?? 'A question was assigned'}</p>
+                        <p className="text-sm font-medium text-gray-800">Teacher graded your work</p>
+                        <p className="text-xs text-gray-500 truncate capitalize">{t.grade}{t.feedback ? ` — ${t.feedback}` : ''}</p>
                       </>
                     )}
                   </div>

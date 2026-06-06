@@ -43,6 +43,17 @@ export default function StudentAssignMatrix({ students, units, topics, questions
     return questions.filter(q => q.topic_id === topicId).map(q => q.id)
   }
 
+  function notifyAssignment(studentIds: string[], qids: string[]) {
+    qids.forEach(qid => {
+      const q = questions.find(q => q.id === qid)
+      fetch('/api/notify-assignment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ studentIds, questionId: qid, questionTitle: q?.title }),
+      })
+    })
+  }
+
   // Toggle a single cell
   async function toggleCell(sid: string, qid: string) {
     const k = key(sid, qid)
@@ -52,6 +63,7 @@ export default function StudentAssignMatrix({ students, units, topics, questions
       await supabase.from('student_assignments').delete().eq('student_id', sid).eq('question_id', qid)
     } else {
       await supabase.from('student_assignments').upsert({ student_id: sid, question_id: qid }, { onConflict: 'student_id,question_id' })
+      notifyAssignment([sid], [qid])
     }
   }
 
@@ -64,6 +76,7 @@ export default function StudentAssignMatrix({ students, units, topics, questions
       sids.flatMap(s => qids.map(q => ({ student_id: s, question_id: q }))),
       { onConflict: 'student_id,question_id' }
     )
+    notifyAssignment(sids, qids)
     setSaving(false)
   }
 

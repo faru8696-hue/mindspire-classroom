@@ -25,6 +25,7 @@ export default function Comments({ questionId, studentId, currentUserId, current
   const [sending, setSending] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const channelRef = useRef(supabase.channel(`comments:${questionId}:${studentId}`))
+  const teacherAlertChannelRef = useRef(supabase.channel('teacher-alerts'))
   const audioRef = useRef<AudioContext | null>(null)
 
   function playPing() {
@@ -51,16 +52,17 @@ export default function Comments({ questionId, studentId, currentUserId, current
       .order('created_at')
       .then(({ data }) => setComments((data as unknown as Comment[]) ?? []))
 
-    // Listen for new comments + grade notifications via Broadcast
+    // Listen for new comments via Broadcast
     const ch = channelRef.current
     ch.on('broadcast', { event: 'new-comment' }, ({ payload }) => {
       const incoming = payload as Comment
       if (incoming.author_id !== currentUserId) playPing()
       setComments(prev => [...prev, incoming])
     })
-    ch.on('broadcast', { event: 'grade-update' }, ({ payload }) => {
-      const { grade } = payload as { grade: string }
-      // Play a distinct tone for grade notification
+    ch.subscribe()
+
+    // Listen for grade-update on the dedicated grade-notif channel
+    function playGradeTone(grade: string) {
       try {
         if (!audioRef.current) audioRef.current = new AudioContext()
         const ctx = audioRef.current
@@ -76,10 +78,22 @@ export default function Comments({ questionId, studentId, currentUserId, current
           osc.stop(ctx.currentTime + i * 0.15 + 0.4)
         })
       } catch {}
+    }
+    const gradeNotifCh = supabase.channel(`grade-notif:${questionId}:${studentId}`)
+    gradeNotifCh.on('broadcast', { event: 'grade-update' }, ({ payload }) => {
+      const { grade } = payload as { grade: string }
+      playGradeTone(grade)
     })
-    ch.subscribe()
+    gradeNotifCh.subscribe()
 
-    return () => { supabase.removeChannel(ch) }
+    // Subscribe teacher-alerts channel so we can broadcast to it when student comments
+    teacherAlertChannelRef.current.subscribe()
+
+    return () => {
+      supabase.removeChannel(ch)
+      supabase.removeChannel(gradeNotifCh)
+      supabase.removeChannel(teacherAlertChannelRef.current)
+    }
   }, [questionId, studentId])
 
   useEffect(() => {
@@ -122,6 +136,37 @@ export default function Comments({ questionId, studentId, currentUserId, current
         event: 'new-comment',
         payload: final,
       })
+      if (currentUserId !== studentId) {
+        // Teacher commenting — notify the student persistently
+        fetch('/api/notify-student', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ studentId, questionId, type: 'comment', feedback: newComment.message }),
+        })
+      } else {
+        // Student commenting — broadcast DIRECTLY to teacher-alerts channel (instant)
+        await teacherAlertChannelRef.current.send({
+          type: 'broadcast',
+          event: 'student-alert',
+          payload: {
+            id: inserted.id,
+            type: 'comment',
+            student_id: studentId,
+            question_id: questionId,
+            class_id: '',
+            created_at: now,
+            read: false,
+            student_name: currentUserName,
+            question_title: newComment.message,
+          },
+        })
+        // Also persist to DB for history
+        fetch('/api/notify-teacher', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ studentId, questionId, studentName: currentUserName, message: newComment.message }),
+        })
+      }
     }
     setSending(false)
   }
