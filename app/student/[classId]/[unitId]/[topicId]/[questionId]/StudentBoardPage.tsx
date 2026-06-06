@@ -132,7 +132,7 @@ export default function StudentBoardPage({
   return (
     <div className="flex flex-col h-full gap-2 relative">
       {/* Question — AP exam paper style */}
-      <div className="bg-white border border-gray-300 rounded-lg shadow-sm flex-shrink-0 overflow-hidden">
+      <div className="bg-white border border-gray-300 rounded-lg shadow-sm flex-shrink-0 overflow-hidden flex flex-col max-h-[45%]">
         {/* Paper header strip */}
         <div className="flex items-center justify-between px-4 py-2 bg-gray-50 border-b border-gray-200">
           <div className="flex items-center gap-3">
@@ -149,7 +149,7 @@ export default function StudentBoardPage({
         </div>
 
         {!questionCollapsed && (
-          <div className="px-5 py-4">
+          <div className="px-5 py-4 overflow-y-auto">
             <p className="text-[15px] font-semibold text-gray-900 leading-snug" style={{ fontFamily: 'Georgia, "Times New Roman", serif' }}>
               {questionTitle}
             </p>
@@ -160,7 +160,7 @@ export default function StudentBoardPage({
             )}
             {questionImageUrl && (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={questionImageUrl} alt="Question diagram" className="mt-3 max-w-full max-h-80 rounded-lg border border-gray-200 object-contain" />
+              <img src={questionImageUrl} alt="Question diagram" className="mt-3 max-w-full max-h-56 rounded-lg border border-gray-200 object-contain" />
             )}
           </div>
         )}
@@ -175,16 +175,18 @@ export default function StudentBoardPage({
         </div>
       )}
 
-      <InfiniteWhiteboard
-        questionId={questionId}
-        studentId={studentId}
-        role="student"
-        initialStudentData={initialStudentData}
-        initialTeacherData={initialTeacherData}
-        onSaveStudent={saveStudent}
-      />
+      <div className="flex-1 min-h-0">
+        <InfiniteWhiteboard
+          questionId={questionId}
+          studentId={studentId}
+          role="student"
+          initialStudentData={initialStudentData}
+          initialTeacherData={initialTeacherData}
+          onSaveStudent={saveStudent}
+        />
+      </div>
 
-      <div className="flex gap-2">
+      <div className="flex gap-2 flex-shrink-0">
         <button
           onClick={handleHelp}
           className={`flex-1 py-3 rounded-xl font-semibold text-sm transition-all border ${
