@@ -54,21 +54,8 @@ export default async function TeacherWatchPage({
 
       {/* Main content */}
       <div className="flex flex-1 min-h-0">
-        {/* Left sidebar: question + written answer + comments */}
+        {/* Left sidebar: written answer + comments */}
         <div className="w-72 bg-gray-900 border-r border-gray-700 flex-shrink-0 flex flex-col overflow-hidden">
-          {/* Question */}
-          <div className="p-4 border-b border-gray-800 flex-shrink-0 max-h-[45%] overflow-y-auto">
-            <p className="text-xs text-gray-500 uppercase tracking-wide font-semibold mb-2">Question</p>
-            <h2 className="text-white font-semibold text-sm leading-relaxed">{question.title}</h2>
-            {question.content && (
-              <p className="text-gray-400 text-sm mt-2 leading-relaxed whitespace-pre-wrap">{question.content}</p>
-            )}
-            {question.image_url && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={question.image_url} alt="Question diagram" className="mt-3 w-full rounded-lg border border-gray-700 object-contain bg-white" />
-            )}
-          </div>
-
           {/* Written answer */}
           {submission?.text_answer && (
             <div className="p-4 border-b border-gray-800 flex-shrink-0">
@@ -93,17 +80,34 @@ export default async function TeacherWatchPage({
           </div>
         </div>
 
-        {/* Live whiteboard + grading */}
+        {/* Main column: question on top + live whiteboard below */}
         <div className="flex-1 min-w-0 min-h-0 flex flex-col">
-          <TeacherWatchBoard
-            classId={classId}
-            questionId={questionId}
-            studentId={studentId}
-            submissionId={submission?.id ?? null}
-            initialStudentData={submission?.canvas_data ?? null}
-            initialGrade={feedback?.grade ?? null}
-            initialFeedbackText={feedback?.text_feedback ?? null}
-          />
+          {/* Question bar — on top, like the student board */}
+          <div className="bg-gray-900 border-b border-gray-700 px-5 py-3 flex-shrink-0 max-h-[40%] overflow-y-auto flex gap-5">
+            <div className="min-w-0 flex-1">
+              <p className="text-xs text-gray-500 uppercase tracking-wide font-semibold mb-1.5">Question</p>
+              <h2 className="text-white font-semibold text-sm leading-relaxed">{question.title}</h2>
+              {question.content && (
+                <p className="text-gray-400 text-sm mt-2 leading-relaxed whitespace-pre-wrap">{question.content}</p>
+              )}
+            </div>
+            {question.image_url && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={question.image_url} alt="Question diagram" className="flex-shrink-0 max-h-56 max-w-[45%] rounded-lg border border-gray-700 object-contain bg-white self-start" />
+            )}
+          </div>
+
+          <div className="flex-1 min-h-0 flex flex-col">
+            <TeacherWatchBoard
+              classId={classId}
+              questionId={questionId}
+              studentId={studentId}
+              submissionId={submission?.id ?? null}
+              initialStudentData={submission?.canvas_data ?? null}
+              initialGrade={feedback?.grade ?? null}
+              initialFeedbackText={feedback?.text_feedback ?? null}
+            />
+          </div>
         </div>
       </div>
     </div>
