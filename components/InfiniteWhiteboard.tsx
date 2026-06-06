@@ -45,6 +45,33 @@ function loadSaved(raw: string | null | undefined): DrawObject[] {
   try { return JSON.parse(raw) as DrawObject[] } catch { return [] }
 }
 
+// Bounding box (canvas coords) enclosing all objects, or null if there are none.
+function contentBounds(objs: DrawObject[]): { minX: number; minY: number; maxX: number; maxY: number } | null {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  for (const o of objs) {
+    if (o.type === 'pen' || o.type === 'highlighter') {
+      let pts: { x: number; y: number }[] = []
+      try { pts = JSON.parse(o.data || '[]') } catch {}
+      for (const p of pts) {
+        const px = o.x + p.x, py = o.y + p.y
+        if (px < minX) minX = px
+        if (py < minY) minY = py
+        if (px > maxX) maxX = px
+        if (py > maxY) maxY = py
+      }
+    } else {
+      const w = o.type === 'text' ? 160 : (o.width ?? 100)
+      const h = o.type === 'text' ? 28 : (o.height ?? 100)
+      if (o.x < minX) minX = o.x
+      if (o.y < minY) minY = o.y
+      if (o.x + w > maxX) maxX = o.x + w
+      if (o.y + h > maxY) maxY = o.y + h
+    }
+  }
+  if (!isFinite(minX)) return null
+  return { minX, minY, maxX, maxY }
+}
+
 export default function InfiniteWhiteboard({
   questionId, studentId, role,
   initialStudentData, initialTeacherData,
@@ -90,6 +117,45 @@ export default function InfiniteWhiteboard({
   const setTool = (t: Tool) => { toolRef.current = t; _setTool(t) }
   const setColor = (c: string) => { colorRef.current = c; _setColor(c) }
   const setView = (v: ViewState) => { viewRef.current = v; _setView(v) }
+
+  // Pan/zoom the view so the given objects (default: everything) are framed in
+  // the viewport. Returns false if the canvas isn't sized yet or there's nothing
+  // to frame, so callers can retry or skip.
+  const fitToContent = useCallback((objs?: DrawObject[]): boolean => {
+    const canvas = canvasRef.current
+    if (!canvas || canvas.width === 0 || canvas.height === 0) return false
+    const target = objs ?? [...remoteObjsRef.current, ...objsRef.current]
+    const b = contentBounds(target)
+    if (!b) return false
+    const pad = 60
+    const bw = Math.max(1, b.maxX - b.minX)
+    const bh = Math.max(1, b.maxY - b.minY)
+    const zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.min(
+      canvas.width / (bw + pad * 2),
+      canvas.height / (bh + pad * 2),
+    )))
+    const cx = (b.minX + b.maxX) / 2, cy = (b.minY + b.maxY) / 2
+    const nv = { zoom, panX: canvas.width / 2 - cx * zoom, panY: canvas.height / 2 - cy * zoom }
+    viewRef.current = nv; _setView(nv)
+    return true
+  }, [])
+
+  // Teacher: on open, auto-frame the student's work so it doesn't have to be
+  // hunted for by panning/zooming. Wait for the canvas to be sized, then fit once.
+  const didAutoFit = useRef(false)
+  useEffect(() => {
+    if (role !== 'teacher') return
+    let raf: number
+    const tryFit = () => {
+      if (didAutoFit.current) return
+      const canvas = canvasRef.current
+      if (!canvas || canvas.width === 0 || canvas.height === 0) { raf = requestAnimationFrame(tryFit); return }
+      didAutoFit.current = true        // canvas is ready — attempt once
+      fitToContent(remoteObjsRef.current) // no-op if the student has no work yet
+    }
+    raf = requestAnimationFrame(tryFit)
+    return () => cancelAnimationFrame(raf)
+  }, [role, fitToContent])
 
   // commitObjects: updates ref (for render) AND state (for save/broadcast)
   // broadcastTick always increments so broadcasts fire even when only data changes (e.g. base64→URL)
@@ -975,6 +1041,8 @@ export default function InfiniteWhiteboard({
           <span className="px-2 py-1 bg-gray-100 rounded text-sm font-medium min-w-[52px] text-center">{Math.round(view.zoom * 100)}%</span>
           <button onClick={() => { const v = viewRef.current; const nv = { ...v, zoom: Math.min(MAX_ZOOM, v.zoom + 0.1) }; viewRef.current = nv; _setView(nv) }}
             className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-sm">+</button>
+          <button onClick={() => fitToContent()} title="Fit work to screen"
+            className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-sm">🎯 Fit</button>
           <button onClick={() => { viewRef.current = { panX: 0, panY: 0, zoom: 1 }; _setView({ panX: 0, panY: 0, zoom: 1 }) }}
             className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-sm">Reset</button>
           {(onSaveStudent || onSaveTeacher) && (
