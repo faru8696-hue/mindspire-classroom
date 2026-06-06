@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import InfiniteWhiteboard from '@/components/InfiniteWhiteboard'
+import ZoomableImage from '@/components/ZoomableImage'
 
 interface Props {
   questionId: string
@@ -159,8 +160,7 @@ export default function StudentBoardPage({
               </p>
             )}
             {questionImageUrl && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={questionImageUrl} alt="Question diagram" className="mt-3 max-w-full max-h-56 rounded-lg border border-gray-200 object-contain" />
+              <ZoomableImage src={questionImageUrl} alt="Question diagram" className="mt-3 max-w-full max-h-56 rounded-lg border border-gray-200 object-contain" />
             )}
           </div>
         )}

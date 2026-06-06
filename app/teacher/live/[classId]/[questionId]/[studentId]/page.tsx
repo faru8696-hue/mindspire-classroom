@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import TeacherWatchBoard from './TeacherWatchBoard'
 import Comments from '@/components/Comments'
+import ZoomableImage from '@/components/ZoomableImage'
 
 export const dynamic = 'force-dynamic'
 
@@ -92,8 +93,7 @@ export default async function TeacherWatchPage({
               )}
             </div>
             {question.image_url && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={question.image_url} alt="Question diagram" className="flex-shrink-0 max-h-56 max-w-[45%] rounded-lg border border-gray-700 object-contain bg-white self-start" />
+              <ZoomableImage src={question.image_url} alt="Question diagram" className="flex-shrink-0 max-h-56 max-w-[45%] rounded-lg border border-gray-700 object-contain bg-white self-start" />
             )}
           </div>
 
