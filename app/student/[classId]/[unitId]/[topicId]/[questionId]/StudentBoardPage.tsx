@@ -64,30 +64,43 @@ export default function StudentBoardPage({
     return () => { supabase.removeChannel(channelRef.current) }
   }, [])
 
-  // Listen for grade + comment notifications via student_notifications table
+  // Live grade + comment toasts. student_notifications is RLS-gated, so realtime
+  // postgres_changes never reaches the student client — poll the service-role API
+  // instead (same source the bell/dashboard use) and toast on newly-seen rows.
+  const seenNotifs = useRef<Set<string>>(new Set())
+  const firstNotifLoad = useRef(true)
   useEffect(() => {
-    const ch = supabase.channel(`student-notifs:${studentId}`)
-      .on('postgres_changes', {
-        event: 'INSERT', schema: 'public', table: 'student_notifications',
-      }, (payload) => {
-        const row = payload.new as { student_id: string; question_id: string; grade: string | null; feedback: string | null; type?: string }
-        if (row.student_id !== studentId) return
-        if (row.type === 'assignment') {
-          playTone(520)
-          setGradeToast({ grade: 'assignment', feedback: row.feedback ?? 'New question assigned' })
-          setTimeout(() => setGradeToast(null), 8000)
-        } else if (row.type === 'comment' || !row.grade) {
-          playTone(740)
-          setGradeToast({ grade: 'comment', feedback: row.feedback ?? 'Teacher left a comment' })
-          setTimeout(() => setGradeToast(null), 8000)
-        } else {
-          setGradeToast({ grade: row.grade, feedback: row.feedback ?? '' })
-          playTone(row.grade === 'correct' ? 660 : row.grade === 'partial' ? 520 : 330)
-          setTimeout(() => setGradeToast(null), 8000)
+    let active = true
+    function toastFor(n: { type?: string; grade: string | null; feedback: string | null }) {
+      if (n.type === 'assignment') {
+        playTone(520)
+        setGradeToast({ grade: 'assignment', feedback: n.feedback ?? 'New question assigned' })
+      } else if (n.type === 'comment' || !n.grade) {
+        playTone(740)
+        setGradeToast({ grade: 'comment', feedback: n.feedback ?? 'Teacher left a comment' })
+      } else {
+        setGradeToast({ grade: n.grade, feedback: n.feedback ?? '' })
+        playTone(n.grade === 'correct' ? 660 : n.grade === 'partial' ? 520 : 330)
+      }
+      setTimeout(() => setGradeToast(null), 8000)
+    }
+    async function poll() {
+      try {
+        const res = await fetch('/api/student-notifications')
+        if (!res.ok || !active) return
+        const { notifications } = await res.json() as { notifications: { id: string; type?: string; grade: string | null; feedback: string | null }[] }
+        if (!firstNotifLoad.current) {
+          // Newest unseen first — surface it as a toast
+          const fresh = notifications.find(n => !seenNotifs.current.has(n.id))
+          if (fresh) toastFor(fresh)
         }
-      })
-      .subscribe()
-    return () => { supabase.removeChannel(ch) }
+        notifications.forEach(n => seenNotifs.current.add(n.id))
+        firstNotifLoad.current = false
+      } catch {}
+    }
+    poll()
+    const interval = setInterval(poll, 10000)
+    return () => { active = false; clearInterval(interval) }
   }, [studentId])
 
   async function saveStudent(dataUrl: string) {
