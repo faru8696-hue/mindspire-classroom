@@ -7,7 +7,7 @@ import Link from 'next/link'
 interface Class { id: string; title: string; order_index: number }
 interface Unit { id: string; title: string; class_id: string }
 interface Topic { id: string; title: string; unit_id: string }
-interface Question { id: string; title: string; content: string | null; topic_id: string }
+interface Question { id: string; title: string; content: string | null; image_url: string | null; topic_id: string }
 
 export default function ContentPage() {
   const supabase = createClient()
@@ -22,7 +22,8 @@ export default function ContentPage() {
   const [newClass, setNewClass] = useState('')
   const [newUnit, setNewUnit] = useState('')
   const [newTopic, setNewTopic] = useState('')
-  const [newQuestion, setNewQuestion] = useState({ title: '', content: '' })
+  const [newQuestion, setNewQuestion] = useState<{ title: string; content: string; image_url: string | null }>({ title: '', content: '', image_url: null })
+  const [uploadingImage, setUploadingImage] = useState(false)
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => { if (user) setUserId(user.id) })
@@ -69,10 +70,27 @@ export default function ContentPage() {
     setNewTopic(''); loadTopics(selectedUnit)
   }
 
+  async function handleQuestionImage(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file || !userId) return
+    setUploadingImage(true)
+    const ext = file.name.split('.').pop() ?? 'png'
+    const path = `${userId}/${crypto.randomUUID()}.${ext}`
+    const { error } = await supabase.storage.from('question-images').upload(path, file, { upsert: true })
+    if (!error) {
+      const { data } = supabase.storage.from('question-images').getPublicUrl(path)
+      setNewQuestion(q => ({ ...q, image_url: data.publicUrl }))
+    } else {
+      alert(`Image upload failed: ${error.message}`)
+    }
+    setUploadingImage(false)
+    e.target.value = ''
+  }
+
   async function addQuestion() {
     if (!newQuestion.title.trim() || !selectedTopic) return
-    await supabase.from('questions').insert({ title: newQuestion.title.trim(), content: newQuestion.content || null, topic_id: selectedTopic, order_index: questions.length })
-    setNewQuestion({ title: '', content: '' }); loadQuestions(selectedTopic)
+    await supabase.from('questions').insert({ title: newQuestion.title.trim(), content: newQuestion.content || null, image_url: newQuestion.image_url, topic_id: selectedTopic, order_index: questions.length })
+    setNewQuestion({ title: '', content: '', image_url: null }); loadQuestions(selectedTopic)
   }
 
   async function del(table: string, id: string, cb: () => void) {
@@ -157,7 +175,19 @@ export default function ContentPage() {
               <div className="space-y-2 mb-3">
                 <input value={newQuestion.title} onChange={e => setNewQuestion({ ...newQuestion, title: e.target.value })} placeholder="Question title..." className={`w-full ${input}`} />
                 <textarea value={newQuestion.content} onChange={e => setNewQuestion({ ...newQuestion, content: e.target.value })} placeholder="Details (optional)..." rows={2} className={`w-full ${input} resize-none`} />
-                <button onClick={addQuestion} className={`w-full ${addBtn} py-2`}>Add Question</button>
+                {newQuestion.image_url ? (
+                  <div className="relative">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={newQuestion.image_url} alt="Question" className="w-full rounded-lg border border-gray-200 max-h-40 object-contain bg-gray-50" />
+                    <button onClick={() => setNewQuestion(q => ({ ...q, image_url: null }))} className="absolute top-1 right-1 bg-white/90 rounded-full w-6 h-6 text-gray-600 hover:text-red-500 text-xs shadow flex items-center justify-center">✕</button>
+                  </div>
+                ) : (
+                  <label className="block w-full text-center border border-dashed border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-500 cursor-pointer hover:border-purple-400 hover:text-purple-600">
+                    {uploadingImage ? 'Uploading…' : '📷 Add image (optional)'}
+                    <input type="file" accept="image/*" onChange={handleQuestionImage} className="hidden" />
+                  </label>
+                )}
+                <button onClick={addQuestion} disabled={uploadingImage} className={`w-full ${addBtn} py-2 disabled:opacity-50`}>Add Question</button>
               </div>
               <div className="space-y-1 overflow-y-auto">
                 {questions.map(q => (

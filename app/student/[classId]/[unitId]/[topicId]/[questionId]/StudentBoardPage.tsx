@@ -11,6 +11,7 @@ interface Props {
   studentName: string
   questionTitle: string
   questionContent: string | null
+  questionImageUrl: string | null
   submissionId: string | null
   initialStudentData: string | null
   initialTeacherData: string | null
@@ -27,7 +28,7 @@ const GRADE_LABEL: Record<string, { text: string; cls: string }> = {
 }
 
 export default function StudentBoardPage({
-  questionId, studentId, classId, studentName, questionTitle, questionContent,
+  questionId, studentId, classId, studentName, questionTitle, questionContent, questionImageUrl,
   submissionId: initialSubmissionId, initialStudentData, initialTeacherData,
 }: Props) {
   const supabase = createClient()
@@ -156,6 +157,10 @@ export default function StudentBoardPage({
               <p className="mt-2 text-[14px] text-gray-700 leading-relaxed whitespace-pre-wrap" style={{ fontFamily: 'Georgia, "Times New Roman", serif' }}>
                 {questionContent}
               </p>
+            )}
+            {questionImageUrl && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={questionImageUrl} alt="Question diagram" className="mt-3 max-w-full max-h-80 rounded-lg border border-gray-200 object-contain" />
             )}
           </div>
         )}
