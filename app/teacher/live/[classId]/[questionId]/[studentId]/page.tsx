@@ -15,7 +15,7 @@ export default async function TeacherWatchPage({
   const supabase = await createAdminClient()
 
   const [{ data: question }, { data: student }, { data: cls }, { data: submission }] = await Promise.all([
-    supabase.from('questions').select('id, title, content').eq('id', questionId).single(),
+    supabase.from('questions').select('id, title, content, image_url').eq('id', questionId).single(),
     supabase.from('profiles').select('id, full_name').eq('id', studentId).single(),
     supabase.from('classes').select('title').eq('id', classId).single(),
     supabase.from('submissions')
@@ -57,11 +57,15 @@ export default async function TeacherWatchPage({
         {/* Left sidebar: question + written answer + comments */}
         <div className="w-72 bg-gray-900 border-r border-gray-700 flex-shrink-0 flex flex-col overflow-hidden">
           {/* Question */}
-          <div className="p-4 border-b border-gray-800 flex-shrink-0">
+          <div className="p-4 border-b border-gray-800 flex-shrink-0 max-h-[45%] overflow-y-auto">
             <p className="text-xs text-gray-500 uppercase tracking-wide font-semibold mb-2">Question</p>
             <h2 className="text-white font-semibold text-sm leading-relaxed">{question.title}</h2>
             {question.content && (
-              <p className="text-gray-400 text-sm mt-2 leading-relaxed">{question.content}</p>
+              <p className="text-gray-400 text-sm mt-2 leading-relaxed whitespace-pre-wrap">{question.content}</p>
+            )}
+            {question.image_url && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={question.image_url} alt="Question diagram" className="mt-3 w-full rounded-lg border border-gray-700 object-contain bg-white" />
             )}
           </div>
 
