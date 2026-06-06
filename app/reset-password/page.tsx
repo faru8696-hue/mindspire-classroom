@@ -1,12 +1,14 @@
 'use client'
 
 import { useState, useEffect, Suspense } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import type { EmailOtpType } from '@supabase/supabase-js'
 
 function ResetPasswordForm() {
   const supabase = createClient()
   const router = useRouter()
+  const params = useSearchParams()
   const [ready, setReady] = useState(false)
   const [timedOut, setTimedOut] = useState(false)
   const [password, setPassword] = useState('')
@@ -15,7 +17,23 @@ function ResetPasswordForm() {
   const [error, setError] = useState('')
 
   useEffect(() => {
-    // createBrowserClient auto-exchanges the ?code= param and fires these events
+    const token_hash = params.get('token_hash')
+    const type = params.get('type')
+
+    // Cross-device path: verify the token hash directly. This needs no
+    // device-local code verifier, so a link opened on a different phone/browser
+    // than the one that requested the reset still works.
+    if (token_hash) {
+      supabase.auth
+        .verifyOtp({ token_hash, type: (type as EmailOtpType) || 'recovery' })
+        .then(({ error }) => {
+          if (error) { setError(error.message); setTimedOut(true) }
+          else setReady(true)
+        })
+      return
+    }
+
+    // Fallback: same-device PKCE ?code= flow, auto-exchanged by the browser client.
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN') {
         setReady(true)
