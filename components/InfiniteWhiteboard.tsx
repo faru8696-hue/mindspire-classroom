@@ -92,11 +92,19 @@ export default function InfiniteWhiteboard({
   const objsRef = useRef<DrawObject[]>(loadSaved(ownData))
   const remoteObjsRef = useRef<DrawObject[]>(loadSaved(remoteData))
 
+  // Wall-clock (this client) of the last live broadcast we applied — lets the
+  // DB-poll refresh below defer to live strokes when the peer is actively drawing.
+  const lastBroadcastAt = useRef(0)
+
   // Refresh the *other* user's layer in place when its data prop changes (e.g.
   // the teacher poll picks up the student's latest save). Updating the ref —
   // rather than remounting the board — means our OWN layer (in objsRef) is never
   // reset, so in-progress annotations don't vanish while the other person draws.
+  // Skip if a live broadcast arrived in the last few seconds: that stream is
+  // fresher than the saved snapshot, and applying the snapshot would briefly
+  // revert the peer's most recent strokes.
   useEffect(() => {
+    if (Date.now() - lastBroadcastAt.current < 5000) return
     remoteObjsRef.current = loadSaved(remoteData)
   }, [remoteData])
   const viewRef = useRef<ViewState>({ panX: 0, panY: 0, zoom: 1 })
@@ -943,13 +951,22 @@ export default function InfiniteWhiteboard({
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
   const broadcastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const liveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Timestamp (sender's clock) of the newest broadcast we've applied. When both
+  // users draw at once the channel can deliver snapshots out of order or drop
+  // some; without this guard an older (smaller) snapshot arriving late would
+  // overwrite a newer one and the other person's strokes would visibly shrink.
+  const lastRemoteTs = useRef(0)
 
   useEffect(() => {
     const theirEvent = role === 'student' ? 'teacher_objects' : 'student_objects'
     const ch = supabase.channel(`wb:${questionId}:${studentId}`)
     ch.on('broadcast', { event: theirEvent }, ({ payload }) => {
-      const incoming = (payload.objects as DrawObject[]) ?? []
-      remoteObjsRef.current = incoming
+      // Ignore stale/out-of-order snapshots (each sender's ts is monotonic).
+      const ts = (payload.ts as number) ?? 0
+      if (ts && ts <= lastRemoteTs.current) return
+      lastRemoteTs.current = ts
+      lastBroadcastAt.current = Date.now()
+      remoteObjsRef.current = (payload.objects as DrawObject[]) ?? []
       setLiveIndicator(true)
       if (liveTimer.current) clearTimeout(liveTimer.current)
       liveTimer.current = setTimeout(() => setLiveIndicator(false), 3000)
@@ -968,7 +985,7 @@ export default function InfiniteWhiteboard({
       const objectsToSend = objsRef.current.map(o =>
         o.type === 'image' && (o.data ?? '').startsWith('data:') ? { ...o, data: '' } : o
       )
-      channelRef.current?.send({ type: 'broadcast', event: myEvent, payload: { objects: objectsToSend } })
+      channelRef.current?.send({ type: 'broadcast', event: myEvent, payload: { objects: objectsToSend, ts: Date.now() } })
     }, 150)
   }, [broadcastTick, role])
 
