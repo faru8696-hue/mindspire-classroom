@@ -101,8 +101,16 @@ export default async function StudentDetailPage({ params }: { params: Promise<{ 
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
-      {/* Back link */}
-      <Link href="/teacher/progress" className="text-purple-600 text-sm hover:underline">← All Progress</Link>
+      {/* Back link + report */}
+      <div className="flex items-center justify-between">
+        <Link href="/teacher/progress" className="text-purple-600 text-sm hover:underline">← All Progress</Link>
+        <Link
+          href={`/teacher/students/${studentId}/report`}
+          className="text-sm font-semibold bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg"
+        >
+          📄 Parent report
+        </Link>
+      </div>
 
       {/* Profile card */}
       <div className="bg-white rounded-2xl border border-gray-200 p-6 flex items-start gap-5">
