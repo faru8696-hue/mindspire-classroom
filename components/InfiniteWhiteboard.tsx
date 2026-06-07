@@ -91,6 +91,14 @@ export default function InfiniteWhiteboard({
   const defaultColor = role === 'teacher' ? '#dc2626' : '#000000'
   const objsRef = useRef<DrawObject[]>(loadSaved(ownData))
   const remoteObjsRef = useRef<DrawObject[]>(loadSaved(remoteData))
+
+  // Refresh the *other* user's layer in place when its data prop changes (e.g.
+  // the teacher poll picks up the student's latest save). Updating the ref —
+  // rather than remounting the board — means our OWN layer (in objsRef) is never
+  // reset, so in-progress annotations don't vanish while the other person draws.
+  useEffect(() => {
+    remoteObjsRef.current = loadSaved(remoteData)
+  }, [remoteData])
   const viewRef = useRef<ViewState>({ panX: 0, panY: 0, zoom: 1 })
   const toolRef = useRef<Tool>('pen')
   const colorRef = useRef(defaultColor)

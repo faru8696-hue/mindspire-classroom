@@ -47,7 +47,6 @@ export default function TeacherWatchBoard({
   const [saved, setSaved] = useState(false)
   const [lightbox, setLightbox] = useState<string | null>(null)
   const [studentData, setStudentData] = useState(initialStudentData)
-  const [boardKey, setBoardKey] = useState(0)
 
   // Extract image URLs from canvas JSON — updates whenever studentData changes
   const uploadedImages = useMemo(() => extractImages(studentData), [studentData])
@@ -77,8 +76,9 @@ export default function TeacherWatchBoard({
         const { canvasData } = await res.json() as { canvasData: string | null }
         if (canvasData && canvasData !== last) {
           last = canvasData
+          // Update the data prop only — InfiniteWhiteboard refreshes the student
+          // layer in place, so the teacher's own annotations are never reset.
           setStudentData(canvasData)
-          setBoardKey(k => k + 1)
         }
       } catch {}
     }
@@ -165,7 +165,6 @@ export default function TeacherWatchBoard({
       {/* Whiteboard */}
       <div className="flex-1 min-h-0">
         <InfiniteWhiteboard
-          key={boardKey}
           questionId={questionId}
           studentId={studentId}
           role="teacher"
