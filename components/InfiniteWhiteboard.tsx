@@ -100,11 +100,15 @@ export default function InfiniteWhiteboard({
   // the teacher poll picks up the student's latest save). Updating the ref —
   // rather than remounting the board — means our OWN layer (in objsRef) is never
   // reset, so in-progress annotations don't vanish while the other person draws.
-  // Skip if a live broadcast arrived in the last few seconds: that stream is
-  // fresher than the saved snapshot, and applying the snapshot would briefly
-  // revert the peer's most recent strokes.
+  // Skip if ANY live broadcast arrived recently: live broadcasts always lead
+  // saves (~150ms vs 8s auto-save), so a polled snapshot during an active
+  // session would be older than what's already on screen and would visibly
+  // shrink the peer's strokes. Only apply the polled snapshot after the
+  // broadcast stream has been quiet longer than the auto-save interval, OR
+  // when our remote layer is currently empty (initial load / refresh).
   useEffect(() => {
-    if (Date.now() - lastBroadcastAt.current < 5000) return
+    const isEmpty = remoteObjsRef.current.length === 0
+    if (!isEmpty && Date.now() - lastBroadcastAt.current < 20000) return
     remoteObjsRef.current = loadSaved(remoteData)
   }, [remoteData])
   const viewRef = useRef<ViewState>({ panX: 0, panY: 0, zoom: 1 })
