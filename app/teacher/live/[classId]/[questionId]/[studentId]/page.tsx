@@ -104,6 +104,7 @@ export default async function TeacherWatchPage({
               studentId={studentId}
               submissionId={submission?.id ?? null}
               initialStudentData={submission?.canvas_data ?? null}
+              initialTeacherData={feedback?.canvas_data ?? null}
               initialGrade={feedback?.grade ?? null}
               initialFeedbackText={feedback?.text_feedback ?? null}
             />

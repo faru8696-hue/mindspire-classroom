@@ -10,6 +10,7 @@ interface Props {
   studentId: string
   submissionId: string | null
   initialStudentData: string | null
+  initialTeacherData: string | null
   initialGrade: string | null
   initialFeedbackText: string | null
 }
@@ -35,7 +36,7 @@ function extractImages(canvasJson: string | null): string[] {
 
 export default function TeacherWatchBoard({
   classId, questionId, studentId,
-  initialStudentData,
+  initialStudentData, initialTeacherData,
   initialGrade, initialFeedbackText,
 }: Props) {
   const supabase = createClient()
@@ -169,7 +170,7 @@ export default function TeacherWatchBoard({
           studentId={studentId}
           role="teacher"
           initialStudentData={studentData}
-          initialTeacherData={null}
+          initialTeacherData={initialTeacherData}
           onSaveTeacher={saveTeacher}
         />
       </div>

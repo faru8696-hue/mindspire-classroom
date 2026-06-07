@@ -38,6 +38,7 @@ export default function StudentBoardPage({
   const [questionCollapsed, setQuestionCollapsed] = useState(false)
   const [gradeToast, setGradeToast] = useState<{ grade: string; feedback: string } | null>(null)
   const [submissionId, setSubmissionId] = useState<string | null>(initialSubmissionId ?? null)
+  const [teacherData, setTeacherData] = useState(initialTeacherData)
   const channelRef = useRef(supabase.channel('teacher-alerts'))
   const audioRef = useRef<AudioContext | null>(null)
 
@@ -102,6 +103,27 @@ export default function StudentBoardPage({
     const interval = setInterval(poll, 10000)
     return () => { active = false; clearInterval(interval) }
   }, [studentId])
+
+  // Reconcile the teacher's annotation layer from the DB. Live broadcasts can be
+  // dropped or arrive out of order; polling the saved feedback canvas self-heals
+  // the teacher's marks so they don't vanish on the student's board.
+  useEffect(() => {
+    let active = true
+    let last = initialTeacherData
+    async function poll() {
+      try {
+        const res = await fetch(`/api/submission?questionId=${questionId}&studentId=${studentId}`)
+        if (!res.ok || !active) return
+        const { feedbackCanvas } = await res.json() as { feedbackCanvas: string | null }
+        if (feedbackCanvas && feedbackCanvas !== last) {
+          last = feedbackCanvas
+          setTeacherData(feedbackCanvas)
+        }
+      } catch {}
+    }
+    const interval = setInterval(poll, 5000)
+    return () => { active = false; clearInterval(interval) }
+  }, [questionId, studentId])
 
   async function saveStudent(dataUrl: string) {
     const { data } = await supabase.from('submissions').upsert({
@@ -194,7 +216,7 @@ export default function StudentBoardPage({
           studentId={studentId}
           role="student"
           initialStudentData={initialStudentData}
-          initialTeacherData={initialTeacherData}
+          initialTeacherData={teacherData}
           onSaveStudent={saveStudent}
         />
       </div>

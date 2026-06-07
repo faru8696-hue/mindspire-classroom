@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await admin
     .from('submissions')
-    .select('canvas_data, updated_at')
+    .select('id, canvas_data, updated_at')
     .eq('question_id', questionId)
     .eq('student_id', studentId)
     .maybeSingle()
@@ -38,8 +38,22 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
+  // Also return the teacher's annotation layer (feedback.canvas_data) so the
+  // student board can reconcile it from the DB — this self-heals any live
+  // broadcast that was dropped or arrived out of order.
+  let feedbackCanvas: string | null = null
+  if (data?.id) {
+    const { data: fb } = await admin
+      .from('feedback')
+      .select('canvas_data')
+      .eq('submission_id', data.id)
+      .maybeSingle()
+    feedbackCanvas = fb?.canvas_data ?? null
+  }
+
   return NextResponse.json({
     canvasData: data?.canvas_data ?? null,
+    feedbackCanvas,
     updatedAt: data?.updated_at ?? null,
   })
 }
