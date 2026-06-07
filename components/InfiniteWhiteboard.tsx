@@ -92,24 +92,19 @@ export default function InfiniteWhiteboard({
   const objsRef = useRef<DrawObject[]>(loadSaved(ownData))
   const remoteObjsRef = useRef<DrawObject[]>(loadSaved(remoteData))
 
-  // Wall-clock (this client) of the last live broadcast we applied — lets the
-  // DB-poll refresh below defer to live strokes when the peer is actively drawing.
-  const lastBroadcastAt = useRef(0)
-
-  // Refresh the *other* user's layer in place when its data prop changes (e.g.
-  // the teacher poll picks up the student's latest save). Updating the ref —
-  // rather than remounting the board — means our OWN layer (in objsRef) is never
-  // reset, so in-progress annotations don't vanish while the other person draws.
-  // Skip if ANY live broadcast arrived recently: live broadcasts always lead
-  // saves (~150ms vs 8s auto-save), so a polled snapshot during an active
-  // session would be older than what's already on screen and would visibly
-  // shrink the peer's strokes. Only apply the polled snapshot after the
-  // broadcast stream has been quiet longer than the auto-save interval, OR
-  // when our remote layer is currently empty (initial load / refresh).
+  // Merge the *other* user's layer when its data prop changes (e.g. the
+  // teacher poll picks up the student's latest save). Strict rule across the
+  // whole peer-layer pipeline: snapshots ONLY add or update strokes by id —
+  // they never remove. The only thing that removes a peer stroke is an
+  // explicit "deleted ids" payload from the peer's broadcast. This makes
+  // "strokes stay until erased" actually true regardless of dropped, stale,
+  // or out-of-order messages.
   useEffect(() => {
-    const isEmpty = remoteObjsRef.current.length === 0
-    if (!isEmpty && Date.now() - lastBroadcastAt.current < 20000) return
-    remoteObjsRef.current = loadSaved(remoteData)
+    const incoming = loadSaved(remoteData)
+    if (incoming.length === 0) return
+    const map = new Map(remoteObjsRef.current.map(o => [o.id, o]))
+    for (const obj of incoming) map.set(obj.id, obj)
+    remoteObjsRef.current = [...map.values()]
   }, [remoteData])
   const viewRef = useRef<ViewState>({ panX: 0, panY: 0, zoom: 1 })
   const toolRef = useRef<Tool>('pen')
@@ -955,22 +950,36 @@ export default function InfiniteWhiteboard({
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
   const broadcastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const liveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  // Timestamp (sender's clock) of the newest broadcast we've applied. When both
-  // users draw at once the channel can deliver snapshots out of order or drop
-  // some; without this guard an older (smaller) snapshot arriving late would
-  // overwrite a newer one and the other person's strokes would visibly shrink.
+  // Last broadcast timestamp per sender — drop out-of-order snapshots so
+  // an older payload arriving late can't overwrite newer state.
   const lastRemoteTs = useRef(0)
+  // Sender-side bookkeeping for delta broadcasts:
+  //   lastSentIds   — ids we last broadcast as present
+  //   recentDeletes — ids we deleted, kept in every broadcast for ~30s so
+  //                   peers still apply the removal if a message was dropped
+  const lastSentIds = useRef<Set<string>>(new Set())
+  const recentDeletes = useRef<Map<string, number>>(new Map())
 
   useEffect(() => {
     const theirEvent = role === 'student' ? 'teacher_objects' : 'student_objects'
     const ch = supabase.channel(`wb:${questionId}:${studentId}`)
     ch.on('broadcast', { event: theirEvent }, ({ payload }) => {
-      // Ignore stale/out-of-order snapshots (each sender's ts is monotonic).
       const ts = (payload.ts as number) ?? 0
       if (ts && ts <= lastRemoteTs.current) return
       lastRemoteTs.current = ts
-      lastBroadcastAt.current = Date.now()
-      remoteObjsRef.current = (payload.objects as DrawObject[]) ?? []
+      // Merge-by-id: snapshots only ADD or UPDATE strokes. They NEVER remove,
+      // even if a stroke is missing from the payload. This is what makes
+      // "strokes stay until erased" hold under dropped/stale/out-of-order
+      // messages — the only thing that can remove a stroke is an explicit
+      // entry in `deleted`.
+      const map = new Map(remoteObjsRef.current.map(o => [o.id, o]))
+      for (const obj of (payload.objects as DrawObject[]) ?? []) {
+        map.set(obj.id, obj)
+      }
+      for (const id of (payload.deleted as string[]) ?? []) {
+        map.delete(id)
+      }
+      remoteObjsRef.current = [...map.values()]
       setLiveIndicator(true)
       if (liveTimer.current) clearTimeout(liveTimer.current)
       liveTimer.current = setTimeout(() => setLiveIndicator(false), 3000)
@@ -979,17 +988,42 @@ export default function InfiniteWhiteboard({
     return () => { supabase.removeChannel(ch) }
   }, [questionId, studentId, role])
 
-  // Broadcast on object changes (debounced)
-  // Strip base64 image data from payload to stay under Supabase's size limit.
-  // broadcastTick increments on every commitObjects call, including base64→URL swaps.
+  // Broadcast on object changes (debounced).
+  // We compute the set of ids that disappeared since the last broadcast and
+  // keep them in `recentDeletes` for ~30s — every broadcast re-states those
+  // deletions so a peer still applies the removal even if one message was
+  // dropped. Strokes (additions) are sent as a full snapshot for the same
+  // reason: peers can recover even after a missed update.
+  // Base64 image data is stripped (Supabase payload size limit).
   useEffect(() => {
     if (broadcastTimer.current) clearTimeout(broadcastTimer.current)
     broadcastTimer.current = setTimeout(() => {
       const myEvent = role === 'student' ? 'student_objects' : 'teacher_objects'
+      const currentIds = new Set(objsRef.current.map(o => o.id))
+      const now = Date.now()
+      // Detect freshly-deleted ids since last broadcast
+      for (const id of lastSentIds.current) {
+        if (!currentIds.has(id)) recentDeletes.current.set(id, now)
+      }
+      lastSentIds.current = currentIds
+      // Re-add any id that came back (undo) so it isn't treated as deleted
+      for (const id of currentIds) recentDeletes.current.delete(id)
+      // Trim deletions older than 30s — long enough that any in-flight
+      // out-of-order add can't resurrect a delete that already propagated
+      for (const [id, t] of recentDeletes.current) {
+        if (now - t > 30000) recentDeletes.current.delete(id)
+      }
       const objectsToSend = objsRef.current.map(o =>
         o.type === 'image' && (o.data ?? '').startsWith('data:') ? { ...o, data: '' } : o
       )
-      channelRef.current?.send({ type: 'broadcast', event: myEvent, payload: { objects: objectsToSend, ts: Date.now() } })
+      channelRef.current?.send({
+        type: 'broadcast', event: myEvent,
+        payload: {
+          objects: objectsToSend,
+          deleted: [...recentDeletes.current.keys()],
+          ts: now,
+        },
+      })
     }, 150)
   }, [broadcastTick, role])
 
