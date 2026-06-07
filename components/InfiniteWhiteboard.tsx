@@ -254,10 +254,19 @@ export default function InfiniteWhiteboard({
         if (obj.type === 'pen' || obj.type === 'highlighter') {
           const pts = JSON.parse(obj.data || '[]') as { x: number; y: number }[]
           if (pts.length > 1) {
-            if (obj.type === 'highlighter') ctx.globalAlpha = isOwn ? 0.4 : 0.25
-            ctx.strokeStyle = obj.color || '#000'
-            ctx.lineWidth = obj.strokeWidth || 2
-            ctx.lineCap = 'round'; ctx.lineJoin = 'round'
+            if (obj.type === 'highlighter') {
+              // Real-highlighter look: fixed bright yellow, semi-transparent,
+              // thick chisel-like stroke, drawn with flat caps so overlapping
+              // sweeps don't form dark dots at the ends.
+              ctx.globalAlpha = 0.4
+              ctx.strokeStyle = '#fff200'
+              ctx.lineWidth = obj.strokeWidth || 16
+              ctx.lineCap = 'butt'; ctx.lineJoin = 'round'
+            } else {
+              ctx.strokeStyle = obj.color || '#000'
+              ctx.lineWidth = obj.strokeWidth || 2
+              ctx.lineCap = 'round'; ctx.lineJoin = 'round'
+            }
             ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y)
             for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y)
             ctx.stroke(); ctx.globalAlpha = 1
@@ -406,10 +415,16 @@ export default function InfiniteWhiteboard({
         const t = toolRef.current
         ctx.save()
         ctx.translate(v.panX, v.panY); ctx.scale(v.zoom, v.zoom)
-        ctx.strokeStyle = colorRef.current
-        ctx.lineWidth = t === 'highlighter' ? 8 : 3
-        ctx.lineCap = 'round'; ctx.lineJoin = 'round'
-        if (t === 'highlighter') ctx.globalAlpha = 0.4
+        if (t === 'highlighter') {
+          ctx.strokeStyle = '#fff200'
+          ctx.lineWidth = 16
+          ctx.lineCap = 'butt'; ctx.lineJoin = 'round'
+          ctx.globalAlpha = 0.4
+        } else {
+          ctx.strokeStyle = colorRef.current
+          ctx.lineWidth = 3
+          ctx.lineCap = 'round'; ctx.lineJoin = 'round'
+        }
         ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y)
         for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y)
         ctx.stroke(); ctx.globalAlpha = 1
@@ -683,8 +698,8 @@ export default function InfiniteWhiteboard({
           id: `${t}-${Date.now()}`, type: t,
           x: 0, y: 0, rotation: 0,
           data: JSON.stringify(currentPath.current),
-          color: colorRef.current,
-          strokeWidth: t === 'highlighter' ? 8 : 3,
+          color: t === 'highlighter' ? '#fff200' : colorRef.current,
+          strokeWidth: t === 'highlighter' ? 16 : 3,
           zIndex: Date.now(),
         }])
       }
@@ -885,8 +900,8 @@ export default function InfiniteWhiteboard({
             id: `${t}-${Date.now()}`, type: t,
             x: 0, y: 0, rotation: 0,
             data: JSON.stringify(currentPath.current),
-            color: colorRef.current,
-            strokeWidth: t === 'highlighter' ? 8 : 3,
+            color: t === 'highlighter' ? '#fff200' : colorRef.current,
+            strokeWidth: t === 'highlighter' ? 16 : 3,
             zIndex: Date.now(),
           }])
         }
@@ -988,44 +1003,56 @@ export default function InfiniteWhiteboard({
     return () => { supabase.removeChannel(ch) }
   }, [questionId, studentId, role])
 
-  // Broadcast on object changes (debounced).
-  // We compute the set of ids that disappeared since the last broadcast and
-  // keep them in `recentDeletes` for ~30s — every broadcast re-states those
-  // deletions so a peer still applies the removal even if one message was
-  // dropped. Strokes (additions) are sent as a full snapshot for the same
-  // reason: peers can recover even after a missed update.
-  // Base64 image data is stripped (Supabase payload size limit).
+  // Send the current state on the wire. Used by both the debounced change
+  // broadcast and the periodic heartbeat. Idempotent on the receiver thanks
+  // to merge-by-id + monotonic ts.
+  const sendBroadcast = useCallback(() => {
+    if (!channelRef.current) return
+    const myEvent = role === 'student' ? 'student_objects' : 'teacher_objects'
+    const currentIds = new Set(objsRef.current.map(o => o.id))
+    const now = Date.now()
+    for (const id of lastSentIds.current) {
+      if (!currentIds.has(id)) recentDeletes.current.set(id, now)
+    }
+    lastSentIds.current = currentIds
+    for (const id of currentIds) recentDeletes.current.delete(id)
+    for (const [id, t] of recentDeletes.current) {
+      if (now - t > 30000) recentDeletes.current.delete(id)
+    }
+    const objectsToSend = objsRef.current.map(o =>
+      o.type === 'image' && (o.data ?? '').startsWith('data:') ? { ...o, data: '' } : o
+    )
+    channelRef.current.send({
+      type: 'broadcast', event: myEvent,
+      payload: {
+        objects: objectsToSend,
+        deleted: [...recentDeletes.current.keys()],
+        ts: now,
+      },
+    })
+  }, [role])
+
+  // Broadcast on object changes (debounced 60ms).
+  // Strokes (additions) are sent as a full snapshot; deletions live in
+  // recentDeletes for ~30s and ride along every broadcast — so even a dropped
+  // message can't permanently desync state. Base64 image data is stripped to
+  // stay under Supabase's payload size limit.
   useEffect(() => {
     if (broadcastTimer.current) clearTimeout(broadcastTimer.current)
-    broadcastTimer.current = setTimeout(() => {
-      const myEvent = role === 'student' ? 'student_objects' : 'teacher_objects'
-      const currentIds = new Set(objsRef.current.map(o => o.id))
-      const now = Date.now()
-      // Detect freshly-deleted ids since last broadcast
-      for (const id of lastSentIds.current) {
-        if (!currentIds.has(id)) recentDeletes.current.set(id, now)
-      }
-      lastSentIds.current = currentIds
-      // Re-add any id that came back (undo) so it isn't treated as deleted
-      for (const id of currentIds) recentDeletes.current.delete(id)
-      // Trim deletions older than 30s — long enough that any in-flight
-      // out-of-order add can't resurrect a delete that already propagated
-      for (const [id, t] of recentDeletes.current) {
-        if (now - t > 30000) recentDeletes.current.delete(id)
-      }
-      const objectsToSend = objsRef.current.map(o =>
-        o.type === 'image' && (o.data ?? '').startsWith('data:') ? { ...o, data: '' } : o
-      )
-      channelRef.current?.send({
-        type: 'broadcast', event: myEvent,
-        payload: {
-          objects: objectsToSend,
-          deleted: [...recentDeletes.current.keys()],
-          ts: now,
-        },
-      })
-    }, 150)
-  }, [broadcastTick, role])
+    broadcastTimer.current = setTimeout(sendBroadcast, 60)
+  }, [broadcastTick, sendBroadcast])
+
+  // Heartbeat: re-broadcast the full snapshot every 3s. With merge-by-id this
+  // is idempotent — but it guarantees that any peer who missed an earlier
+  // broadcast recovers within 3 seconds. This is the structural fix for the
+  // "writing comes and goes" symptom: even if individual messages drop, the
+  // peer's state can't stay wrong for long.
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (objsRef.current.length > 0 || recentDeletes.current.size > 0) sendBroadcast()
+    }, 3000)
+    return () => clearInterval(id)
+  }, [sendBroadcast])
 
   // ── Auto-save ─────────────────────────────────────────────────
   const doSave = useCallback(async () => {
