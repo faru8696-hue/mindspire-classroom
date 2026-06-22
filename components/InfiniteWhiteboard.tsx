@@ -1077,6 +1077,23 @@ export default function InfiniteWhiteboard({
     return () => clearInterval(id)
   }, [doSave, onSaveStudent, onSaveTeacher])
 
+  // Flush a final save when the board unmounts — switching to another
+  // submission, or leaving the page — so strokes drawn since the last 8s
+  // auto-save aren't lost. Fire-and-forget (no state updates; the component is
+  // going away). Guarded: never save an EMPTY board, so an unmount can't wipe
+  // previously-saved work. A ref holds the latest save fn bound to the current
+  // submission, so the flush always targets the right one.
+  const flushRef = useRef<() => void>(() => {})
+  flushRef.current = () => {
+    if (objsRef.current.length === 0) return
+    try {
+      const json = JSON.stringify(objsRef.current)
+      if (role === 'student') onSaveStudent?.(json)
+      else onSaveTeacher?.(json)
+    } catch {}
+  }
+  useEffect(() => () => { flushRef.current() }, [])
+
   // ── Toolbar helper ────────────────────────────────────────────
   const tb = (t: Tool, label: string) => (
     <button key={t} onClick={() => setTool(t)}

@@ -55,17 +55,19 @@ export default function SubmissionsPage() {
     setTextFeedback(sub.feedback?.text_feedback ?? '')
   }
 
-  async function saveTeacherAnnotation(canvasData: string) {
-    if (!selected || !currentUser) return
-    const { data: ex } = await supabase.from('feedback').select('id').eq('submission_id', selected.id).single()
+  // Bound to a specific submission id so the unmount flush always writes to the
+  // submission the board belonged to — not whichever one is selected now.
+  async function saveTeacherAnnotation(submissionId: string, canvasData: string) {
+    if (!currentUser) return
+    const { data: ex } = await supabase.from('feedback').select('id').eq('submission_id', submissionId).single()
     if (ex) {
       await supabase.from('feedback').update({
         canvas_data: canvasData,
         updated_at: new Date().toISOString(),
-      }).eq('submission_id', selected.id)
+      }).eq('submission_id', submissionId)
     } else {
       await supabase.from('feedback').insert({
-        submission_id: selected.id,
+        submission_id: submissionId,
         teacher_id: currentUser.id,
         canvas_data: canvasData,
       })
@@ -148,7 +150,7 @@ export default function SubmissionsPage() {
                 role="teacher"
                 initialStudentData={selected.canvas_data}
                 initialTeacherData={selected.feedback?.canvas_data ?? null}
-                onSaveTeacher={saveTeacherAnnotation}
+                onSaveTeacher={(data) => saveTeacherAnnotation(selected.id, data)}
               />
             </div>
           </div>
