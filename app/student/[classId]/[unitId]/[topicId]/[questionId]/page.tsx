@@ -1,5 +1,5 @@
 import { createClient, createAdminClient } from '@/lib/supabase/server'
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import Comments from '@/components/Comments'
 import StudentBoardPage from './StudentBoardPage'
@@ -7,8 +7,9 @@ import StudentBoardPage from './StudentBoardPage'
 export default async function QuestionPage({ params }: { params: Promise<{ classId: string; unitId: string; topicId: string; questionId: string }> }) {
   const { classId, unitId, topicId, questionId } = await params
   const supabase = await createClient()
-  const { data: { session } } = await supabase.auth.getSession()
-  const studentId = session!.user.id
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/login')
+  const studentId = user.id
 
   const [{ data: question }, { data: topic }, { data: unit }, { data: cls }, { data: profile }] = await Promise.all([
     supabase.from('questions').select('*').eq('id', questionId).single(),

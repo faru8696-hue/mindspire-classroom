@@ -1,12 +1,13 @@
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 
 export default async function UnitPage({ params }: { params: Promise<{ classId: string; unitId: string }> }) {
   const { classId, unitId } = await params
   const supabase = await createClient()
-  const { data: { session } } = await supabase.auth.getSession()
-  const studentId = session!.user.id
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/login')
+  const studentId = user.id
 
   const [{ data: unit }, { data: cls }, { data: topics }] = await Promise.all([
     supabase.from('units').select('*').eq('id', unitId).single(),

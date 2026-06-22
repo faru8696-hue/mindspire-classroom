@@ -1,13 +1,14 @@
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import StudentGradeNotifications from '@/components/StudentGradeNotifications'
 
 export default async function ClassPage({ params }: { params: Promise<{ classId: string }> }) {
   const { classId } = await params
   const supabase = await createClient()
-  const { data: { session } } = await supabase.auth.getSession()
-  const studentId = session!.user.id
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/login')
+  const studentId = user.id
 
   const [{ data: cls }, { data: units }] = await Promise.all([
     supabase.from('classes').select('*').eq('id', classId).single(),

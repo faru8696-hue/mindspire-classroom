@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 
 const GRADE_BADGE: Record<string, { label: string; cls: string; dot: string }> = {
   correct:   { label: '✓ Correct',   cls: 'bg-green-100 text-green-700',  dot: 'bg-green-500' },
@@ -11,8 +11,9 @@ const GRADE_BADGE: Record<string, { label: string; cls: string; dot: string }> =
 export default async function TopicPage({ params }: { params: Promise<{ classId: string; unitId: string; topicId: string }> }) {
   const { classId, unitId, topicId } = await params
   const supabase = await createClient()
-  const { data: { session } } = await supabase.auth.getSession()
-  const studentId = session!.user.id
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/login')
+  const studentId = user.id
 
   const [{ data: topic }, { data: unit }, { data: allQuestions }, { data: classRow }] = await Promise.all([
     supabase.from('topics').select('*').eq('id', topicId).single(),

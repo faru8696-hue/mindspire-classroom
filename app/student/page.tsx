@@ -5,13 +5,17 @@ import Link from 'next/link'
 
 export default async function StudentDashboard() {
   const supabase = await createClient()
-  const { data: { session } } = await supabase.auth.getSession()
+  // getUser() validates the token (and reflects the proxy's refresh) instead of
+  // trusting a possibly-stale local session. Redirect on a momentarily-null auth
+  // rather than crashing the page render.
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/login')
 
   const admin = createSupabaseAdmin(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
   const { data: enrollments } = await admin
     .from('class_enrollments')
     .select('class_id, classes(id, title)')
-    .eq('student_id', session!.user.id)
+    .eq('student_id', user.id)
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const classes = (enrollments ?? []).map((e: any) => {
