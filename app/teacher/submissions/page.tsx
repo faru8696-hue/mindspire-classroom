@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import Comments from '@/components/Comments'
 import InfiniteWhiteboard from '@/components/InfiniteWhiteboard'
+import ZoomableImage from '@/components/ZoomableImage'
 
 interface Submission {
   id: string
@@ -13,14 +14,16 @@ interface Submission {
   student_id: string
   question_id: string
   profiles: { full_name: string; email: string } | null
-  questions: { title: string; content: string | null; topics: { title: string; units: { title: string; classes: { id: string; title: string } | null } | null } | null } | null
+  questions: { title: string; content: string | null; image_url: string | null; topics: { title: string; units: { title: string; classes: { id: string; title: string } | null } | null } | null } | null
   feedback: { id: string; text_feedback: string | null; canvas_data: string | null; grade: string | null } | null
 }
 
 const GRADES = {
-  correct: { label: '✓ Correct', active: 'bg-green-600 text-white', idle: 'bg-gray-100 text-gray-600', badge: 'bg-green-100 text-green-700' },
-  partial: { label: '~ Partial', active: 'bg-amber-500 text-white', idle: 'bg-gray-100 text-gray-600', badge: 'bg-amber-100 text-amber-700' },
-  incorrect: { label: '✗ Wrong', active: 'bg-red-600 text-white', idle: 'bg-gray-100 text-gray-600', badge: 'bg-red-100 text-red-700' },
+  correct:   { label: '✓ Correct',    active: 'bg-green-600 text-white',  idle: 'bg-gray-100 text-gray-600', badge: 'bg-green-100 text-green-700' },
+  partial:   { label: '~ Partial',     active: 'bg-amber-500 text-white',  idle: 'bg-gray-100 text-gray-600', badge: 'bg-amber-100 text-amber-700' },
+  discussed: { label: '💬 Discussed',  active: 'bg-blue-600 text-white',   idle: 'bg-gray-100 text-gray-600', badge: 'bg-blue-100 text-blue-700' },
+  incorrect: { label: '✗ Wrong',       active: 'bg-red-600 text-white',    idle: 'bg-gray-100 text-gray-600', badge: 'bg-red-100 text-red-700' },
+  needsmore: { label: '🔄 Needs more', active: 'bg-purple-600 text-white', idle: 'bg-gray-100 text-gray-600', badge: 'bg-purple-100 text-purple-700' },
 }
 
 function classOf(s: Submission) {
@@ -37,6 +40,7 @@ export default function SubmissionsPage() {
   const [grade, setGrade] = useState<string | null>(null)
   const [textFeedback, setTextFeedback] = useState('')
   const [grading, setGrading] = useState(false)
+  const [questionCollapsed, setQuestionCollapsed] = useState(false)
   const [currentUser, setCurrentUser] = useState<{ id: string; name: string } | null>(null)
 
   useEffect(() => {
@@ -51,7 +55,7 @@ export default function SubmissionsPage() {
   async function load() {
     const { data } = await supabase
       .from('submissions')
-      .select(`*, profiles(full_name, email), questions(title, content, topics(title, units(title, classes(id, title)))), feedback(id, text_feedback, canvas_data, grade)`)
+      .select(`*, profiles(full_name, email), questions(title, content, image_url, topics(title, units(title, classes(id, title)))), feedback(id, text_feedback, canvas_data, grade)`)
       .order('updated_at', { ascending: false })
     setSubmissions((data as unknown as Submission[]) ?? [])
   }
@@ -99,26 +103,33 @@ export default function SubmissionsPage() {
     if (fresh && fresh !== selected) setSelected(fresh)
   }, [submissions]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function saveTeacherAnnotation(submissionId: string, canvasData: string) {
-    if (!currentUser) return
-    const { data: ex } = await supabase.from('feedback').select('id').eq('submission_id', submissionId).single()
-    if (ex) {
-      await supabase.from('feedback').update({ canvas_data: canvasData, updated_at: new Date().toISOString() }).eq('submission_id', submissionId)
-    } else {
-      await supabase.from('feedback').insert({ submission_id: submissionId, teacher_id: currentUser.id, canvas_data: canvasData })
-    }
+  // All feedback writes go through the service-role API. The feedback table is
+  // RLS-gated, so writing directly from the browser is blocked — which is why
+  // grades used to silently never save (and stayed "pending"). The route also
+  // notifies the student and records grade history.
+  async function saveTeacherAnnotation(sId: string, qId: string, canvasData: string) {
+    await fetch('/api/grade', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ studentId: sId, questionId: qId, canvasData }),
+    })
     load()
   }
 
   async function saveGrade() {
-    if (!selected || !currentUser) return
+    if (!selected) return
     setGrading(true)
-    const { data: ex } = await supabase.from('feedback').select('id').eq('submission_id', selected.id).single()
-    if (ex) {
-      await supabase.from('feedback').update({ grade, text_feedback: textFeedback, updated_at: new Date().toISOString() }).eq('submission_id', selected.id)
-    } else {
-      await supabase.from('feedback').insert({ submission_id: selected.id, teacher_id: currentUser.id, grade, text_feedback: textFeedback })
-    }
+    await fetch('/api/grade', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        studentId: selected.student_id,
+        questionId: selected.question_id,
+        grade,
+        textFeedback: textFeedback || null,
+        notify: true,
+      }),
+    })
     setGrading(false)
     load()
   }
@@ -219,6 +230,7 @@ export default function SubmissionsPage() {
                   <p className="text-xs text-gray-500">{selected.questions?.topics?.units?.title} → {selected.questions?.topics?.title} → {selected.questions?.title}</p>
                   {selected.text_answer && <p className="text-xs text-gray-600 mt-1 bg-gray-50 px-2 py-1 rounded">📝 {selected.text_answer}</p>}
                 </div>
+                {/* grade buttons + feedback below */}
                 <div className="flex items-center gap-2 flex-wrap">
                   {(Object.entries(GRADES) as [string, typeof GRADES.correct][]).map(([key, cfg]) => (
                     <button key={key} onClick={() => setGrade(grade === key ? null : key)}
@@ -240,6 +252,30 @@ export default function SubmissionsPage() {
               </div>
             </div>
 
+            {/* Full question — so the teacher can read what was asked */}
+            <div className="bg-white rounded-xl border border-gray-200 flex-shrink-0 overflow-hidden">
+              <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b border-gray-100">
+                <span className="text-xs font-bold uppercase tracking-wide text-gray-400">Question</span>
+                <button onClick={() => setQuestionCollapsed(c => !c)} className="text-xs text-gray-400 hover:text-gray-600 font-medium">
+                  {questionCollapsed ? '▼ expand' : '▲ collapse'}
+                </button>
+              </div>
+              {!questionCollapsed && (
+                <div className="px-4 py-3 max-h-56 overflow-y-auto flex gap-4">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-gray-900">{selected.questions?.title}</p>
+                    {selected.questions?.content && (
+                      <p className="text-sm text-gray-700 mt-1 whitespace-pre-wrap leading-relaxed">{selected.questions.content}</p>
+                    )}
+                  </div>
+                  {selected.questions?.image_url && (
+                    <ZoomableImage src={selected.questions.image_url} alt="Question diagram"
+                      className="flex-shrink-0 max-h-48 max-w-[45%] rounded-lg border border-gray-200 object-contain bg-white self-start" />
+                  )}
+                </div>
+              )}
+            </div>
+
             <div className="flex-1 overflow-hidden">
               <InfiniteWhiteboard
                 key={selected.id}
@@ -248,7 +284,7 @@ export default function SubmissionsPage() {
                 role="teacher"
                 initialStudentData={selected.canvas_data}
                 initialTeacherData={selected.feedback?.canvas_data ?? null}
-                onSaveTeacher={(data) => saveTeacherAnnotation(selected.id, data)}
+                onSaveTeacher={(data) => saveTeacherAnnotation(selected.student_id, selected.question_id, data)}
               />
             </div>
           </div>
