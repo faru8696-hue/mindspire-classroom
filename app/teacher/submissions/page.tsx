@@ -5,6 +5,9 @@ import { createClient } from '@/lib/supabase/client'
 import Comments from '@/components/Comments'
 import InfiniteWhiteboard from '@/components/InfiniteWhiteboard'
 import ZoomableImage from '@/components/ZoomableImage'
+import { GRADE_LIST, GRADE_MAP } from '@/lib/grades'
+
+const IDLE_BTN = 'bg-gray-100 text-gray-600 hover:bg-gray-200'
 
 interface Submission {
   id: string
@@ -16,14 +19,6 @@ interface Submission {
   profiles: { full_name: string; email: string } | null
   questions: { title: string; content: string | null; image_url: string | null; topics: { title: string; units: { title: string; classes: { id: string; title: string } | null } | null } | null } | null
   feedback: { id: string; text_feedback: string | null; canvas_data: string | null; grade: string | null } | null
-}
-
-const GRADES = {
-  correct:   { label: '✓ Correct',    active: 'bg-green-600 text-white',  idle: 'bg-gray-100 text-gray-600', badge: 'bg-green-100 text-green-700' },
-  partial:   { label: '~ Partial',     active: 'bg-amber-500 text-white',  idle: 'bg-gray-100 text-gray-600', badge: 'bg-amber-100 text-amber-700' },
-  discussed: { label: '💬 Discussed',  active: 'bg-blue-600 text-white',   idle: 'bg-gray-100 text-gray-600', badge: 'bg-blue-100 text-blue-700' },
-  incorrect: { label: '✗ Wrong',       active: 'bg-red-600 text-white',    idle: 'bg-gray-100 text-gray-600', badge: 'bg-red-100 text-red-700' },
-  needsmore: { label: '🔄 Needs more', active: 'bg-purple-600 text-white', idle: 'bg-gray-100 text-gray-600', badge: 'bg-purple-100 text-purple-700' },
 }
 
 function classOf(s: Submission) {
@@ -87,6 +82,30 @@ export default function SubmissionsPage() {
   const works = useMemo(() => students.find(st => st.id === studentId)?.subs ?? [], [students, studentId])
 
   const ungraded = (subs: Submission[]) => subs.filter(s => !s.feedback?.grade).length
+  // How many of this student's works still need a grade (drives the queue).
+  const remaining = useMemo(() => works.filter(w => !w.feedback?.grade).length, [works])
+
+  // One door: honor ?student=&question= deep links (from the dashboard and the
+  // per-student page "View →") by drilling straight to that work.
+  const [deepLink, setDeepLink] = useState<{ student?: string; question?: string } | null>(null)
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search)
+    const student = p.get('student') ?? undefined
+    const question = p.get('question') ?? undefined
+    if (student || question) setDeepLink({ student, question })
+  }, [])
+  useEffect(() => {
+    if (!deepLink || submissions.length === 0) return
+    const sub =
+      submissions.find(s => s.student_id === deepLink.student && s.question_id === deepLink.question) ??
+      submissions.find(s => s.student_id === deepLink.student)
+    if (sub) {
+      setClassId(classOf(sub)?.id ?? 'other')
+      setStudentId(sub.student_id)
+      openWork(sub)
+    }
+    setDeepLink(null)
+  }, [deepLink, submissions]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function openClass(id: string) { setClassId(id); setStudentId(null); setSelected(null) }
   function openStudent(id: string) { setStudentId(id); setSelected(null) }
@@ -118,13 +137,14 @@ export default function SubmissionsPage() {
 
   async function saveGrade() {
     if (!selected) return
+    const cur = selected
     setGrading(true)
     await fetch('/api/grade', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        studentId: selected.student_id,
-        questionId: selected.question_id,
+        studentId: cur.student_id,
+        questionId: cur.question_id,
         grade,
         textFeedback: textFeedback || null,
         notify: true,
@@ -132,6 +152,10 @@ export default function SubmissionsPage() {
     })
     setGrading(false)
     load()
+    // Grading queue: jump to this student's next ungraded work so the teacher
+    // can grade straight through without hunting in the list.
+    const next = works.find(w => w.id !== cur.id && !w.feedback?.grade)
+    if (next) openWork(next)
   }
 
   const activeClass = classes.find(c => c.id === classId)
@@ -204,8 +228,8 @@ export default function SubmissionsPage() {
                 <p className="text-xs text-gray-400 truncate">{sub.questions?.topics?.title}</p>
                 <div className="flex items-center gap-2 mt-0.5">
                   {sub.feedback?.grade ? (
-                    <span className={`text-xs px-1.5 py-0.5 rounded inline-block font-medium ${GRADES[sub.feedback.grade as keyof typeof GRADES]?.badge ?? 'bg-gray-100 text-gray-600'}`}>
-                      {GRADES[sub.feedback.grade as keyof typeof GRADES]?.label ?? sub.feedback.grade}
+                    <span className={`text-xs px-1.5 py-0.5 rounded inline-block font-medium ${GRADE_MAP[sub.feedback.grade]?.badge ?? 'bg-gray-100 text-gray-600'}`}>
+                      {GRADE_MAP[sub.feedback.grade]?.label ?? sub.feedback.grade}
                     </span>
                   ) : (
                     <span className="text-xs px-1.5 py-0.5 rounded inline-block font-medium bg-gray-100 text-gray-500">Not graded</span>
@@ -232,9 +256,12 @@ export default function SubmissionsPage() {
                 </div>
                 {/* grade buttons + feedback below */}
                 <div className="flex items-center gap-2 flex-wrap">
-                  {(Object.entries(GRADES) as [string, typeof GRADES.correct][]).map(([key, cfg]) => (
-                    <button key={key} onClick={() => setGrade(grade === key ? null : key)}
-                      className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors ${grade === key ? cfg.active : cfg.idle + ' hover:bg-gray-200'}`}>
+                  {remaining > 0 && (
+                    <span className="text-xs font-semibold text-purple-700 bg-purple-50 px-2 py-1 rounded-full">{remaining} left to grade</span>
+                  )}
+                  {GRADE_LIST.map(cfg => (
+                    <button key={cfg.value} onClick={() => setGrade(grade === cfg.value ? null : cfg.value)}
+                      className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors ${grade === cfg.value ? cfg.solid : IDLE_BTN}`}>
                       {cfg.label}
                     </button>
                   ))}
