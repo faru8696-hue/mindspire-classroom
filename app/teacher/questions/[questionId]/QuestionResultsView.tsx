@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import MiniBoard from '@/components/MiniBoard'
 
 interface Part { id: string; title: string; content: string | null; order_index: number }
 interface Student { id: string; full_name: string; avatar_url: string | null; nickname: string | null }
@@ -144,15 +145,10 @@ export default function QuestionResultsView({
               >
                 {/* Work thumbnail */}
                 <div className="w-full aspect-video bg-gray-50 relative overflow-hidden">
-                  {sub?.canvas_data ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={sub.canvas_data} alt="" className="w-full h-full object-contain" />
-                  ) : sub?.text_answer ? (
+                  {sub?.text_answer && !sub?.canvas_data ? (
                     <div className="p-2 text-xs text-gray-500 overflow-hidden h-full line-clamp-4">{sub.text_answer}</div>
                   ) : (
-                    <div className="flex items-center justify-center h-full">
-                      <span className="text-gray-300 text-xs">No work yet</span>
-                    </div>
+                    <MiniBoard canvasData={sub?.canvas_data ?? null} />
                   )}
                   {grade && (
                     <span className={`absolute bottom-1 right-1 text-xs px-1.5 py-0.5 rounded font-bold text-white ${GRADE_BADGE[grade]}`}>

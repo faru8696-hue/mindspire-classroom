@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
+import MiniBoard from '@/components/MiniBoard'
 
 interface Student { id: string; full_name: string }
 interface Submission { id: string; student_id: string; canvas_data: string | null; text_answer: string | null; updated_at: string }
@@ -171,21 +172,21 @@ export default function LiveClassroomView({
   })
 
   return (
-    <div className="h-screen flex flex-col bg-gray-950 overflow-hidden">
+    <div className="h-screen flex flex-col bg-gray-50 overflow-hidden">
       {/* Top bar */}
-      <div className="bg-gray-900 border-b border-gray-700 px-5 py-3 flex items-center justify-between flex-shrink-0">
+      <div className="bg-white border-b border-gray-200 px-5 py-3 flex items-center justify-between flex-shrink-0">
         <div className="flex items-center gap-4 min-w-0">
-          <Link href="/teacher" className="text-gray-400 hover:text-white text-sm flex-shrink-0">← Back</Link>
+          <Link href="/teacher" className="text-gray-500 hover:text-gray-900 text-sm flex-shrink-0">← Back</Link>
           <div className="relative min-w-0">
             <button
               onClick={() => setSwitcherOpen(o => !o)}
-              className="flex items-center gap-2 text-left hover:bg-gray-800 rounded-lg px-2 py-1 -mx-2 transition-colors"
+              className="flex items-center gap-2 text-left hover:bg-gray-100 rounded-lg px-2 py-1 -mx-2 transition-colors"
             >
               <div className="min-w-0">
-                <p className="text-[10px] uppercase tracking-widest text-gray-500 leading-none mb-0.5">{classTitle}</p>
-                <h1 className="font-bold text-white text-sm flex items-center gap-1.5 truncate">
+                <p className="text-[10px] uppercase tracking-widest text-gray-400 leading-none mb-0.5">{classTitle}</p>
+                <h1 className="font-bold text-gray-900 text-sm flex items-center gap-1.5 truncate">
                   <span className="truncate">{questionTitle}</span>
-                  <span className="text-gray-500 flex-shrink-0">▾</span>
+                  <span className="text-gray-400 flex-shrink-0">▾</span>
                 </h1>
               </div>
               {otherHelp > 0 && (
@@ -198,8 +199,8 @@ export default function LiveClassroomView({
             {switcherOpen && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setSwitcherOpen(false)} />
-                <div className="absolute left-0 top-full mt-2 w-96 max-h-[70vh] overflow-y-auto bg-gray-900 border border-gray-700 rounded-xl shadow-2xl z-50 py-1">
-                  <p className="px-3 py-2 text-[10px] uppercase tracking-widest text-gray-500 border-b border-gray-800">Jump to question</p>
+                <div className="absolute left-0 top-full mt-2 w-96 max-h-[70vh] overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-2xl z-50 py-1">
+                  <p className="px-3 py-2 text-[10px] uppercase tracking-widest text-gray-400 border-b border-gray-100">Jump to question</p>
                   {allQuestions.map(q => {
                     const help = helpByQuestion[q.id] ?? 0
                     const isCurrent = q.id === questionId
@@ -208,12 +209,12 @@ export default function LiveClassroomView({
                         key={q.id}
                         onClick={() => { if (!isCurrent) window.location.href = `/teacher/live/${classId}/${q.id}` }}
                         className={`w-full text-left px-3 py-2 flex items-center justify-between gap-2 transition-colors ${
-                          isCurrent ? 'bg-purple-600/20' : 'hover:bg-gray-800'
+                          isCurrent ? 'bg-purple-50' : 'hover:bg-gray-50'
                         }`}
                       >
                         <div className="min-w-0">
-                          {q.topicTitle && <p className="text-[10px] text-gray-500 truncate">{q.topicTitle}</p>}
-                          <p className={`text-xs font-medium truncate ${isCurrent ? 'text-purple-300' : 'text-gray-200'}`}>
+                          {q.topicTitle && <p className="text-[10px] text-gray-400 truncate">{q.topicTitle}</p>}
+                          <p className={`text-xs font-medium truncate ${isCurrent ? 'text-purple-700' : 'text-gray-700'}`}>
                             {isCurrent && '● '}{q.title}
                           </p>
                         </div>
@@ -228,16 +229,16 @@ export default function LiveClassroomView({
                 </div>
               </>
             )}
-            {questionContent && <p className="text-xs text-gray-400 truncate max-w-xl">{questionContent}</p>}
+            {questionContent && <p className="text-xs text-gray-500 truncate max-w-xl">{questionContent}</p>}
           </div>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs text-gray-400 bg-gray-800 px-3 py-1.5 rounded-full">
+          <span className="text-xs text-gray-600 bg-gray-100 px-3 py-1.5 rounded-full">
             {submittedCount}/{students.length} submitted
           </span>
           {checkedIds.size > 0 && (
-            <span className="text-xs text-green-400 bg-green-900/40 px-3 py-1.5 rounded-full font-semibold">
+            <span className="text-xs text-green-700 bg-green-50 px-3 py-1.5 rounded-full font-semibold">
               ✅ {checkedIds.size} checked
             </span>
           )}
@@ -263,7 +264,7 @@ export default function LiveClassroomView({
       </div>
 
       {/* Filter tabs */}
-      <div className="bg-gray-900 border-b border-gray-800 px-5 py-2 flex items-center gap-2">
+      <div className="bg-white border-b border-gray-200 px-5 py-2 flex items-center gap-2">
         {([
           ['all', `All (${students.length})`],
           ['unchecked', `⚠️ Unchecked (${uncheckedNeedingReview})`],
@@ -272,20 +273,22 @@ export default function LiveClassroomView({
           ['submitted', `Submitted (${submittedCount})`],
         ] as [Filter, string][]).map(([f, label]) => (
           <button key={f} onClick={() => setFilter(f)}
-            className={`text-xs px-3 py-1.5 rounded-full font-medium transition-colors ${filter === f ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}>
+            className={`text-xs px-3 py-1.5 rounded-full font-medium transition-colors ${filter === f ? 'bg-purple-600 text-white' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'}`}>
             {label}
           </button>
         ))}
       </div>
 
-      {/* Grid */}
+      {/* Grid — big enough tiles to actually read a student's handwriting at
+          a glance, so a teacher can watch everyone at once (a few per row,
+          scroll for the rest) instead of tiny unreadable thumbnails. */}
       <div className="flex-1 overflow-y-auto p-4">
         {filteredStudents.length === 0 ? (
           <div className="flex items-center justify-center h-full">
-            <p className="text-gray-500 text-sm">No students match this filter</p>
+            <p className="text-gray-400 text-sm">No students match this filter</p>
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
             {filteredStudents.map(student => {
               const sub = submissions.get(student.id)
               const grade = grades.get(student.id)
@@ -297,49 +300,46 @@ export default function LiveClassroomView({
                 <div key={student.id} className="relative">
                   <button
                     onClick={() => { window.location.href = `/teacher/live/${classId}/${questionId}/${student.id}` }}
-                    className={`w-full rounded-xl border-2 overflow-hidden text-left transition-all hover:scale-105 hover:shadow-xl ${
-                      isChecked   ? 'border-green-500 opacity-50' :
-                      needsHelp   ? 'border-amber-400 shadow-amber-900/50 shadow-lg' :
-                      isDone      ? 'border-purple-500' :
+                    className={`w-full rounded-xl border-2 overflow-hidden text-left transition-all hover:shadow-xl bg-white ${
+                      isChecked   ? 'border-green-400 opacity-60' :
+                      needsHelp   ? 'border-amber-400 shadow-lg shadow-amber-100' :
+                      isDone      ? 'border-purple-400' :
                       grade       ? GRADE_COLOR[grade] :
-                      sub         ? 'border-blue-500' :
-                                    'border-gray-700'
-                    } bg-gray-800`}
+                      sub         ? 'border-blue-300' :
+                                    'border-gray-200'
+                    }`}
                   >
-                    {/* Thumbnail */}
-                    <div className="w-full aspect-video bg-gray-900 relative overflow-hidden">
-                      {sub?.canvas_data ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={sub.canvas_data} alt="" className="w-full h-full object-contain" />
-                      ) : sub?.text_answer ? (
-                        <div className="p-2 text-xs text-gray-300 overflow-hidden h-full line-clamp-4">{sub.text_answer}</div>
+                    {/* Live-rendered board snapshot — properly draws the
+                        saved strokes instead of the old broken <img> that
+                        tried to use the JSON data as an image URL. */}
+                    <div className="w-full h-64 md:h-72 bg-white relative overflow-hidden">
+                      {sub?.text_answer && !sub?.canvas_data ? (
+                        <div className="p-3 text-sm text-gray-600 overflow-hidden h-full line-clamp-[10]">{sub.text_answer}</div>
                       ) : (
-                        <div className="flex items-center justify-center h-full">
-                          <span className="text-gray-600 text-xs">No work yet</span>
-                        </div>
+                        <MiniBoard canvasData={sub?.canvas_data ?? null} />
                       )}
-                      {needsHelp && <span className="absolute top-1 right-1 bg-amber-500 text-white text-xs px-1.5 py-0.5 rounded-full font-bold">🙋</span>}
-                      {isDone && !needsHelp && <span className="absolute top-1 right-1 bg-purple-600 text-white text-xs px-1.5 py-0.5 rounded-full font-bold">✓</span>}
-                      {grade && <span className={`absolute bottom-1 left-1 text-xs px-1.5 py-0.5 rounded-full font-bold text-white ${grade === 'correct' ? 'bg-green-500' : grade === 'incorrect' ? 'bg-red-500' : grade === 'discussed' ? 'bg-blue-500' : grade === 'needsmore' ? 'bg-purple-500' : 'bg-amber-500'}`}>{grade === 'correct' ? '✓' : grade === 'incorrect' ? '✗' : grade === 'discussed' ? '💬' : grade === 'needsmore' ? '🔄' : '~'}</span>}
+                      {needsHelp && <span className="absolute top-2 right-2 bg-amber-500 text-white text-xs px-2 py-1 rounded-full font-bold">🙋 Help</span>}
+                      {isDone && !needsHelp && <span className="absolute top-2 right-2 bg-purple-600 text-white text-xs px-2 py-1 rounded-full font-bold">✓ Done</span>}
+                      {grade && <span className={`absolute bottom-2 left-2 text-xs px-2 py-1 rounded-full font-bold text-white ${grade === 'correct' ? 'bg-green-500' : grade === 'incorrect' ? 'bg-red-500' : grade === 'discussed' ? 'bg-blue-500' : grade === 'needsmore' ? 'bg-purple-500' : 'bg-amber-500'}`}>{grade === 'correct' ? '✓ Correct' : grade === 'incorrect' ? '✗ Wrong' : grade === 'discussed' ? '💬 Discussed' : grade === 'needsmore' ? '½ Partial' : grade}</span>}
                       {/* Checked overlay */}
                       {isChecked && (
-                        <div className="absolute inset-0 bg-green-900/60 flex items-center justify-center">
-                          <span className="text-green-300 text-2xl font-black">✅</span>
+                        <div className="absolute inset-0 bg-green-50/70 flex items-center justify-center">
+                          <span className="text-green-600 text-3xl font-black">✅</span>
                         </div>
                       )}
-                      <div className="absolute inset-0 bg-black/0 hover:bg-black/20 transition-colors flex items-center justify-center opacity-0 hover:opacity-100">
-                        <span className="text-white text-xs font-bold bg-black/50 px-2 py-1 rounded-lg">Open board</span>
+                      <div className="absolute inset-0 bg-black/0 hover:bg-black/5 transition-colors flex items-center justify-center opacity-0 hover:opacity-100">
+                        <span className="text-white text-xs font-bold bg-black/60 px-2 py-1 rounded-lg">Open board</span>
                       </div>
                     </div>
-                    <div className="px-2 py-1.5 bg-gray-800 flex items-center justify-between gap-1">
+                    <div className="px-3 py-2 bg-white border-t border-gray-100 flex items-center justify-between gap-1">
                       <div className="min-w-0">
-                        <p className={`text-xs font-semibold truncate ${isChecked ? 'text-green-400 line-through' : 'text-white'}`}>{student.full_name}</p>
-                        <p className="text-xs text-gray-400">{isChecked ? '✅ Checked' : needsHelp ? '🙋 Needs help' : isDone ? '✓ Done' : grade ? grade : sub ? 'In progress' : 'Not started'}</p>
+                        <p className={`text-sm font-semibold truncate ${isChecked ? 'text-green-600 line-through' : 'text-gray-900'}`}>{student.full_name}</p>
+                        <p className="text-xs text-gray-500">{isChecked ? '✅ Checked' : needsHelp ? '🙋 Needs help' : isDone ? '✓ Done' : grade ? grade : sub ? 'In progress' : 'Not started'}</p>
                       </div>
                       <Link
                         href={`/teacher/students/${student.id}`}
                         onClick={e => e.stopPropagation()}
-                        className="text-gray-500 hover:text-purple-400 flex-shrink-0 text-xs leading-none"
+                        className="text-gray-400 hover:text-purple-600 flex-shrink-0 text-xs leading-none"
                         title="View student's questions"
                       >
                         ↗
@@ -349,10 +349,10 @@ export default function LiveClassroomView({
                   {/* Check button — sits outside the main button */}
                   <button
                     onClick={e => toggleChecked(student.id, e)}
-                    className={`absolute top-1 left-1 z-10 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shadow-lg transition-all ${
+                    className={`absolute top-2 left-2 z-10 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shadow-lg transition-all ${
                       isChecked
                         ? 'bg-green-500 text-white hover:bg-red-500'
-                        : 'bg-black/60 text-gray-400 hover:bg-green-500 hover:text-white'
+                        : 'bg-white/90 text-gray-400 border border-gray-200 hover:bg-green-500 hover:text-white hover:border-green-500'
                     }`}
                     title={isChecked ? 'Mark unchecked' : 'Mark as checked'}
                   >
