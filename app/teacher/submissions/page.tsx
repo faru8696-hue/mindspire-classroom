@@ -7,8 +7,6 @@ import InfiniteWhiteboard from '@/components/InfiniteWhiteboard'
 import ZoomableImage from '@/components/ZoomableImage'
 import { GRADE_LIST, GRADE_MAP } from '@/lib/grades'
 
-const IDLE_BTN = 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-
 interface Submission {
   id: string
   canvas_data: string | null
@@ -259,12 +257,16 @@ export default function SubmissionsPage() {
                   {remaining > 0 && (
                     <span className="text-xs font-semibold text-purple-700 bg-purple-50 px-2 py-1 rounded-full">{remaining} left to grade</span>
                   )}
-                  {GRADE_LIST.map(cfg => (
-                    <button key={cfg.value} onClick={() => setGrade(grade === cfg.value ? null : cfg.value)}
-                      className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors ${grade === cfg.value ? cfg.solid : IDLE_BTN}`}>
-                      {cfg.label}
-                    </button>
-                  ))}
+                  {/* Segmented control — one joined bar, flat fill only on the
+                      selected option, instead of separate mismatched pills. */}
+                  <div className="inline-flex rounded-lg border border-gray-200 overflow-hidden">
+                    {GRADE_LIST.map((cfg, i) => (
+                      <button key={cfg.value} onClick={() => setGrade(grade === cfg.value ? null : cfg.value)}
+                        className={`px-3 py-1.5 text-sm font-semibold transition-colors ${i > 0 ? 'border-l border-gray-200' : ''} ${grade === cfg.value ? cfg.solid : 'bg-white text-gray-600 hover:bg-gray-50'}`}>
+                        {cfg.label}
+                      </button>
+                    ))}
+                  </div>
                   <input
                     value={textFeedback}
                     onChange={e => setTextFeedback(e.target.value)}

@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import InfiniteWhiteboard from '@/components/InfiniteWhiteboard'
+import { GRADE_LIST } from '@/lib/grades'
 
 interface Props {
   classId: string
@@ -14,14 +15,6 @@ interface Props {
   initialGrade: string | null
   initialFeedbackText: string | null
 }
-
-const GRADES = [
-  { value: 'correct',   label: '✓ Correct',    cls: 'bg-green-600 hover:bg-green-500 text-white',   activeCls: 'ring-4 ring-green-400' },
-  { value: 'partial',   label: '~ Partial',     cls: 'bg-amber-500 hover:bg-amber-400 text-white',   activeCls: 'ring-4 ring-amber-300' },
-  { value: 'discussed', label: '💬 Discussed',  cls: 'bg-blue-600 hover:bg-blue-500 text-white',     activeCls: 'ring-4 ring-blue-400' },
-  { value: 'incorrect', label: '✗ Wrong',       cls: 'bg-red-600 hover:bg-red-500 text-white',       activeCls: 'ring-4 ring-red-400' },
-  { value: 'needsmore', label: '🔄 Needs More', cls: 'bg-purple-600 hover:bg-purple-500 text-white', activeCls: 'ring-4 ring-purple-400' },
-]
 
 // Extract image URLs from canvas JSON (objects with type='image' and a non-empty data URL)
 function extractImages(canvasJson: string | null): string[] {
@@ -179,23 +172,19 @@ export default function TeacherWatchBoard({
       <div className="bg-gray-900 border-t border-gray-700 px-4 py-3 flex-shrink-0">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs text-gray-400 font-semibold mr-1">Grade:</span>
-          {(() => {
-            const current = GRADES.find(g => g.value === grade)
-            return (
-              <span className={`text-xs px-2.5 py-1 rounded-lg font-bold mr-1 ${current ? 'bg-white/15 text-white' : 'bg-gray-800 text-gray-500'}`}>
-                {current ? current.label.replace(/^[^\s]+\s/, '') : 'Not graded'}
-              </span>
-            )
-          })()}
-          {GRADES.map(g => (
-            <button
-              key={g.value}
-              onClick={() => applyGrade(g.value)}
-              className={`text-xs px-3 py-1.5 rounded-lg font-semibold transition-all ${g.cls} ${grade === g.value ? g.activeCls : 'opacity-70'}`}
-            >
-              {g.label}
-            </button>
-          ))}
+          {/* Segmented control — one joined bar, flat fill only on the
+              selected option, instead of five separate mismatched pills. */}
+          <div className="inline-flex rounded-lg border border-gray-700 overflow-hidden">
+            {GRADE_LIST.map((g, i) => (
+              <button
+                key={g.value}
+                onClick={() => applyGrade(g.value)}
+                className={`text-xs px-3 py-1.5 font-semibold transition-colors ${i > 0 ? 'border-l border-gray-700' : ''} ${grade === g.value ? g.solid : 'bg-gray-900 text-gray-400 hover:bg-gray-800'}`}
+              >
+                {g.label}
+              </button>
+            ))}
+          </div>
           <div className="flex-1 min-w-[160px] flex items-center gap-2 ml-2">
             <input
               value={feedbackText}
