@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation'
 import TeacherWatchBoard from './TeacherWatchBoard'
 import Comments from '@/components/Comments'
 import ZoomableImage from '@/components/ZoomableImage'
+import QuestionSwitcher from './QuestionSwitcher'
 
 export const dynamic = 'force-dynamic'
 
@@ -33,6 +34,46 @@ export default async function TeacherWatchPage({
   const { data: teacherProfile } = await supabase.from('profiles').select('id, full_name').eq('role', 'teacher').limit(1).single()
 
   if (!question || !student) notFound()
+
+  // All questions in this class, with this student's status for each — used
+  // by the question switcher so the teacher can jump straight to another
+  // question for the SAME student without going back through the class grid.
+  const { data: units } = await supabase.from('units').select('id, title, order_index').eq('class_id', classId)
+  const unitIds = (units ?? []).map(u => u.id)
+  const { data: topics } = unitIds.length > 0
+    ? await supabase.from('topics').select('id, title, unit_id, order_index').in('unit_id', unitIds)
+    : { data: [] as { id: string; title: string; unit_id: string; order_index: number }[] }
+  const topicIds = (topics ?? []).map(t => t.id)
+  const { data: classQuestions } = topicIds.length > 0
+    ? await supabase.from('questions').select('id, title, topic_id, order_index').in('topic_id', topicIds)
+    : { data: [] as { id: string; title: string; topic_id: string; order_index: number }[] }
+
+  const classQuestionIds = (classQuestions ?? []).map(q => q.id)
+  const { data: studentSubs } = classQuestionIds.length > 0
+    ? await supabase.from('submissions').select('id, question_id').eq('student_id', studentId).in('question_id', classQuestionIds)
+    : { data: [] as { id: string; question_id: string }[] }
+  const subIdsForStudent = (studentSubs ?? []).map(s => s.id)
+  const { data: studentFeedback } = subIdsForStudent.length > 0
+    ? await supabase.from('feedback').select('submission_id, grade').in('submission_id', subIdsForStudent)
+    : { data: [] as { submission_id: string; grade: string | null }[] }
+
+  const gradedSubIds = new Set((studentFeedback ?? []).filter(f => f.grade).map(f => f.submission_id))
+  const subByQuestion = new Map((studentSubs ?? []).map(s => [s.question_id, s.id]))
+
+  const unitOrder = new Map((units ?? []).map(u => [u.id, u.order_index ?? 0]))
+  const topicById = new Map((topics ?? []).map(t => [t.id, t]))
+  const switcherQuestions = (classQuestions ?? [])
+    .map(q => {
+      const t = topicById.get(q.topic_id)
+      const subId = subByQuestion.get(q.id)
+      const status: 'none' | 'submitted' | 'graded' = subId ? (gradedSubIds.has(subId) ? 'graded' : 'submitted') : 'none'
+      return {
+        id: q.id, title: q.title, topicTitle: t?.title ?? '', status,
+        _u: t ? (unitOrder.get(t.unit_id) ?? 0) : 0, _t: t?.order_index ?? 0, _q: q.order_index ?? 0,
+      }
+    })
+    .sort((a, b) => a._u - b._u || a._t - b._t || a._q - b._q)
+    .map(({ id, title, topicTitle, status }) => ({ id, title, topicTitle, status }))
 
   return (
     <div className="h-screen flex flex-col bg-gray-950 overflow-hidden">
@@ -87,7 +128,13 @@ export default async function TeacherWatchPage({
           <div className="bg-gray-900 border-b border-gray-700 px-5 py-3 flex-shrink-0 max-h-[40%] overflow-y-auto flex gap-5">
             <div className="min-w-0 flex-1">
               <p className="text-xs text-gray-500 uppercase tracking-wide font-semibold mb-1.5">Question</p>
-              <h2 className="text-white font-semibold text-lg leading-relaxed">{question.title}</h2>
+              <QuestionSwitcher
+                classId={classId}
+                studentId={studentId}
+                questionId={questionId}
+                questionTitle={question.title}
+                questions={switcherQuestions}
+              />
               {question.content && (
                 <p className="text-gray-300 text-base mt-2 leading-relaxed whitespace-pre-wrap">{question.content}</p>
               )}
