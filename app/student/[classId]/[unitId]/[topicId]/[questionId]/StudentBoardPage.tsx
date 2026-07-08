@@ -115,20 +115,32 @@ export default function StudentBoardPage({
     if (data?.id && !submissionId) setSubmissionId(data.id)
   }
 
+  // Goes through the service-role API so repeat clicks (student clicks "Done"
+  // or "Get Help" more than once) collapse into a single outstanding alert
+  // instead of flooding the teacher's feed with duplicates. Only broadcast the
+  // instant live toast when the alert is genuinely new — a repeat click just
+  // silently bumps the existing one.
   async function sendAlert(type: 'help' | 'submitted') {
     const now = new Date().toISOString()
-    const { data: inserted, error } = await supabase.from('notifications').insert({
-      type, student_id: studentId, question_id: questionId, class_id: classId,
-    }).select('id').single()
-    if (error) console.error('notification insert error:', error)
-    await channelRef.current.send({
-      type: 'broadcast', event: 'student-alert',
-      payload: {
-        id: inserted?.id ?? crypto.randomUUID(),
-        type, student_id: studentId, question_id: questionId, class_id: classId,
-        created_at: now, read: false, student_name: studentName, question_title: questionTitle,
-      },
-    })
+    try {
+      const res = await fetch('/api/student-alert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type, studentId, questionId, classId }),
+      })
+      const { id, created } = await res.json()
+      if (!created) return
+      await channelRef.current.send({
+        type: 'broadcast', event: 'student-alert',
+        payload: {
+          id: id ?? crypto.randomUUID(),
+          type, student_id: studentId, question_id: questionId, class_id: classId,
+          created_at: now, read: false, student_name: studentName, question_title: questionTitle,
+        },
+      })
+    } catch (err) {
+      console.error('sendAlert failed:', err)
+    }
   }
 
   async function handleHelp() {

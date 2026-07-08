@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 
@@ -44,6 +44,27 @@ export default function TeacherNotificationBell({ initialNotifications }: Props)
   }, [])
 
   const unread = notifications.filter(n => !n.read)
+
+  // Group flat notifications by student so "which student is doing which
+  // question" is answered by the layout instead of by scanning 100 rows.
+  // Students with unread items float to the top; within a student, their own
+  // items are newest-first.
+  const grouped = useMemo(() => {
+    const map = new Map<string, { student_id: string; student_name: string; items: Notification[] }>()
+    for (const n of notifications) {
+      if (!map.has(n.student_id)) {
+        map.set(n.student_id, { student_id: n.student_id, student_name: n.student_name ?? 'A student', items: [] })
+      }
+      map.get(n.student_id)!.items.push(n)
+    }
+    return [...map.values()]
+      .map(g => ({ ...g, items: [...g.items].sort((a, b) => b.created_at.localeCompare(a.created_at)) }))
+      .sort((a, b) => {
+        const aUnread = a.items.some(i => !i.read), bUnread = b.items.some(i => !i.read)
+        if (aUnread !== bUnread) return aUnread ? -1 : 1
+        return b.items[0].created_at.localeCompare(a.items[0].created_at)
+      })
+  }, [notifications])
 
   function playBeep() {
     try {
@@ -155,40 +176,60 @@ export default function TeacherNotificationBell({ initialNotifications }: Props)
             <div className="max-h-96 overflow-y-auto">
               {notifications.length === 0 ? (
                 <p className="text-sm text-gray-400 text-center py-8">No notifications yet</p>
-              ) : notifications.slice(0, 30).map((n, i) => (
-                <div
-                  key={n.id ?? i}
-                  className={`flex items-start gap-3 px-4 py-3 border-b border-gray-50 last:border-0 ${n.read ? '' : 'bg-purple-50'}`}
-                >
-                  <span className="text-lg flex-shrink-0 mt-0.5">{n.type === 'help' ? '🙋' : n.type === 'comment' ? '💬' : '✅'}</span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-gray-800">
-                      {n.student_name ?? 'A student'}
-                    </p>
-                    <p className="text-xs text-gray-600">
-                      {n.type === 'help' ? 'needs help' : n.type === 'comment' ? 'left a comment' : 'is done — check their work'}
-                    </p>
-                    {n.question_title && (
-                      <p className="text-xs text-gray-400 truncate mt-0.5">{n.question_title}</p>
-                    )}
-                    <p className="text-xs text-gray-400 mt-0.5">
-                      {new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </p>
+              ) : grouped.map(group => {
+                const groupUnread = group.items.filter(i => !i.read)
+                return (
+                  <div key={group.student_id} className="border-b border-gray-100 last:border-0">
+                    <div className={`flex items-center justify-between px-4 py-2 ${groupUnread.length ? 'bg-purple-50/70' : 'bg-gray-50/50'}`}>
+                      <p className="text-sm font-bold text-gray-800 truncate">
+                        {group.student_name}
+                        {groupUnread.length > 0 && (
+                          <span className="ml-1.5 text-xs font-semibold text-purple-700">({groupUnread.length})</span>
+                        )}
+                      </p>
+                      {groupUnread.length > 1 && (
+                        <button
+                          onClick={() => { groupUnread.forEach(i => markRead(i.id)) }}
+                          className="text-xs text-gray-400 hover:text-gray-600 flex-shrink-0"
+                        >
+                          Mark all read
+                        </button>
+                      )}
+                    </div>
+                    {group.items.slice(0, 6).map(n => (
+                      <div
+                        key={n.id}
+                        className={`flex items-start gap-3 px-4 py-2.5 ${n.read ? '' : 'bg-purple-50/30'}`}
+                      >
+                        <span className="text-lg flex-shrink-0 mt-0.5">{n.type === 'help' ? '🙋' : n.type === 'comment' ? '💬' : '✅'}</span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs text-gray-600">
+                            {n.type === 'help' ? 'needs help' : n.type === 'comment' ? 'left a comment' : 'is done — check their work'}
+                          </p>
+                          {n.question_title && (
+                            <p className="text-xs font-medium text-gray-700 truncate mt-0.5">{n.question_title}</p>
+                          )}
+                          <p className="text-xs text-gray-400 mt-0.5">
+                            {new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                        </div>
+                        <div className="flex flex-col gap-1.5 flex-shrink-0 items-end">
+                          <Link
+                            href={`/teacher/live/${n.class_id}/${n.question_id}`}
+                            onClick={() => { markRead(n.id); setOpen(false) }}
+                            className="text-xs bg-purple-600 text-white px-2 py-1 rounded-lg hover:bg-purple-700 whitespace-nowrap"
+                          >
+                            View
+                          </Link>
+                          {!n.read && (
+                            <button onClick={() => markRead(n.id)} className="text-xs text-gray-400 hover:text-gray-600">Dismiss</button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                  <div className="flex flex-col gap-1.5 flex-shrink-0 items-end">
-                    <Link
-                      href={`/teacher/live/${n.class_id}/${n.question_id}`}
-                      onClick={() => { markRead(n.id); setOpen(false) }}
-                      className="text-xs bg-purple-600 text-white px-2 py-1 rounded-lg hover:bg-purple-700 whitespace-nowrap"
-                    >
-                      View class
-                    </Link>
-                    {!n.read && (
-                      <button onClick={() => markRead(n.id)} className="text-xs text-gray-400 hover:text-gray-600">Dismiss</button>
-                    )}
-                  </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           </div>
         </>

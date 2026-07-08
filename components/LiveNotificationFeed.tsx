@@ -40,7 +40,11 @@ export default function LiveNotificationFeed() {
       config: { broadcast: { self: false } },
     })
       .on('broadcast', { event: 'student-alert' }, ({ payload }) => {
-        setAlerts(prev => [payload as Alert, ...prev.slice(0, 19)])
+        const a = payload as Alert
+        // Dedup: if this student already has an alert of the same type for
+        // the same question, replace it (moves to top) instead of appending a
+        // second entry — repeat clicks/re-broadcasts shouldn't pile up here.
+        setAlerts(prev => [a, ...prev.filter(p => !(p.student_name === a.student_name && p.question_id === a.question_id && p.type === a.type))].slice(0, 20))
         playBeep()
       })
       .subscribe()
