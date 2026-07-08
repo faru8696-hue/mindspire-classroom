@@ -83,24 +83,33 @@ export default function SubmissionsPage() {
   // How many of this student's works still need a grade (drives the queue).
   const remaining = useMemo(() => works.filter(w => !w.feedback?.grade).length, [works])
 
-  // One door: honor ?student=&question= deep links (from the dashboard and the
-  // per-student page "View →") by drilling straight to that work.
-  const [deepLink, setDeepLink] = useState<{ student?: string; question?: string } | null>(null)
+  // One door: honor ?student=&question= (drill straight to a work) or
+  // ?class= (just open that class folder) deep links — used by the
+  // dashboard's per-class "N ungraded" summary and the per-student page's
+  // "View →".
+  const [deepLink, setDeepLink] = useState<{ student?: string; question?: string; class?: string } | null>(null)
   useEffect(() => {
     const p = new URLSearchParams(window.location.search)
     const student = p.get('student') ?? undefined
     const question = p.get('question') ?? undefined
-    if (student || question) setDeepLink({ student, question })
+    const classParam = p.get('class') ?? undefined
+    if (student || question || classParam) setDeepLink({ student, question, class: classParam })
   }, [])
   useEffect(() => {
     if (!deepLink || submissions.length === 0) return
-    const sub =
-      submissions.find(s => s.student_id === deepLink.student && s.question_id === deepLink.question) ??
-      submissions.find(s => s.student_id === deepLink.student)
-    if (sub) {
-      setClassId(classOf(sub)?.id ?? 'other')
-      setStudentId(sub.student_id)
-      openWork(sub)
+    if (deepLink.student) {
+      const sub =
+        submissions.find(s => s.student_id === deepLink.student && s.question_id === deepLink.question) ??
+        submissions.find(s => s.student_id === deepLink.student)
+      if (sub) {
+        setClassId(classOf(sub)?.id ?? 'other')
+        setStudentId(sub.student_id)
+        openWork(sub)
+      }
+    } else if (deepLink.class) {
+      setClassId(deepLink.class)
+      setStudentId(null)
+      setSelected(null)
     }
     setDeepLink(null)
   }, [deepLink, submissions]) // eslint-disable-line react-hooks/exhaustive-deps

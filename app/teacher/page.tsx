@@ -52,14 +52,14 @@ export default async function TeacherDashboard() {
 
   const questionIds = (questions ?? []).map(q => q.id)
 
-  type LatestSub = { id: string; student_id: string; question_id: string; canvas_data: string | null; text_answer: string | null; updated_at: string }
-  // Latest submission per student (for thumbnails)
-  const { data: latestSubs } = questionIds.length > 0
+  type Sub = { id: string; student_id: string; question_id: string; updated_at: string }
+  // All submissions across every class's questions — used to compute a
+  // correctly per-class "N need grading" count below.
+  const { data: allSubs } = questionIds.length > 0
     ? await supabase.from('submissions')
-        .select('id, student_id, question_id, canvas_data, text_answer, updated_at')
+        .select('id, student_id, question_id, updated_at')
         .in('question_id', questionIds)
-        .order('updated_at', { ascending: false })
-    : { data: [] as LatestSub[] }
+    : { data: [] as Sub[] }
 
   // Recent submissions needing feedback (for dashboard feed)
   type RecentSub = { id: string; student_id: string; question_id: string; updated_at: string; profiles: { full_name: string } | null; questions: { title: string; topic_id: string } | null }
@@ -77,54 +77,40 @@ export default async function TeacherDashboard() {
     .order('created_at', { ascending: false })
     .limit(10)
 
-  // Latest feedback per submission
-  const subIds = (latestSubs ?? []).map(s => s.id)
+  // Latest feedback per submission — used to tell "graded" from "still needs grading"
+  const subIds = (allSubs ?? []).map(s => s.id)
   const { data: feedbacks } = subIds.length > 0
     ? await supabase.from('feedback').select('submission_id, grade').in('submission_id', subIds)
     : { data: [] }
 
   const gradeBySubmission = new Map((feedbacks ?? []).map(f => [f.submission_id, f.grade]))
 
-  // Per student: latest submission
-  const latestSubByStudent = new Map<string, LatestSub>()
-  for (const sub of latestSubs ?? []) {
-    if (!latestSubByStudent.has(sub.student_id)) latestSubByStudent.set(sub.student_id, sub)
-  }
-
-  // Per-class stats
+  // Per-class stats. Each class's ungraded count is scoped to THAT class's
+  // own questions — the previous version picked each student's single most
+  // recently updated submission across ALL classes and showed it under every
+  // class card, so a student's AP Chemistry work would visibly "leak" onto
+  // their Honors Chemistry card even if that class had zero questions.
   const classStats = (classes ?? []).map(cls => {
     const classUnits = (units ?? []).filter(u => u.class_id === cls.id)
     const classTopics = (topics ?? []).filter(t => classUnits.some(u => u.id === t.unit_id))
-    const classQIds = (questions ?? []).filter(q => classTopics.some(t => t.id === q.topic_id)).map(q => q.id)
+    const classQIds = new Set((questions ?? []).filter(q => classTopics.some(t => t.id === q.topic_id)).map(q => q.id))
     const classStudents = (classEnrollments ?? [])
       .filter(e => e.class_id === cls.id)
       .map(e => ({ ...profileMap.get(e.student_id), id: e.student_id }))
       .filter(s => s.full_name) // only approved students with profiles
+
+    const classSubs = (allSubs ?? []).filter(s => classQIds.has(s.question_id))
+    const ungradedCount = classSubs.filter(s => !gradeBySubmission.get(s.id)).length
+
     return {
       ...cls,
       studentCount: classStudents.length,
-      questionCount: classQIds.length,
+      questionCount: classQIds.size,
+      submittedCount: classSubs.length,
+      ungradedCount,
       students: classStudents as { id: string; full_name: string; avatar_url?: string | null; nickname?: string | null }[],
     }
   })
-
-  const GRADE_BORDER: Record<string, string> = {
-    correct: 'border-green-400',
-    partial: 'border-amber-400',
-    incorrect: 'border-red-400',
-    discussed: 'border-blue-400',
-    needsmore: 'border-purple-400',
-  }
-  const GRADE_BADGE: Record<string, string> = {
-    correct: 'bg-green-500',
-    partial: 'bg-amber-500',
-    incorrect: 'bg-red-500',
-    discussed: 'bg-blue-500',
-    needsmore: 'bg-purple-500',
-  }
-  const GRADE_SYMBOL: Record<string, string> = {
-    correct: '✓', partial: '~', incorrect: '✗', discussed: '💬', needsmore: '🔄',
-  }
 
   return (
     <div className="max-w-6xl mx-auto space-y-8">
@@ -156,76 +142,41 @@ export default async function TeacherDashboard() {
         </div>
       </div>
 
-      {/* Classroom overview — all students per class */}
-      <div className="space-y-6">
-        <h2 className="text-lg font-semibold text-gray-800">Classroom Overview</h2>
+      {/* Classes at a glance — enrollment, content, and grading load per
+          class, each correctly scoped to that class's own questions. */}
+      <div className="space-y-3">
+        <h2 className="text-lg font-semibold text-gray-800">Classes</h2>
         {classStats.length === 0 ? (
           <p className="text-gray-500 text-sm">No classes yet. <Link href="/teacher/content" className="text-purple-600 underline">Create one →</Link></p>
-        ) : classStats.map(cls => (
-          <div key={cls.id} className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100 bg-gray-50">
-              <div>
-                <h3 className="font-bold text-gray-800">{cls.title}</h3>
-                <p className="text-xs text-gray-500">{cls.studentCount} student{cls.studentCount !== 1 ? 's' : ''} · {cls.questionCount} questions</p>
-              </div>
-              <Link href={`/teacher/class/${cls.id}`} className="text-xs text-purple-600 hover:underline font-medium">Manage class →</Link>
-            </div>
-            {cls.students.length === 0 ? (
-              <p className="text-gray-400 text-sm text-center py-8">No students enrolled</p>
-            ) : (
-              <div className="p-4 grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 xl:grid-cols-9 gap-3">
-                {cls.students.map(student => {
-                  const sub = latestSubByStudent.get(student.id)
-                  const grade = sub ? gradeBySubmission.get(sub.id) ?? null : null
-                  const displayName = (student as { nickname?: string | null }).nickname || student.full_name
-                  const avatarUrl = (student as { avatar_url?: string | null }).avatar_url
-                  return (
+        ) : (
+          <div className="bg-white border border-gray-200 rounded-xl divide-y divide-gray-100">
+            {classStats.map(cls => (
+              <div key={cls.id} className="flex items-center justify-between px-5 py-4">
+                <div>
+                  <h3 className="font-bold text-gray-800">{cls.title}</h3>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    {cls.studentCount} student{cls.studentCount !== 1 ? 's' : ''} · {cls.questionCount} question{cls.questionCount !== 1 ? 's' : ''} assigned
+                  </p>
+                </div>
+                <div className="flex items-center gap-3 flex-shrink-0">
+                  {cls.ungradedCount > 0 ? (
                     <Link
-                      key={student.id}
-                      href={`/teacher/students/${student.id}`}
-                      className={`flex flex-col rounded-xl border-2 overflow-hidden hover:scale-105 hover:shadow-lg transition-all bg-gray-50 ${grade ? GRADE_BORDER[grade] : sub ? 'border-blue-400' : 'border-gray-200'}`}
+                      href={`/teacher/submissions?class=${cls.id}`}
+                      className="text-xs font-semibold bg-purple-100 text-purple-700 px-3 py-1.5 rounded-full hover:bg-purple-200 transition-colors"
                     >
-                      {/* Work thumbnail */}
-                      <div className="w-full aspect-video bg-gray-100 relative overflow-hidden">
-                        {sub?.canvas_data?.startsWith('data:') ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={sub.canvas_data} alt="" className="w-full h-full object-contain" />
-                        ) : sub?.canvas_data ? (
-                          <div className="flex items-center justify-center h-full">
-                            <span className="text-purple-400 text-xs font-medium">✏️ Has work</span>
-                          </div>
-                        ) : sub?.text_answer ? (
-                          <div className="p-1 text-xs text-gray-500 overflow-hidden h-full line-clamp-3">{sub.text_answer}</div>
-                        ) : (
-                          <div className="flex items-center justify-center h-full">
-                            <span className="text-gray-300 text-xs">No work</span>
-                          </div>
-                        )}
-                        {grade && (
-                          <span className={`absolute bottom-0.5 right-0.5 text-xs px-1 py-0.5 rounded font-bold text-white ${GRADE_BADGE[grade]}`}>
-                            {GRADE_SYMBOL[grade]}
-                          </span>
-                        )}
-                      </div>
-                      {/* Avatar + name */}
-                      <div className="flex items-center gap-1.5 px-2 py-1.5">
-                        {avatarUrl ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={avatarUrl} alt="" className="w-5 h-5 rounded-full object-cover flex-shrink-0" />
-                        ) : (
-                          <div className="w-5 h-5 rounded-full bg-purple-200 flex items-center justify-center text-xs font-bold text-purple-700 flex-shrink-0">
-                            {displayName.charAt(0).toUpperCase()}
-                          </div>
-                        )}
-                        <span className="text-xs font-medium text-gray-700 truncate">{displayName}</span>
-                      </div>
+                      {cls.ungradedCount} to grade
                     </Link>
-                  )
-                })}
+                  ) : cls.submittedCount > 0 ? (
+                    <span className="text-xs font-medium text-green-700 bg-green-50 px-3 py-1.5 rounded-full">All caught up</span>
+                  ) : (
+                    <span className="text-xs text-gray-400">No submissions yet</span>
+                  )}
+                  <Link href={`/teacher/class/${cls.id}`} className="text-xs text-purple-600 hover:underline font-medium whitespace-nowrap">Manage class →</Link>
+                </div>
               </div>
-            )}
+            ))}
           </div>
-        ))}
+        )}
       </div>
 
       {/* Notifications panel */}
