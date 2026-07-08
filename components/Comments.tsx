@@ -24,8 +24,17 @@ export default function Comments({ questionId, studentId, currentUserId, current
   const [message, setMessage] = useState('')
   const [sending, setSending] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
-  const channelRef = useRef(supabase.channel(`comments:${questionId}:${studentId}`))
-  const teacherAlertChannelRef = useRef(supabase.channel('teacher-alerts'))
+  // Hold the CURRENT channel instances so sendMessage (defined outside the
+  // effect) can always send on the live one. The channel OBJECTS themselves
+  // must be created fresh inside the effect below, never reused across a
+  // subscribe cycle — a Supabase RealtimeChannel can only be subscribed once
+  // ever; calling .subscribe() again on the same instance (even after
+  // unsubscribing) throws "tried to join multiple times". Previously these
+  // were created once via the useRef initializer and reused every time the
+  // question changed, which is exactly what threw that error when a student
+  // clicked "Next question".
+  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
+  const teacherAlertChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
   const audioRef = useRef<AudioContext | null>(null)
 
   function playPing() {
@@ -52,14 +61,16 @@ export default function Comments({ questionId, studentId, currentUserId, current
       .order('created_at')
       .then(({ data }) => setComments((data as unknown as Comment[]) ?? []))
 
-    // Listen for new comments via Broadcast
-    const ch = channelRef.current
+    // Listen for new comments via Broadcast — fresh channel instance every
+    // time this effect runs (mount, or questionId/studentId change).
+    const ch = supabase.channel(`comments:${questionId}:${studentId}`)
     ch.on('broadcast', { event: 'new-comment' }, ({ payload }) => {
       const incoming = payload as Comment
       if (incoming.author_id !== currentUserId) playPing()
       setComments(prev => [...prev, incoming])
     })
     ch.subscribe()
+    channelRef.current = ch
 
     // Listen for grade-update on the dedicated grade-notif channel
     function playGradeTone(grade: string) {
@@ -86,13 +97,16 @@ export default function Comments({ questionId, studentId, currentUserId, current
     })
     gradeNotifCh.subscribe()
 
-    // Subscribe teacher-alerts channel so we can broadcast to it when student comments
-    teacherAlertChannelRef.current.subscribe()
+    // Subscribe teacher-alerts channel so we can broadcast to it when student
+    // comments — also a fresh instance every run, for the same reason as `ch`.
+    const teacherAlertCh = supabase.channel('teacher-alerts')
+    teacherAlertCh.subscribe()
+    teacherAlertChannelRef.current = teacherAlertCh
 
     return () => {
       supabase.removeChannel(ch)
       supabase.removeChannel(gradeNotifCh)
-      supabase.removeChannel(teacherAlertChannelRef.current)
+      supabase.removeChannel(teacherAlertCh)
     }
   }, [questionId, studentId])
 
@@ -131,7 +145,7 @@ export default function Comments({ questionId, studentId, currentUserId, current
     } else {
       // Broadcast to other party with real DB id
       const final = { ...newComment, id: inserted.id }
-      await channelRef.current.send({
+      await channelRef.current?.send({
         type: 'broadcast',
         event: 'new-comment',
         payload: final,
@@ -145,7 +159,7 @@ export default function Comments({ questionId, studentId, currentUserId, current
         })
       } else {
         // Student commenting — broadcast DIRECTLY to teacher-alerts channel (instant)
-        await teacherAlertChannelRef.current.send({
+        await teacherAlertChannelRef.current?.send({
           type: 'broadcast',
           event: 'student-alert',
           payload: {

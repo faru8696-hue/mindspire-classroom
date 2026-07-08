@@ -1073,7 +1073,18 @@ export default function InfiniteWhiteboard({
 
   useEffect(() => {
     if (!onSaveStudent && !onSaveTeacher) return
-    const id = setInterval(doSave, 8000)
+    const id = setInterval(() => {
+      // Skip silent background saves of an empty board. Without this, simply
+      // opening a question and leaving it idle for 8s would upsert a blank
+      // submission row — and every "has this student submitted?" check
+      // elsewhere in the app (topic page, progress, teacher dashboards) only
+      // checks whether a submissions row EXISTS, so that alone made a
+      // never-touched question show as "Submitted". A deliberate "Clear all"
+      // is still saved by the explicit 💾 Save button, which doesn't have
+      // this guard — only the silent timer does.
+      if (objsRef.current.length === 0) return
+      doSave()
+    }, 8000)
     return () => clearInterval(id)
   }, [doSave, onSaveStudent, onSaveTeacher])
 
