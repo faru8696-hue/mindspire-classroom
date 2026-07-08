@@ -114,11 +114,11 @@ export default function QuestionResultsView({
               ? `Part ${String.fromCharCode(97 + parts.indexOf(selectedPart))}`
               : 'Question'}
           </p>
-          <p className="text-[15px] font-semibold text-gray-900 leading-snug" style={{ fontFamily: 'Georgia, serif' }}>
+          <p className="text-[19px] font-semibold text-gray-900 leading-snug" style={{ fontFamily: 'Georgia, serif' }}>
             {selectedPart.title}
           </p>
           {selectedPart.content && (
-            <p className="mt-2 text-sm text-gray-700 leading-relaxed whitespace-pre-wrap" style={{ fontFamily: 'Georgia, serif' }}>
+            <p className="mt-2 text-base text-gray-700 leading-relaxed whitespace-pre-wrap" style={{ fontFamily: 'Georgia, serif' }}>
               {selectedPart.content}
             </p>
           )}

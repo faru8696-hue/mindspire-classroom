@@ -301,9 +301,9 @@ export default function SubmissionsPage() {
               {!questionCollapsed && (
                 <div className="px-4 py-3 max-h-56 overflow-y-auto flex gap-4">
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold text-gray-900">{selected.questions?.title}</p>
+                    <p className="text-lg font-semibold text-gray-900">{selected.questions?.title}</p>
                     {selected.questions?.content && (
-                      <p className="text-sm text-gray-700 mt-1 whitespace-pre-wrap leading-relaxed">{selected.questions.content}</p>
+                      <p className="text-base text-gray-700 mt-1 whitespace-pre-wrap leading-relaxed">{selected.questions.content}</p>
                     )}
                   </div>
                   {selected.questions?.image_url && (

@@ -176,11 +176,11 @@ export default function StudentBoardPage({
 
         {!questionCollapsed && (
           <div className="px-5 py-4 overflow-y-auto">
-            <p className="text-[15px] font-semibold text-gray-900 leading-snug" style={{ fontFamily: 'Georgia, "Times New Roman", serif' }}>
+            <p className="text-[19px] font-semibold text-gray-900 leading-snug" style={{ fontFamily: 'Georgia, "Times New Roman", serif' }}>
               {questionTitle}
             </p>
             {questionContent && (
-              <p className="mt-2 text-[14px] text-gray-700 leading-relaxed whitespace-pre-wrap" style={{ fontFamily: 'Georgia, "Times New Roman", serif' }}>
+              <p className="mt-2 text-[17px] text-gray-700 leading-relaxed whitespace-pre-wrap" style={{ fontFamily: 'Georgia, "Times New Roman", serif' }}>
                 {questionContent}
               </p>
             )}

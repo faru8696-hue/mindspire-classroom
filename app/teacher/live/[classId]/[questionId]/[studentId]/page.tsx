@@ -87,9 +87,9 @@ export default async function TeacherWatchPage({
           <div className="bg-gray-900 border-b border-gray-700 px-5 py-3 flex-shrink-0 max-h-[40%] overflow-y-auto flex gap-5">
             <div className="min-w-0 flex-1">
               <p className="text-xs text-gray-500 uppercase tracking-wide font-semibold mb-1.5">Question</p>
-              <h2 className="text-white font-semibold text-sm leading-relaxed">{question.title}</h2>
+              <h2 className="text-white font-semibold text-lg leading-relaxed">{question.title}</h2>
               {question.content && (
-                <p className="text-gray-400 text-sm mt-2 leading-relaxed whitespace-pre-wrap">{question.content}</p>
+                <p className="text-gray-300 text-base mt-2 leading-relaxed whitespace-pre-wrap">{question.content}</p>
               )}
             </div>
             {question.image_url && (
