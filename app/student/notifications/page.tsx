@@ -20,7 +20,7 @@ export default async function StudentNotificationsPage() {
 
   const { data: notifs } = await admin
     .from('student_notifications')
-    .select('id, grade, feedback, read, created_at, question_id, questions(id, title, topic_id, topics(id, unit_id, units(id, class_id, classes(id, title))))')
+    .select('id, type, grade, feedback, count, read, created_at, question_id, questions(id, title, topic_id, topics(id, unit_id, units(id, class_id, classes(id, title))))')
     .eq('student_id', session.user.id)
     .order('created_at', { ascending: false })
     .limit(50)
@@ -42,7 +42,13 @@ export default async function StudentNotificationsPage() {
             const topic = Array.isArray(q?.topics) ? q.topics[0] : q?.topics
             const unit = Array.isArray(topic?.units) ? topic.units[0] : topic?.units
             const cls = Array.isArray(unit?.classes) ? unit.classes[0] : unit?.classes
-            const style = GRADE_STYLE[n.grade] ?? { icon: '📝', bg: 'border-gray-300 bg-gray-50', label: n.grade }
+            const isAssignment = n.type === 'assignment'
+            const isComment = n.type === 'comment'
+            const style = isAssignment
+              ? { icon: '📋', bg: 'border-purple-400 bg-purple-50', label: n.count && n.count > 1 ? `${n.count} new questions assigned` : 'New question assigned' }
+              : isComment
+              ? { icon: '💬', bg: 'border-blue-400 bg-blue-50', label: 'Teacher left a comment' }
+              : GRADE_STYLE[n.grade] ?? { icon: '📝', bg: 'border-gray-300 bg-gray-50', label: 'Update' }
             const href = cls?.id && unit?.id && topic?.id && q?.id
               ? `/student/${cls.id}/${unit.id}/${topic.id}/${q.id}`
               : '/student/assignments'
@@ -52,8 +58,19 @@ export default async function StudentNotificationsPage() {
               <Link key={n.id} href={href} className={`flex items-center gap-4 border-l-4 rounded-xl px-5 py-4 hover:opacity-80 transition-opacity ${style.bg} ${!n.read ? 'ring-2 ring-purple-300' : ''}`}>
                 <span className="text-2xl flex-shrink-0">{style.icon}</span>
                 <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-gray-800 truncate">{q?.title ?? 'Question'}</p>
-                  <p className="text-sm text-gray-600">{style.label}{n.feedback ? ` — ${n.feedback}` : ''}</p>
+                  {isAssignment ? (
+                    <>
+                      <p className="font-semibold text-gray-800 truncate">{style.label}</p>
+                      <p className="text-sm text-gray-600 truncate">
+                        {n.count && n.count > 1 ? `Latest: ${q?.title ?? 'Question'}` : (q?.title ?? 'Question')}
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="font-semibold text-gray-800 truncate">{q?.title ?? 'Question'}</p>
+                      <p className="text-sm text-gray-600 truncate">{style.label}{n.feedback ? ` — ${n.feedback}` : ''}</p>
+                    </>
+                  )}
                   {cls?.title && <p className="text-xs text-gray-400 mt-0.5">{cls.title}</p>}
                 </div>
                 <span className="text-xs text-gray-400 flex-shrink-0">{timeAgo}</span>

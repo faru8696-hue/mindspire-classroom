@@ -18,7 +18,7 @@ export async function GET() {
 
   const { data } = await admin
     .from('student_notifications')
-    .select('id, type, grade, feedback, read, created_at, question_id, questions(id, title, topic_id, topics(id, unit_id, units(id, class_id, classes(id, title))))')
+    .select('id, type, grade, feedback, count, read, created_at, question_id, questions(id, title, topic_id, topics(id, unit_id, units(id, class_id, classes(id, title))))')
     .eq('student_id', caller.user.id)
     .order('created_at', { ascending: false })
     .limit(30)
@@ -37,6 +37,7 @@ export async function GET() {
       type: n.type,
       grade: n.grade,
       feedback: n.feedback,
+      count: n.count,
       read: n.read,
       created_at: n.created_at,
       question_id: n.question_id,

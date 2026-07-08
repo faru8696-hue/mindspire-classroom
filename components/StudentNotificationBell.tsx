@@ -8,6 +8,7 @@ interface Notif {
   type: string
   grade: string | null
   feedback: string | null
+  count?: number
   question_title: string
   class_title: string | null
   href: string
@@ -27,7 +28,7 @@ function iconFor(n: Notif): string {
 }
 
 function titleFor(n: Notif): string {
-  if (n.type === 'assignment') return 'New question assigned'
+  if (n.type === 'assignment') return n.count && n.count > 1 ? `${n.count} new questions assigned` : 'New question assigned'
   if (n.type === 'comment') return 'Teacher left a comment'
   return 'Teacher graded your work'
 }
@@ -134,7 +135,11 @@ export default function StudentNotificationBell({ studentId }: { classIds?: stri
                   <span className="text-lg flex-shrink-0">{iconFor(n)}</span>
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-gray-800 truncate">{titleFor(n)}</p>
-                    <p className="text-xs text-gray-500 truncate">{n.question_title}{n.feedback ? ` — ${n.feedback}` : ''}</p>
+                    <p className="text-xs text-gray-500 truncate">
+                      {n.type === 'assignment'
+                        ? (n.count && n.count > 1 ? `Latest: ${n.question_title}` : n.question_title)
+                        : `${n.question_title}${n.feedback ? ` — ${n.feedback}` : ''}`}
+                    </p>
                   </div>
                 </Link>
               ))}

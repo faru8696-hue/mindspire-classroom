@@ -29,20 +29,46 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, skipped: true })
   }
 
-  const rows = targets.map(student_id => ({
-    student_id,
-    question_id: questionId,
-    type: 'assignment',
-    feedback: questionTitle ?? null,
-    grade: null,
-    read: false,
-  }))
+  // Batch: if a teacher assigns several questions in a row (e.g. rolling out
+  // a whole unit), each student would otherwise get one full notification per
+  // question — a class of enrolled students times a dozen new questions
+  // becomes 100+ near-identical "new question assigned" pings within
+  // minutes. Instead, roll any assignment notification from the last 2 hours
+  // that's still unread into a single "N new questions assigned" entry per
+  // student, bumping the count and pointing at the most recently assigned
+  // question.
+  const windowStart = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()
+  const now = new Date().toISOString()
 
-  const { error } = await admin.from('student_notifications').insert(rows)
-  if (error) {
-    console.error('notify-assignment error:', error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+  let notified = 0
+  for (const student_id of targets) {
+    const { data: existing } = await admin
+      .from('student_notifications')
+      .select('id, count')
+      .eq('student_id', student_id)
+      .eq('type', 'assignment')
+      .eq('read', false)
+      .gte('created_at', windowStart)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (existing?.id) {
+      const nextCount = (existing.count ?? 1) + 1
+      await admin.from('student_notifications').update({
+        question_id: questionId,
+        feedback: `${nextCount} new questions assigned`,
+        count: nextCount,
+        created_at: now,
+      }).eq('id', existing.id)
+    } else {
+      await admin.from('student_notifications').insert({
+        student_id, question_id: questionId, type: 'assignment',
+        feedback: null, grade: null, read: false, count: 1,
+      })
+    }
+    notified++
   }
 
-  return NextResponse.json({ ok: true, notified: targets.length })
+  return NextResponse.json({ ok: true, notified })
 }

@@ -1,0 +1,11 @@
+-- Support batching "new question assigned" notifications. Previously every
+-- single question a teacher assigned fired one full-class notification
+-- immediately (see app/api/notify-assignment) — assigning a batch of new
+-- content (e.g. a whole unit) could blast each enrolled student with dozens
+-- of near-identical "new question assigned" rows within seconds, with no way
+-- to tell it was really just "your teacher added a bunch of new work."
+--
+-- `count` lets the API roll multiple assignments within a short window into
+-- ONE notification per student ("5 new questions assigned") instead of one
+-- row per question.
+alter table student_notifications add column if not exists count integer not null default 1;
