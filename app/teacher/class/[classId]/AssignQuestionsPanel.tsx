@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState } from 'react'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 
 interface Unit { id: string; title: string; order_index: number }
@@ -14,9 +15,11 @@ interface Props {
   topics: Topic[]
   questions: Question[]
   initialAssignments: Assignment[]
+  submittedCounts: Record<string, number>
+  totalStudents: number
 }
 
-export default function AssignQuestionsPanel({ classId, units, topics, questions, initialAssignments }: Props) {
+export default function AssignQuestionsPanel({ classId, units, topics, questions, initialAssignments, submittedCounts, totalStudents }: Props) {
   const supabase = createClient()
   const [assignments, setAssignments] = useState<Map<string, string | null>>(
     () => new Map(initialAssignments.map(a => [a.question_id, a.due_date]))
@@ -129,17 +132,31 @@ export default function AssignQuestionsPanel({ classId, units, topics, questions
                               {q.content && <p className="text-xs text-gray-400 truncate">{q.content}</p>}
                             </div>
 
-                            {/* Due date */}
+                            {/* Due date + submitted count + jump straight into
+                                watching every student's live board for this
+                                question — the flow the class page is built
+                                around now. */}
                             {isAssigned && (
-                              <div className="flex items-center gap-1.5 flex-shrink-0">
-                                <label className="text-xs text-gray-500">Due:</label>
-                                <input
-                                  type="date"
-                                  value={dueDate}
-                                  onChange={e => updateDueDate(q.id, e.target.value)}
-                                  className="text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-purple-400 text-gray-700"
-                                />
-                              </div>
+                              <>
+                                <span className="text-xs text-gray-400 flex-shrink-0 whitespace-nowrap">
+                                  {submittedCounts[q.id] ?? 0}/{totalStudents} submitted
+                                </span>
+                                <div className="flex items-center gap-1.5 flex-shrink-0">
+                                  <label className="text-xs text-gray-500">Due:</label>
+                                  <input
+                                    type="date"
+                                    value={dueDate}
+                                    onChange={e => updateDueDate(q.id, e.target.value)}
+                                    className="text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-purple-400 text-gray-700"
+                                  />
+                                </div>
+                                <Link
+                                  href={`/teacher/live/${classId}/${q.id}`}
+                                  className="text-xs font-semibold bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded-lg flex-shrink-0 whitespace-nowrap"
+                                >
+                                  🔴 Go Live
+                                </Link>
+                              </>
                             )}
                           </div>
                         )
