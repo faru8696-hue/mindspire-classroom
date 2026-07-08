@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 import MiniBoard from '@/components/MiniBoard'
+import { GRADE_LIST } from '@/lib/grades'
 
 interface Student { id: string; full_name: string }
 interface Submission { id: string; student_id: string; canvas_data: string | null; text_answer: string | null; updated_at: string }
@@ -57,7 +58,43 @@ export default function LiveClassroomView({
   const [notifications, setNotifications] = useState<StudentNotification[]>(initialNotifications)
   const [filter, setFilter] = useState<Filter>('all')
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set())
+  const [gradingId, setGradingId] = useState<string | null>(null)
   const audioRef = useRef<AudioContext | null>(null)
+
+  // Grade a student right from the grid — no need to open their individual
+  // board just to mark Correct/Wrong. Same service-role write + broadcast
+  // pattern the single-student live board uses, so both views (and the
+  // student's own toast) stay in sync regardless of which one the grade was
+  // given from.
+  async function gradeStudent(studentId: string, grade: string, e: React.MouseEvent) {
+    e.preventDefault()
+    e.stopPropagation()
+    const newGrade = grades.get(studentId) === grade ? null : grade
+    setGradingId(studentId)
+    setGrades(prev => {
+      const next = new Map(prev)
+      if (newGrade) next.set(studentId, newGrade)
+      else next.delete(studentId)
+      return next
+    })
+    try {
+      await fetch('/api/grade', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ studentId, questionId, grade: newGrade, notify: true }),
+      })
+      await supabase.channel(`live-grades:${classId}:${questionId}`).send({
+        type: 'broadcast', event: 'grade-update', payload: { student_id: studentId, grade: newGrade },
+      })
+      if (newGrade) {
+        await supabase.channel(`grade-notif:${questionId}:${studentId}`).send({
+          type: 'broadcast', event: 'grade-update', payload: { grade: newGrade, feedback: '' },
+        })
+      }
+    } finally {
+      setGradingId(null)
+    }
+  }
 
   async function toggleChecked(studentId: string, e: React.MouseEvent) {
     e.stopPropagation()
@@ -298,9 +335,14 @@ export default function LiveClassroomView({
 
               return (
                 <div key={student.id} className="relative">
-                  <button
+                  {/* A plain div, not a <button> — it now contains real grade
+                      buttons, and a button can't legally contain a button. */}
+                  <div
+                    role="button"
+                    tabIndex={0}
                     onClick={() => { window.location.href = `/teacher/live/${classId}/${questionId}/${student.id}` }}
-                    className={`w-full rounded-xl border-2 overflow-hidden text-left transition-all hover:shadow-xl bg-white ${
+                    onKeyDown={e => { if (e.key === 'Enter') window.location.href = `/teacher/live/${classId}/${questionId}/${student.id}` }}
+                    className={`w-full rounded-xl border-2 overflow-hidden text-left transition-all hover:shadow-xl bg-white cursor-pointer ${
                       isChecked   ? 'border-green-400 opacity-60' :
                       needsHelp   ? 'border-amber-400 shadow-lg shadow-amber-100' :
                       isDone      ? 'border-purple-400' :
@@ -331,22 +373,39 @@ export default function LiveClassroomView({
                         <span className="text-white text-xs font-bold bg-black/60 px-2 py-1 rounded-lg">Open board</span>
                       </div>
                     </div>
-                    <div className="px-3 py-2 bg-white border-t border-gray-100 flex items-center justify-between gap-1">
+                    <div className="px-3 py-2 bg-white border-t border-gray-100 flex items-center justify-between gap-2">
                       <div className="min-w-0">
                         <p className={`text-sm font-semibold truncate ${isChecked ? 'text-green-600 line-through' : 'text-gray-900'}`}>{student.full_name}</p>
                         <p className="text-xs text-gray-500">{isChecked ? '✅ Checked' : needsHelp ? '🙋 Needs help' : isDone ? '✓ Done' : grade ? grade : sub ? 'In progress' : 'Not started'}</p>
                       </div>
-                      <Link
-                        href={`/teacher/students/${student.id}`}
-                        onClick={e => e.stopPropagation()}
-                        className="text-gray-400 hover:text-purple-600 flex-shrink-0 text-xs leading-none"
-                        title="View student's questions"
-                      >
-                        ↗
-                      </Link>
+                      {/* Grade right from the grid — no need to open the
+                          student's individual board just to mark it. */}
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <div className="inline-flex rounded-lg border border-gray-200 overflow-hidden">
+                          {GRADE_LIST.map((g, i) => (
+                            <button
+                              key={g.value}
+                              onClick={e => gradeStudent(student.id, g.value, e)}
+                              disabled={gradingId === student.id}
+                              title={g.label}
+                              className={`px-2.5 py-1.5 text-xs font-bold transition-colors disabled:opacity-50 ${i > 0 ? 'border-l border-gray-200' : ''} ${grade === g.value ? g.solid : 'bg-white text-gray-500 hover:bg-gray-50'}`}
+                            >
+                              {g.icon}
+                            </button>
+                          ))}
+                        </div>
+                        <Link
+                          href={`/teacher/students/${student.id}`}
+                          onClick={e => e.stopPropagation()}
+                          className="text-gray-400 hover:text-purple-600 flex-shrink-0 text-xs leading-none"
+                          title="View student's questions"
+                        >
+                          ↗
+                        </Link>
+                      </div>
                     </div>
-                  </button>
-                  {/* Check button — sits outside the main button */}
+                  </div>
+                  {/* Check button — sits outside the card */}
                   <button
                     onClick={e => toggleChecked(student.id, e)}
                     className={`absolute top-2 left-2 z-10 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shadow-lg transition-all ${
