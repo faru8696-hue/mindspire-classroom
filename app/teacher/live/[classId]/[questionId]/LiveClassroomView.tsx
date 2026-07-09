@@ -198,13 +198,17 @@ export default function LiveClassroomView({
 
   const otherHelp = allQuestions.reduce((sum, q) => q.id !== questionId ? sum + (helpByQuestion[q.id] ?? 0) : sum, 0)
   const submittedCount = students.filter(s => submissions.has(s.id)).length
-  const uncheckedNeedingReview = students.filter(s => (helpIds.has(s.id) || doneIds.has(s.id)) && !checkedIds.has(s.id)).length
+  // A student no longer "needs review" once either the teacher has checked
+  // them off OR already assigned a grade — grading from the grid or the
+  // individual board is itself a review, so it shouldn't still nag.
+  const needsReview = (id: string) => (helpIds.has(id) || doneIds.has(id)) && !checkedIds.has(id) && !grades.has(id)
+  const uncheckedNeedingReview = students.filter(s => needsReview(s.id)).length
 
   const filteredStudents = students.filter(s => {
     if (filter === 'help') return helpIds.has(s.id)
     if (filter === 'done') return doneIds.has(s.id)
     if (filter === 'submitted') return submissions.has(s.id)
-    if (filter === 'unchecked') return (helpIds.has(s.id) || doneIds.has(s.id)) && !checkedIds.has(s.id)
+    if (filter === 'unchecked') return needsReview(s.id)
     return true
   })
 
@@ -325,8 +329,18 @@ export default function LiveClassroomView({
             <p className="text-gray-400 text-sm">No students match this filter</p>
           </div>
         ) : (
+          <>
+          {/* Active tiles first — students with actual work or that need attention
+              get the full board. Students who haven't started yet are pushed into
+              a compact strip below instead of each rendering a full-height empty
+              board, which was making the whole screen look sparse. */}
+          {(() => {
+            const active = filteredStudents.filter(s => submissions.has(s.id) || helpIds.has(s.id) || doneIds.has(s.id))
+            const notStarted = filteredStudents.filter(s => !submissions.has(s.id) && !helpIds.has(s.id) && !doneIds.has(s.id))
+            return (
+              <>
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-            {filteredStudents.map(student => {
+            {active.map(student => {
               const sub = submissions.get(student.id)
               const grade = grades.get(student.id)
               const needsHelp = helpIds.has(student.id)
@@ -421,6 +435,31 @@ export default function LiveClassroomView({
               )
             })}
           </div>
+
+          {notStarted.length > 0 && (
+            <div className="mt-5">
+              <p className="text-xs font-semibold text-gray-400 mb-2 px-1">Not started yet ({notStarted.length})</p>
+              <div className="flex flex-wrap gap-2">
+                {notStarted.map(student => (
+                  <div
+                    key={student.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => { window.location.href = `/teacher/live/${classId}/${questionId}/${student.id}` }}
+                    onKeyDown={e => { if (e.key === 'Enter') window.location.href = `/teacher/live/${classId}/${questionId}/${student.id}` }}
+                    className="flex items-center gap-2 bg-white border border-gray-200 rounded-full pl-3 pr-1 py-1 cursor-pointer hover:border-gray-300 hover:shadow-sm transition-all"
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-gray-300 flex-shrink-0" />
+                    <span className="text-xs text-gray-500">{student.full_name}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+              </>
+            )
+          })()}
+          </>
         )}
       </div>
 
