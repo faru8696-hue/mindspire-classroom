@@ -58,7 +58,9 @@ function contentBounds(objs: DrawObj[]) {
 
 const imageCache = new Map<string, HTMLImageElement>()
 
-export default function MiniBoard({ canvasData, emptyLabel = 'No work yet' }: { canvasData: string | null; emptyLabel?: string }) {
+export default function MiniBoard({
+  canvasData, teacherCanvasData, emptyLabel = 'No work yet',
+}: { canvasData: string | null; teacherCanvasData?: string | null; emptyLabel?: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -82,7 +84,12 @@ export default function MiniBoard({ canvasData, emptyLabel = 'No work yet' }: { 
       ctx.fillStyle = '#ffffff'
       ctx.fillRect(0, 0, w, h)
 
-      const objs = parseObjs(canvasData)
+      // Merge the student's strokes with the teacher's annotation layer
+      // (feedback.canvas_data) — previously the tile only ever drew the
+      // student's own canvas_data, so anything the teacher had already
+      // written on a student's board (from the popup or the full page)
+      // was invisible until you opened that student's board again.
+      const objs = [...parseObjs(canvasData), ...parseObjs(teacherCanvasData ?? null)]
       const bounds = contentBounds(objs)
       if (!objs.length || !bounds) {
         ctx.fillStyle = '#9ca3af'
@@ -150,7 +157,7 @@ export default function MiniBoard({ canvasData, emptyLabel = 'No work yet' }: { 
     const ro = new ResizeObserver(draw)
     ro.observe(container)
     return () => ro.disconnect()
-  }, [canvasData, emptyLabel])
+  }, [canvasData, teacherCanvasData, emptyLabel])
 
   return (
     <div ref={containerRef} className="w-full h-full bg-white">

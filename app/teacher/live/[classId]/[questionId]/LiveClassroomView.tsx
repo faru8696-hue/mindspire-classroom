@@ -10,7 +10,7 @@ import { GRADE_LIST } from '@/lib/grades'
 
 interface Student { id: string; full_name: string }
 interface Submission { id: string; student_id: string; canvas_data: string | null; text_answer: string | null; updated_at: string }
-interface Feedback { submission_id: string; grade: string | null }
+interface Feedback { submission_id: string; grade: string | null; canvas_data?: string | null }
 interface StudentNotification { id: string; type: string; student_id: string; question_id: string; class_id: string; created_at: string; read: boolean; student_name?: string }
 interface CommentRow { id: string; student_id: string; author_id: string; message: string; created_at: string; authorRole: string }
 
@@ -81,6 +81,19 @@ export default function LiveClassroomView({
     const m = new Map<string, string>()
     for (const f of initialFeedbacks) {
       if (f.grade) { const sid = subMap.get(f.submission_id); if (sid) m.set(sid, f.grade) }
+    }
+    return m
+  })
+  // Teacher's annotation layer per student — so the grid tile shows anything
+  // the teacher already drew/wrote on a board, not just the student's own
+  // strokes. Previously this only ever rendered canvas_data (the student's
+  // layer), so annotations were invisible until you opened that student's
+  // board again.
+  const [feedbackCanvasByStudent, setFeedbackCanvasByStudent] = useState<Map<string, string>>(() => {
+    const subMap = new Map(initialSubmissions.map(s => [s.id, s.student_id]))
+    const m = new Map<string, string>()
+    for (const f of initialFeedbacks) {
+      if (f.canvas_data) { const sid = subMap.get(f.submission_id); if (sid) m.set(sid, f.canvas_data) }
     }
     return m
   })
@@ -217,6 +230,26 @@ export default function LiveClassroomView({
 
     return () => { supabase.removeChannel(subCh); supabase.removeChannel(gradeCh); window.removeEventListener('teacher-student-alert', handleAlert) }
   }, [classId, questionId])
+
+  // Poll the teacher's own annotation layer for every student on this
+  // question, so a tile shows what's already been drawn/written on it
+  // without opening that student's board. feedback is RLS-gated the same way
+  // submissions are, so this can't rely on postgres_changes — same reasoning
+  // TeacherWatchBoard already uses for polling a single student's board.
+  useEffect(() => {
+    let active = true
+    async function poll() {
+      try {
+        const res = await fetch(`/api/feedback-canvas?questionId=${questionId}`)
+        if (!res.ok || !active) return
+        const { canvasByStudent } = await res.json() as { canvasByStudent: Record<string, string> }
+        setFeedbackCanvasByStudent(new Map(Object.entries(canvasByStudent)))
+      } catch {}
+    }
+    poll()
+    const interval = setInterval(poll, 5000)
+    return () => { active = false; clearInterval(interval) }
+  }, [questionId])
 
   // Comments realtime — one channel per student (same channel name the
   // student's own board broadcasts new comments on), just to keep the grid's
@@ -440,6 +473,7 @@ export default function LiveClassroomView({
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
             {filteredStudents.map(student => {
               const sub = submissions.get(student.id)
+              const teacherCanvas = feedbackCanvasByStudent.get(student.id) ?? null
               const grade = grades.get(student.id)
               const needsHelp = helpIds.has(student.id)
               const isDone = doneIds.has(student.id)
@@ -471,8 +505,8 @@ export default function LiveClassroomView({
                     <div className="w-full h-64 md:h-72 bg-white relative overflow-hidden">
                       {sub?.text_answer && !sub?.canvas_data ? (
                         <div className="p-3 text-sm text-gray-600 overflow-hidden h-full line-clamp-[10]">{sub.text_answer}</div>
-                      ) : sub ? (
-                        <MiniBoard canvasData={sub?.canvas_data ?? null} />
+                      ) : sub || teacherCanvas ? (
+                        <MiniBoard canvasData={sub?.canvas_data ?? null} teacherCanvasData={teacherCanvas} />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center">
                           <span className="text-gray-300 text-xs">No work yet</span>

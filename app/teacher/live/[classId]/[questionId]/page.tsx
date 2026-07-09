@@ -71,7 +71,7 @@ export default async function LiveClassroomPage({
 
   const submissionIds = submissions?.map((s: { id: string }) => s.id) ?? []
   const { data: feedbacks } = submissionIds.length > 0
-    ? await supabase.from('feedback').select('submission_id, grade').in('submission_id', submissionIds)
+    ? await supabase.from('feedback').select('submission_id, grade, canvas_data').in('submission_id', submissionIds)
     : { data: [] }
 
   const { data: notifications } = await supabase
@@ -107,7 +107,7 @@ export default async function LiveClassroomPage({
       questionHelp={questionHelp}
       students={students ?? []}
       initialSubmissions={(submissions ?? []).map((s: { id: string; student_id: string; canvas_data: string | null; text_answer: string | null; updated_at: string }) => s)}
-      initialFeedbacks={(feedbacks ?? []).map((f: { submission_id: string; grade: string | null }) => f)}
+      initialFeedbacks={(feedbacks ?? []).map((f: { submission_id: string; grade: string | null; canvas_data: string | null }) => f)}
       initialNotifications={(notifications ?? []).map((n: { id: string; type: string; student_id: string; question_id: string; class_id: string; created_at: string; read: boolean }) => n)}
       initialComments={(comments ?? []).map((c: unknown) => {
         const row = c as { id: string; student_id: string; author_id: string; message: string; created_at: string; author: { role: string } | { role: string }[] | null }
