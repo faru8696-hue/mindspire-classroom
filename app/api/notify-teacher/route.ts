@@ -45,9 +45,10 @@ export async function POST(req: NextRequest) {
       student_id: studentId,
       question_id: questionId,
       class_id: classId,
+      message: message || null,
       read: false,
     })
-    .select('id, type, student_id, question_id, class_id, created_at, read')
+    .select('id, type, student_id, question_id, class_id, created_at, read, message')
     .single()
 
   if (error) {
@@ -55,5 +56,5 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  return NextResponse.json({ ok: true, notification: { ...data, student_name: studentName, question_title: message } })
+  return NextResponse.json({ ok: true, notification: { ...data, student_name: studentName } })
 }

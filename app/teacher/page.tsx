@@ -49,7 +49,7 @@ export default async function TeacherDashboard() {
       : Promise.resolve({ data: [] }),
     supabase
       .from('notifications')
-      .select('id, type, student_id, question_id, class_id, created_at, read, profiles:profiles!notifications_student_id_fkey(full_name), questions:questions!notifications_question_id_fkey(title)')
+      .select('id, type, student_id, question_id, class_id, created_at, read, message, profiles:profiles!notifications_student_id_fkey(full_name), questions:questions!notifications_question_id_fkey(title)')
       .eq('read', false)
       .order('created_at', { ascending: false })
       .limit(20),
@@ -57,11 +57,11 @@ export default async function TeacherDashboard() {
     // they doing right now" activity list below — that needs recency, not
     // just unread state.
     classIds.length > 0
-      ? supabase.from('notifications').select('id, type, student_id, question_id, class_id, created_at').in('class_id', classIds).order('created_at', { ascending: false }).limit(500)
+      ? supabase.from('notifications').select('id, type, student_id, question_id, class_id, created_at, message').in('class_id', classIds).order('created_at', { ascending: false }).limit(500)
       : Promise.resolve({ data: [] }),
   ])
 
-  type Notif = { id: string; type: string; student_id: string; question_id: string; class_id: string; created_at: string; read: boolean; profiles: { full_name: string } | { full_name: string }[] | null; questions: { title: string } | { title: string }[] | null }
+  type Notif = { id: string; type: string; student_id: string; question_id: string; class_id: string; created_at: string; read: boolean; message: string | null; profiles: { full_name: string } | { full_name: string }[] | null; questions: { title: string } | { title: string }[] | null }
 
   const enrolledStudentIds = [...new Set((classEnrollments ?? []).map(e => e.student_id))]
   const { data: studentProfiles } = enrolledStudentIds.length > 0
@@ -108,7 +108,7 @@ export default async function TeacherDashboard() {
     studentId: string; studentName: string
     type: 'help' | 'submitted' | 'comment' | 'writing'
     questionId: string; questionTitle: string; topicTitle: string
-    at: string; href: string
+    at: string; href: string; message?: string | null
   }
 
   const ACTIVITY_ICON: Record<StudentActivity['type'], string> = { help: '🙋', submitted: '✅', comment: '💬', writing: '✍️' }
@@ -136,7 +136,7 @@ export default async function TeacherDashboard() {
       const existing = latestByStudent.get(a.studentId)
       if (!existing || a.at > existing.at) latestByStudent.set(a.studentId, a)
     }
-    for (const n of (allNotifs ?? []) as { id: string; type: string; student_id: string; question_id: string; class_id: string; created_at: string }[]) {
+    for (const n of (allNotifs ?? []) as { id: string; type: string; student_id: string; question_id: string; class_id: string; created_at: string; message: string | null }[]) {
       if (n.class_id !== cls.id) continue
       if (n.type !== 'help' && n.type !== 'submitted' && n.type !== 'comment') continue
       const student = profileMap.get(n.student_id)
@@ -146,7 +146,7 @@ export default async function TeacherDashboard() {
       consider({
         studentId: n.student_id, studentName: student.full_name, type,
         questionId: n.question_id, questionTitle: meta?.title ?? 'a question', topicTitle: meta?.topicTitle ?? '',
-        at: n.created_at,
+        at: n.created_at, message: n.message,
         href: type === 'submitted'
           ? `/teacher/submissions?student=${n.student_id}&question=${n.question_id}`
           : `/teacher/live/${cls.id}/${n.question_id}${type === 'comment' ? `?comment=${n.student_id}` : ''}`,
@@ -210,7 +210,7 @@ export default async function TeacherDashboard() {
     queue.push({
       id: n.id, tier: 1, icon: '💬',
       text: `${nameOf(n.profiles)} commented${count > 1 ? ` (${count})` : ''}`,
-      sub: titleOf(n.questions),
+      sub: n.message ? `"${n.message}" — ${titleOf(n.questions)}` : titleOf(n.questions),
       time: timeAgo(n.created_at),
       href: `/teacher/live/${n.class_id}/${n.question_id}?comment=${n.student_id}`,
       action: 'View comment',
@@ -354,6 +354,9 @@ export default async function TeacherDashboard() {
                             <p className="text-xs text-gray-400 truncate">
                               {a.topicTitle && <>{a.topicTitle} · </>}{a.questionTitle}
                             </p>
+                            {a.type === 'comment' && a.message && (
+                              <p className="text-xs text-gray-600 italic truncate">&ldquo;{a.message}&rdquo;</p>
+                            )}
                           </div>
                           <span className="text-xs text-gray-400 flex-shrink-0">{timeAgo(a.at)}</span>
                         </Link>

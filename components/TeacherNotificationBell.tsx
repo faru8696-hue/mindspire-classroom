@@ -14,6 +14,7 @@ interface Notification {
   read: boolean
   student_name?: string
   question_title?: string
+  message?: string | null
 }
 
 interface Props {
@@ -209,6 +210,9 @@ export default function TeacherNotificationBell({ initialNotifications }: Props)
                           {n.question_title && (
                             <p className="text-xs font-medium text-gray-700 truncate mt-0.5">{n.question_title}</p>
                           )}
+                          {n.type === 'comment' && n.message && (
+                            <p className="text-xs text-gray-600 italic truncate mt-0.5">&ldquo;{n.message}&rdquo;</p>
+                          )}
                           <p className="text-xs text-gray-400 mt-0.5">
                             {new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                           </p>
@@ -249,7 +253,11 @@ export default function TeacherNotificationBell({ initialNotifications }: Props)
               <div className="flex-1 min-w-0">
                 <p className="font-bold truncate">{t.student_name ?? 'A student'}</p>
                 <p className="text-xs opacity-90">{t.type === 'help' ? 'needs help' : t.type === 'comment' ? 'left a comment' : 'done — check their work'}</p>
-                {t.question_title && <p className="text-xs opacity-75 truncate">{t.question_title}</p>}
+                {t.type === 'comment' && t.message ? (
+                  <p className="text-xs opacity-90 italic truncate">&ldquo;{t.message}&rdquo;</p>
+                ) : t.question_title ? (
+                  <p className="text-xs opacity-75 truncate">{t.question_title}</p>
+                ) : null}
               </div>
               <div className="flex flex-col gap-1 flex-shrink-0 items-end">
                 <Link

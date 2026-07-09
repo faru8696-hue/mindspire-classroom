@@ -176,7 +176,7 @@ export default function Comments({ questionId, studentId, currentUserId, current
             created_at: now,
             read: false,
             student_name: currentUserName,
-            question_title: newComment.message,
+            message: newComment.message,
           },
         })
         // Also persist to DB for history
