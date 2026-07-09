@@ -330,17 +330,8 @@ export default function LiveClassroomView({
           </div>
         ) : (
           <>
-          {/* Active tiles first — students with actual work or that need attention
-              get the full board. Students who haven't started yet are pushed into
-              a compact strip below instead of each rendering a full-height empty
-              board, which was making the whole screen look sparse. */}
-          {(() => {
-            const active = filteredStudents.filter(s => submissions.has(s.id) || helpIds.has(s.id) || doneIds.has(s.id))
-            const notStarted = filteredStudents.filter(s => !submissions.has(s.id) && !helpIds.has(s.id) && !doneIds.has(s.id))
-            return (
-              <>
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-            {active.map(student => {
+            {filteredStudents.map(student => {
               const sub = submissions.get(student.id)
               const grade = grades.get(student.id)
               const needsHelp = helpIds.has(student.id)
@@ -368,11 +359,15 @@ export default function LiveClassroomView({
                     {/* Live-rendered board snapshot — properly draws the
                         saved strokes instead of the old broken <img> that
                         tried to use the JSON data as an image URL. */}
-                    <div className="w-full h-64 md:h-72 bg-white relative overflow-hidden">
+                    <div className={`w-full bg-white relative overflow-hidden ${sub ? 'h-64 md:h-72' : 'h-28'}`}>
                       {sub?.text_answer && !sub?.canvas_data ? (
                         <div className="p-3 text-sm text-gray-600 overflow-hidden h-full line-clamp-[10]">{sub.text_answer}</div>
-                      ) : (
+                      ) : sub ? (
                         <MiniBoard canvasData={sub?.canvas_data ?? null} />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <span className="text-gray-300 text-xs">No work yet</span>
+                        </div>
                       )}
                       {needsHelp && <span className="absolute top-2 right-2 bg-amber-500 text-white text-xs px-2 py-1 rounded-full font-bold">🙋 Help</span>}
                       {isDone && !needsHelp && <span className="absolute top-2 right-2 bg-purple-600 text-white text-xs px-2 py-1 rounded-full font-bold">✓ Done</span>}
@@ -435,30 +430,6 @@ export default function LiveClassroomView({
               )
             })}
           </div>
-
-          {notStarted.length > 0 && (
-            <div className="mt-5">
-              <p className="text-xs font-semibold text-gray-400 mb-2 px-1">Not started yet ({notStarted.length})</p>
-              <div className="flex flex-wrap gap-2">
-                {notStarted.map(student => (
-                  <div
-                    key={student.id}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => { window.location.href = `/teacher/live/${classId}/${questionId}/${student.id}` }}
-                    onKeyDown={e => { if (e.key === 'Enter') window.location.href = `/teacher/live/${classId}/${questionId}/${student.id}` }}
-                    className="flex items-center gap-2 bg-white border border-gray-200 rounded-full pl-3 pr-1 py-1 cursor-pointer hover:border-gray-300 hover:shadow-sm transition-all"
-                  >
-                    <span className="w-1.5 h-1.5 rounded-full bg-gray-300 flex-shrink-0" />
-                    <span className="text-xs text-gray-500">{student.full_name}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-              </>
-            )
-          })()}
           </>
         )}
       </div>
