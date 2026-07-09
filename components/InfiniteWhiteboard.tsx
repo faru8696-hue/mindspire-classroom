@@ -1,6 +1,7 @@
 'use client'
 
 import { useRef, useEffect, useState, useCallback } from 'react'
+import { flushSync } from 'react-dom'
 import { createClient } from '@/lib/supabase/client'
 
 const imageCache = new Map<string, HTMLImageElement>()
@@ -637,10 +638,18 @@ export default function InfiniteWhiteboard({
       pushHistory()
       const id = `text-${Date.now()}`
       const fontSize = 20, fontFamily = 'Arial, sans-serif'
-      commitObjects(prev => [...prev, { id, type: 'text', x: canvasPos.x, y: canvasPos.y, rotation: 0, data: '', color: colorRef.current, fontSize, fontFamily, zIndex: Date.now() }])
       const e2 = { id, value: '', color: colorRef.current, fontSize, fontFamily, x: canvasPos.x, y: canvasPos.y }
-      editingTextRef.current = e2; setEditingText(e2)
-      setTool('pointer')
+      // flushSync + an immediate synchronous focus() — without this, the
+      // textarea mounts on the next React commit, which is just late enough
+      // that iOS Safari refuses to treat the resulting focus() as part of
+      // the original tap and never opens the keyboard. The box would appear
+      // but be completely unusable, indistinguishable from "nothing happens."
+      flushSync(() => {
+        commitObjects(prev => [...prev, { id, type: 'text', x: canvasPos.x, y: canvasPos.y, rotation: 0, data: '', color: colorRef.current, fontSize, fontFamily, zIndex: Date.now() }])
+        editingTextRef.current = e2; setEditingText(e2)
+        setTool('pointer')
+      })
+      textAreaElRef.current?.focus()
     } else if (toolRef.current === 'sticky') {
       pushHistory()
       commitObjects(prev => [...prev, { id: `sticky-${Date.now()}`, type: 'sticky', x: canvasPos.x, y: canvasPos.y, width: 150, height: 150, rotation: 0, data: 'Note...', fillColor: '#ffff00', color: '#000', zIndex: Date.now() }])
@@ -666,8 +675,11 @@ export default function InfiniteWhiteboard({
       fontSize: hitObj.fontSize ?? 20, fontFamily: hitObj.fontFamily || 'Arial, sans-serif',
       x: hitObj.x, y: hitObj.y,
     }
-    editingTextRef.current = e2; setEditingText(e2)
-    selIdRef.current = hitObj.id; setSelId(hitObj.id)
+    flushSync(() => {
+      editingTextRef.current = e2; setEditingText(e2)
+      selIdRef.current = hitObj.id; setSelId(hitObj.id)
+    })
+    textAreaElRef.current?.focus()
   }, [pushHistory])
 
   // Commits the overlay's current value back onto the object (or removes it
@@ -832,8 +844,11 @@ export default function InfiniteWhiteboard({
                 fontSize: hitText.fontSize ?? 20, fontFamily: hitText.fontFamily || 'Arial, sans-serif',
                 x: hitText.x, y: hitText.y,
               }
-              editingTextRef.current = e2; setEditingText(e2)
-              selIdRef.current = hitText.id; setSelId(hitText.id)
+              flushSync(() => {
+                editingTextRef.current = e2; setEditingText(e2)
+                selIdRef.current = hitText.id; setSelId(hitText.id)
+              })
+              textAreaElRef.current?.focus()
               lastTap.current = null
               return
             }
@@ -860,10 +875,13 @@ export default function InfiniteWhiteboard({
           pushHistory()
           const id = `text-${Date.now()}`
           const fontSize = 20, fontFamily = 'Arial, sans-serif'
-          commitObjects(prev => [...prev, { id, type: 'text', x: canvasPos.x, y: canvasPos.y, rotation: 0, data: '', color: colorRef.current, fontSize, fontFamily, zIndex: Date.now() }])
           const e2 = { id, value: '', color: colorRef.current, fontSize, fontFamily, x: canvasPos.x, y: canvasPos.y }
-          editingTextRef.current = e2; setEditingText(e2)
-          setTool('pointer')
+          flushSync(() => {
+            commitObjects(prev => [...prev, { id, type: 'text', x: canvasPos.x, y: canvasPos.y, rotation: 0, data: '', color: colorRef.current, fontSize, fontFamily, zIndex: Date.now() }])
+            editingTextRef.current = e2; setEditingText(e2)
+            setTool('pointer')
+          })
+          textAreaElRef.current?.focus()
         } else if (toolRef.current === 'sticky') {
           pushHistory()
           commitObjects(prev => [...prev, { id: `sticky-${Date.now()}`, type: 'sticky', x: canvasPos.x, y: canvasPos.y, width: 150, height: 150, rotation: 0, data: 'Note...', fillColor: '#ffff00', color: '#000', zIndex: Date.now() }])
