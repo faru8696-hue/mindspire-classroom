@@ -70,6 +70,22 @@ export default function StudentBoardPage({
     return () => { supabase.removeChannel(channelRef.current) }
   }, [])
 
+  // Instant grade updates — the teacher's grading UI already broadcasts on
+  // this exact channel the moment a grade is applied (TeacherWatchBoard /
+  // LiveClassroomView both send here). Previously the big badge only ever
+  // updated from the 10s poll below, so a student sitting on the page could
+  // wait up to 10 seconds after being graded before anything changed —
+  // this makes it immediate instead of just "eventually."
+  useEffect(() => {
+    const ch = supabase.channel(`grade-notif:${questionId}:${studentId}`)
+    ch.on('broadcast', { event: 'grade-update' }, ({ payload }) => {
+      const { grade: newGrade } = payload as { grade: string | null; feedback?: string }
+      if (newGrade) setGrade(newGrade)
+    })
+    ch.subscribe()
+    return () => { supabase.removeChannel(ch) }
+  }, [questionId, studentId])
+
   // Live grade + comment toasts. student_notifications is RLS-gated, so realtime
   // postgres_changes never reaches the student client — poll the service-role API
   // instead (same source the bell/dashboard use) and toast on newly-seen rows.
