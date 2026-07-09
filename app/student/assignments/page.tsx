@@ -73,7 +73,7 @@ export default async function AssignmentsPage() {
   // 3. Get question details with topic/unit/class path
   const { data: questions } = await admin
     .from('questions')
-    .select('id, title, content, topic_id, topics(id, title, unit_id, units(id, title, class_id, classes(id, title)))')
+    .select('id, title, content, topic_id, order_index, topics(id, title, unit_id, order_index, units(id, title, order_index, class_id, classes(id, title, order_index)))')
     .in('id', assignedIds)
 
   // 4. Get submissions + feedback for this student
@@ -98,8 +98,14 @@ export default async function AssignmentsPage() {
 
   // 5. Build display list
   type QRow = {
-    id: string; title: string; content: string | null; topic_id: string;
-    topics: { id: string; title: string; unit_id: string; units: { id: string; title: string; class_id: string; classes: { id: string; title: string } | null } | null } | null
+    id: string; title: string; content: string | null; topic_id: string; order_index: number
+    topics: {
+      id: string; title: string; unit_id: string; order_index: number
+      units: {
+        id: string; title: string; order_index: number; class_id: string
+        classes: { id: string; title: string; order_index: number } | null
+      } | null
+    } | null
   }
 
   const rows = (questions as unknown as QRow[] ?? []).map(q => {
@@ -120,13 +126,33 @@ export default async function AssignmentsPage() {
     return { q, topic, unit, cls, sub, fb, status, href, dueDate }
   })
 
-  // Sort: not_started first, then submitted, then graded
-  const order = { not_started: 0, submitted: 1, graded: 2 }
-  rows.sort((a, b) => order[a.status] - order[b.status])
-
   const notStarted = rows.filter(r => r.status === 'not_started')
   const submitted  = rows.filter(r => r.status === 'submitted')
   const graded     = rows.filter(r => r.status === 'graded')
+
+  // Organize by Class → Unit so it's clear which class and unit each
+  // assignment belongs to, instead of one flat list mixing everything
+  // together. Status ordering (to-do first) is preserved WITHIN each unit.
+  const order = { not_started: 0, submitted: 1, graded: 2 }
+  const sortedRows = [...rows].sort((a, b) => order[a.status] - order[b.status])
+
+  interface UnitGroup { id: string; title: string; orderIndex: number; rows: typeof rows }
+  interface ClassGroup { id: string; title: string; orderIndex: number; units: Map<string, UnitGroup> }
+  const classGroups = new Map<string, ClassGroup>()
+  for (const r of sortedRows) {
+    if (!r.cls || !r.unit) continue
+    if (!classGroups.has(r.cls.id)) {
+      classGroups.set(r.cls.id, { id: r.cls.id, title: r.cls.title, orderIndex: r.cls.order_index ?? 0, units: new Map() })
+    }
+    const cg = classGroups.get(r.cls.id)!
+    if (!cg.units.has(r.unit.id)) {
+      cg.units.set(r.unit.id, { id: r.unit.id, title: r.unit.title, orderIndex: r.unit.order_index ?? 0, rows: [] })
+    }
+    cg.units.get(r.unit.id)!.rows.push(r)
+  }
+  const organized = [...classGroups.values()]
+    .sort((a, b) => a.orderIndex - b.orderIndex)
+    .map(cg => ({ ...cg, units: [...cg.units.values()].sort((a, b) => a.orderIndex - b.orderIndex) }))
 
   function renderRow(r: typeof rows[0]) {
     const gradeInfo = r.fb?.grade ? GRADE_STYLE[r.fb.grade as keyof typeof GRADE_STYLE] : null
@@ -153,7 +179,7 @@ export default async function AssignmentsPage() {
             <p className="font-semibold text-gray-800">{r.q.title}</p>
             {r.q.content && <p className="text-sm text-gray-500 mt-0.5 line-clamp-1">{r.q.content}</p>}
             <div className="flex items-center gap-3 mt-1 flex-wrap">
-              <p className="text-xs text-gray-400">{r.cls?.title} › {r.unit?.title} › {r.topic?.title}</p>
+              {r.topic?.title && <p className="text-xs text-gray-400">{r.topic.title}</p>}
               {r.dueDate && r.status === 'not_started' && (() => {
                 const due = new Date(r.dueDate)
                 const now = new Date()
@@ -201,26 +227,30 @@ export default async function AssignmentsPage() {
         </div>
       </div>
 
-      {notStarted.length > 0 && (
-        <section className="mb-6">
-          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">To Do ({notStarted.length})</h2>
-          <div className="space-y-3">{notStarted.map(renderRow)}</div>
-        </section>
-      )}
-
-      {submitted.length > 0 && (
-        <section className="mb-6">
-          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Submitted — Awaiting Feedback ({submitted.length})</h2>
-          <div className="space-y-3">{submitted.map(renderRow)}</div>
-        </section>
-      )}
-
-      {graded.length > 0 && (
-        <section className="mb-6">
-          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Graded ({graded.length})</h2>
-          <div className="space-y-3">{graded.map(renderRow)}</div>
-        </section>
-      )}
+      {/* Organized by Class → Unit, so it's always clear which class and
+          unit an assignment belongs to instead of one flat mixed list.
+          Within each unit, to-do items still surface first. */}
+      {organized.map(cg => {
+        const clsNotStarted = cg.units.reduce((n, u) => n + u.rows.filter(r => r.status === 'not_started').length, 0)
+        return (
+          <section key={cg.id} className="mb-8">
+            <div className="flex items-center gap-2 mb-3">
+              <h2 className="text-lg font-bold text-purple-900">{cg.title}</h2>
+              {clsNotStarted > 0 && (
+                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">{clsNotStarted} to do</span>
+              )}
+            </div>
+            <div className="space-y-5 pl-1 border-l-2 border-purple-100">
+              {cg.units.map(u => (
+                <div key={u.id} className="pl-4">
+                  <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">{u.title}</h3>
+                  <div className="space-y-3">{u.rows.map(renderRow)}</div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )
+      })}
     </div>
   )
 }
