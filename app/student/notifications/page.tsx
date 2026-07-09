@@ -18,12 +18,46 @@ export default async function StudentNotificationsPage() {
 
   const admin = createSupabaseAdmin(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 
-  const { data: notifs } = await admin
+  const { data: rawNotifs } = await admin
     .from('student_notifications')
-    .select('id, type, grade, feedback, count, read, created_at, question_id, questions(id, title, topic_id, topics(id, unit_id, units(id, class_id, classes(id, title))))')
+    .select('id, type, grade, feedback, assignment_count, read, created_at, question_id')
     .eq('student_id', session.user.id)
     .order('created_at', { ascending: false })
     .limit(50)
+
+  // Resolve question → topic → unit → class with flat lookups instead of one
+  // deep nested embed — that embed errors with a PostgREST 42803 ("must
+  // appear in GROUP BY") for this schema's relationship graph, which was
+  // silently returning zero notifications on this whole page.
+  const questionIds = [...new Set((rawNotifs ?? []).map(n => n.question_id).filter(Boolean))]
+  const { data: qRows } = questionIds.length > 0
+    ? await admin.from('questions').select('id, title, topic_id').in('id', questionIds)
+    : { data: [] as { id: string; title: string; topic_id: string }[] }
+  const topicIds = [...new Set((qRows ?? []).map(q => q.topic_id).filter(Boolean))]
+  const { data: tRows } = topicIds.length > 0
+    ? await admin.from('topics').select('id, unit_id').in('id', topicIds)
+    : { data: [] as { id: string; unit_id: string }[] }
+  const unitIds = [...new Set((tRows ?? []).map(t => t.unit_id).filter(Boolean))]
+  const { data: uRows } = unitIds.length > 0
+    ? await admin.from('units').select('id, class_id').in('id', unitIds)
+    : { data: [] as { id: string; class_id: string }[] }
+  const classIds = [...new Set((uRows ?? []).map(u => u.class_id).filter(Boolean))]
+  const { data: cRows } = classIds.length > 0
+    ? await admin.from('classes').select('id, title').in('id', classIds)
+    : { data: [] as { id: string; title: string }[] }
+
+  const questionById = new Map((qRows ?? []).map(q => [q.id, q]))
+  const topicById = new Map((tRows ?? []).map(t => [t.id, t]))
+  const unitById = new Map((uRows ?? []).map(u => [u.id, u]))
+  const classById = new Map((cRows ?? []).map(c => [c.id, c]))
+
+  const notifs = (rawNotifs ?? []).map(n => {
+    const q = questionById.get(n.question_id)
+    const topic = q ? topicById.get(q.topic_id) : undefined
+    const unit = topic ? unitById.get(topic.unit_id) : undefined
+    const cls = unit ? classById.get(unit.class_id) : undefined
+    return { ...n, count: n.assignment_count, questions: q ? { ...q, topics: topic ? { ...topic, units: unit ? { ...unit, classes: cls } : undefined } : undefined } : undefined }
+  })
 
   return (
     <div className="max-w-2xl mx-auto">

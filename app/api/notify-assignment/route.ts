@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
   for (const student_id of targets) {
     const { data: existing } = await admin
       .from('student_notifications')
-      .select('id, count')
+      .select('id, assignment_count')
       .eq('student_id', student_id)
       .eq('type', 'assignment')
       .eq('read', false)
@@ -54,17 +54,17 @@ export async function POST(req: NextRequest) {
       .maybeSingle()
 
     if (existing?.id) {
-      const nextCount = (existing.count ?? 1) + 1
+      const nextCount = (existing.assignment_count ?? 1) + 1
       await admin.from('student_notifications').update({
         question_id: questionId,
         feedback: `${nextCount} new questions assigned`,
-        count: nextCount,
+        assignment_count: nextCount,
         created_at: now,
       }).eq('id', existing.id)
     } else {
       await admin.from('student_notifications').insert({
         student_id, question_id: questionId, type: 'assignment',
-        feedback: null, grade: null, read: false, count: 1,
+        feedback: null, grade: null, read: false, assignment_count: 1,
       })
     }
     notified++
