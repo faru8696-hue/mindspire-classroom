@@ -75,6 +75,21 @@ export default async function LiveClassroomPage({ params }: { params: Promise<{ 
     .eq('class_id', classId)
     .order('created_at', { ascending: false })
 
+  // Comments for this question across all students in the class — students
+  // sometimes type their actual answer into the comment box instead of
+  // drawing/submitting, so the teacher needs to see this on the grid tile
+  // without opening each student's board individually.
+  const { data: comments } = studentIds.length > 0
+    ? await supabase
+        .from('comments')
+        .select('id, student_id, author_id, message, created_at, author:profiles!comments_author_id_fkey(role)')
+        .eq('question_id', questionId)
+        .in('student_id', studentIds)
+        .order('created_at', { ascending: true })
+    : { data: [] }
+
+  const { data: teacherProfile } = await supabase.from('profiles').select('id, full_name').eq('role', 'teacher').limit(1).single()
+
   return (
     <LiveClassroomView
       classId={classId}
@@ -88,6 +103,13 @@ export default async function LiveClassroomPage({ params }: { params: Promise<{ 
       initialSubmissions={(submissions ?? []).map((s: { id: string; student_id: string; canvas_data: string | null; text_answer: string | null; updated_at: string }) => s)}
       initialFeedbacks={(feedbacks ?? []).map((f: { submission_id: string; grade: string | null }) => f)}
       initialNotifications={(notifications ?? []).map((n: { id: string; type: string; student_id: string; question_id: string; class_id: string; created_at: string; read: boolean }) => n)}
+      initialComments={(comments ?? []).map((c: unknown) => {
+        const row = c as { id: string; student_id: string; author_id: string; message: string; created_at: string; author: { role: string } | { role: string }[] | null }
+        const role = Array.isArray(row.author) ? row.author[0]?.role : row.author?.role
+        return { id: row.id, student_id: row.student_id, author_id: row.author_id, message: row.message, created_at: row.created_at, authorRole: role ?? '' }
+      })}
+      teacherId={teacherProfile?.id ?? ''}
+      teacherName={teacherProfile?.full_name ?? 'Teacher'}
     />
   )
 }

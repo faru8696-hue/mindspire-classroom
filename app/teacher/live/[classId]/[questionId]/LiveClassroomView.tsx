@@ -4,12 +4,14 @@ import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 import MiniBoard from '@/components/MiniBoard'
+import Comments from '@/components/Comments'
 import { GRADE_LIST } from '@/lib/grades'
 
 interface Student { id: string; full_name: string }
 interface Submission { id: string; student_id: string; canvas_data: string | null; text_answer: string | null; updated_at: string }
 interface Feedback { submission_id: string; grade: string | null }
 interface StudentNotification { id: string; type: string; student_id: string; question_id: string; class_id: string; created_at: string; read: boolean; student_name?: string }
+interface CommentRow { id: string; student_id: string; author_id: string; message: string; created_at: string; authorRole: string }
 
 interface ClassQuestion { id: string; title: string; topicTitle: string }
 
@@ -25,6 +27,9 @@ interface Props {
   initialSubmissions: Submission[]
   initialFeedbacks: Feedback[]
   initialNotifications: StudentNotification[]
+  initialComments: CommentRow[]
+  teacherId: string
+  teacherName: string
 }
 
 const GRADE_COLOR: Record<string, string> = {
@@ -40,10 +45,22 @@ type Filter = 'all' | 'help' | 'done' | 'submitted' | 'unchecked'
 export default function LiveClassroomView({
   classId, questionId, classTitle, questionTitle, questionContent,
   allQuestions, questionHelp, students, initialSubmissions, initialFeedbacks, initialNotifications,
+  initialComments, teacherId, teacherName,
 }: Props) {
   const supabase = createClient()
   const [helpByQuestion, setHelpByQuestion] = useState<Record<string, number>>(questionHelp)
   const [switcherOpen, setSwitcherOpen] = useState(false)
+  const [commentsByStudent, setCommentsByStudent] = useState<Map<string, CommentRow[]>>(() => {
+    const m = new Map<string, CommentRow[]>()
+    for (const c of initialComments) m.set(c.student_id, [...(m.get(c.student_id) ?? []), c])
+    return m
+  })
+  // Which students the teacher has already opened the comment popover for
+  // THIS session — used to stop badging a thread as unseen once looked at.
+  // There's no persisted "read" column on comments, so this is session-local,
+  // same tradeoff notifications made before they got a real read flag.
+  const [seenStudentIds, setSeenStudentIds] = useState<Set<string>>(new Set())
+  const [commentsStudent, setCommentsStudent] = useState<Student | null>(null)
   const [submissions, setSubmissions] = useState<Map<string, Submission>>(
     () => new Map(initialSubmissions.map(s => [s.student_id, s]))
   )
@@ -188,6 +205,39 @@ export default function LiveClassroomView({
 
     return () => { supabase.removeChannel(subCh); supabase.removeChannel(gradeCh); window.removeEventListener('teacher-student-alert', handleAlert) }
   }, [classId, questionId])
+
+  // Comments realtime — one channel per student (same channel name the
+  // student's own board broadcasts new comments on), just to keep the grid's
+  // badge counts live without opening every board. Fresh instances every run,
+  // same "tried to join multiple times" reason documented in Comments.tsx.
+  useEffect(() => {
+    const channels = students.map(s => {
+      const ch = supabase.channel(`comments:${questionId}:${s.id}`)
+      ch.on('broadcast', { event: 'new-comment' }, ({ payload }) => {
+        const incoming = payload as { id: string; author_id: string; message: string; created_at: string; author?: { role?: string } }
+        const row: CommentRow = {
+          id: incoming.id, student_id: s.id, author_id: incoming.author_id,
+          message: incoming.message, created_at: incoming.created_at, authorRole: incoming.author?.role ?? '',
+        }
+        setCommentsByStudent(prev => {
+          const next = new Map(prev)
+          const list = next.get(s.id) ?? []
+          if (!list.some(c => c.id === row.id)) next.set(s.id, [...list, row])
+          return next
+        })
+      })
+      ch.subscribe()
+      return ch
+    })
+    return () => { channels.forEach(ch => supabase.removeChannel(ch)) }
+  }, [questionId, students])
+
+  function openComments(student: Student, e: React.MouseEvent) {
+    e.preventDefault()
+    e.stopPropagation()
+    setSeenStudentIds(prev => new Set(prev).add(student.id))
+    setCommentsStudent(student)
+  }
 
   async function markAllRead() {
     const ids = notifications.filter(n => !n.read).map(n => n.id)
@@ -337,6 +387,8 @@ export default function LiveClassroomView({
               const needsHelp = helpIds.has(student.id)
               const isDone = doneIds.has(student.id)
               const isChecked = checkedIds.has(student.id)
+              const studentComments = commentsByStudent.get(student.id) ?? []
+              const hasUnseenComment = studentComments.some(c => c.authorRole !== 'teacher') && !seenStudentIds.has(student.id)
 
               return (
                 <div key={student.id} className="relative">
@@ -403,6 +455,20 @@ export default function LiveClassroomView({
                             </button>
                           ))}
                         </div>
+                        <button
+                          onClick={e => openComments(student, e)}
+                          title={studentComments.length > 0 ? `${studentComments.length} comment${studentComments.length > 1 ? 's' : ''}` : 'No comments yet'}
+                          className={`relative flex-shrink-0 text-xs font-bold px-2 py-1.5 rounded-lg transition-colors ${
+                            hasUnseenComment ? 'bg-amber-500 text-white hover:bg-amber-400' :
+                            studentComments.length > 0 ? 'bg-gray-100 text-gray-600 hover:bg-gray-200' :
+                            'text-gray-300 hover:text-gray-500 hover:bg-gray-50'
+                          }`}
+                        >
+                          💬{studentComments.length > 0 && <span className="ml-1">{studentComments.length}</span>}
+                          {hasUnseenComment && (
+                            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white" />
+                          )}
+                        </button>
                         <Link
                           href={`/teacher/students/${student.id}`}
                           onClick={e => e.stopPropagation()}
@@ -433,6 +499,25 @@ export default function LiveClassroomView({
           </>
         )}
       </div>
+
+      {/* Comments modal — view/reply to a student's comment thread without
+          leaving the grid or opening their full live board. */}
+      {commentsStudent && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => setCommentsStudent(null)}>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm" onClick={e => e.stopPropagation()}>
+            <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+              <p className="font-semibold text-gray-900 text-sm">{commentsStudent.full_name}</p>
+              <button onClick={() => setCommentsStudent(null)} className="text-gray-400 hover:text-gray-700 text-lg leading-none">×</button>
+            </div>
+            <Comments
+              questionId={questionId}
+              studentId={commentsStudent.id}
+              currentUserId={teacherId}
+              currentUserName={teacherName}
+            />
+          </div>
+        </div>
+      )}
 
     </div>
   )
