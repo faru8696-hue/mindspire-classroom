@@ -359,7 +359,7 @@ export default function LiveClassroomView({
                     {/* Live-rendered board snapshot — properly draws the
                         saved strokes instead of the old broken <img> that
                         tried to use the JSON data as an image URL. */}
-                    <div className={`w-full bg-white relative overflow-hidden ${sub ? 'h-64 md:h-72' : 'h-28'}`}>
+                    <div className="w-full h-64 md:h-72 bg-white relative overflow-hidden">
                       {sub?.text_answer && !sub?.canvas_data ? (
                         <div className="p-3 text-sm text-gray-600 overflow-hidden h-full line-clamp-[10]">{sub.text_answer}</div>
                       ) : sub ? (
