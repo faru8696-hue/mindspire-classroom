@@ -244,17 +244,14 @@ export default function LiveClassroomView({
     return () => { channels.forEach(ch => supabase.removeChannel(ch)) }
   }, [questionId, students])
 
-  // Clear the dashboard's "Needs your attention" comment row for this
-  // student now that the teacher has actually looked at the thread.
-  async function markCommentsSeen(studentId: string) {
+  // Marks the comment thread "seen" for THIS grid's badge styling only (goes
+  // from the amber unseen pill to a neutral grey one). Deliberately does NOT
+  // touch the notifications table — that stays unread, and the row keeps
+  // showing on the dashboard's "Needs your attention" queue, until the
+  // teacher explicitly checks the student off with the ○ button. Viewing a
+  // comment isn't the same as having handled it.
+  function markCommentsSeen(studentId: string) {
     setSeenStudentIds(prev => new Set(prev).add(studentId))
-    const unreadCommentIds = notifications
-      .filter(n => n.type === 'comment' && n.student_id === studentId && !n.read)
-      .map(n => n.id)
-    if (unreadCommentIds.length) {
-      await supabase.from('notifications').update({ read: true }).in('id', unreadCommentIds)
-      setNotifications(prev => prev.map(n => unreadCommentIds.includes(n.id) ? { ...n, read: true } : n))
-    }
   }
 
   // Deep link from the dashboard's "Needs your attention" queue — jump
