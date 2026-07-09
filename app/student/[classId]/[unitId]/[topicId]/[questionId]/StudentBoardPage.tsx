@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import InfiniteWhiteboard from '@/components/InfiniteWhiteboard'
 import ZoomableImage from '@/components/ZoomableImage'
+import { GRADE_MAP } from '@/lib/grades'
 
 interface Props {
   questionId: string
@@ -16,6 +17,7 @@ interface Props {
   submissionId: string | null
   initialStudentData: string | null
   initialTeacherData: string | null
+  initialGrade: string | null
 }
 
 const GRADE_LABEL: Record<string, { text: string; cls: string }> = {
@@ -30,13 +32,17 @@ const GRADE_LABEL: Record<string, { text: string; cls: string }> = {
 
 export default function StudentBoardPage({
   questionId, studentId, classId, studentName, questionTitle, questionContent, questionImageUrl,
-  submissionId: initialSubmissionId, initialStudentData, initialTeacherData,
+  submissionId: initialSubmissionId, initialStudentData, initialTeacherData, initialGrade,
 }: Props) {
   const supabase = createClient()
   const [helpSent, setHelpSent] = useState(false)
   const [doneSent, setDoneSent] = useState(false)
   const [questionCollapsed, setQuestionCollapsed] = useState(false)
   const [gradeToast, setGradeToast] = useState<{ grade: string; feedback: string } | null>(null)
+  // Persistent big Correct/Wrong badge on the board itself — the toast above
+  // only flashes for 8s, which left students unsure whether they'd already
+  // been graded once it disappeared. This stays until the grade changes.
+  const [grade, setGrade] = useState<string | null>(initialGrade)
   const [submissionId, setSubmissionId] = useState<string | null>(initialSubmissionId ?? null)
   const channelRef = useRef(supabase.channel('teacher-alerts'))
   const audioRef = useRef<AudioContext | null>(null)
@@ -87,13 +93,18 @@ export default function StudentBoardPage({
     async function poll() {
       try {
         const res = await fetch('/api/student-notifications')
-        if (!res.ok || !active) return
-        const { notifications } = await res.json() as { notifications: { id: string; type?: string; grade: string | null; feedback: string | null }[] }
+        if (!active || !res.ok) return
+        const { notifications } = await res.json() as { notifications: { id: string; type?: string; grade: string | null; feedback: string | null; question_id: string }[] }
+        // A toast for some OTHER question's grade while looking at this one
+        // is confusing, not helpful — only surface (and only update the
+        // persistent badge from) notifications for THIS question.
+        const forThisQuestion = notifications.filter(n => n.question_id === questionId)
         if (!firstNotifLoad.current) {
-          // Newest unseen first — surface it as a toast
-          const fresh = notifications.find(n => !seenNotifs.current.has(n.id))
+          const fresh = forThisQuestion.find(n => !seenNotifs.current.has(n.id))
           if (fresh) toastFor(fresh)
         }
+        const latestGrade = forThisQuestion.find(n => n.type !== 'comment' && n.type !== 'assignment' && n.grade)
+        if (latestGrade) setGrade(latestGrade.grade)
         notifications.forEach(n => seenNotifs.current.add(n.id))
         firstNotifLoad.current = false
       } catch {}
@@ -101,7 +112,7 @@ export default function StudentBoardPage({
     poll()
     const interval = setInterval(poll, 10000)
     return () => { active = false; clearInterval(interval) }
-  }, [studentId])
+  }, [studentId, questionId])
 
   async function saveStudent(dataUrl: string) {
     const { data } = await supabase.from('submissions').upsert({
@@ -190,6 +201,19 @@ export default function StudentBoardPage({
           </div>
         )}
       </div>
+
+      {/* Big persistent Correct/Wrong badge — the toast above only flashes
+          for 8 seconds, which left students unsure whether they'd been
+          graded once it disappeared, especially mid-drawing. This stays on
+          the board the whole time so there's never any doubt. */}
+      {grade && (
+        <div className={`absolute top-4 right-4 z-40 flex items-center gap-2 px-5 py-3 rounded-2xl shadow-xl border-4 ${
+          GRADE_MAP[grade]?.value === 'correct' ? 'bg-green-500 border-green-300 text-white' : 'bg-red-500 border-red-300 text-white'
+        }`}>
+          <span className="text-4xl leading-none">{GRADE_MAP[grade]?.value === 'correct' ? '✓' : '✗'}</span>
+          <span className="text-xl font-black uppercase tracking-wide">{GRADE_MAP[grade]?.value === 'correct' ? 'Correct' : 'Wrong'}</span>
+        </div>
+      )}
 
       {/* Grade toast notification */}
       {gradeToast && (

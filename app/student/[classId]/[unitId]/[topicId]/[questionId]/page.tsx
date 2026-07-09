@@ -135,6 +135,7 @@ export default async function QuestionPage({ params }: { params: Promise<{ class
             submissionId={submission?.id ?? null}
             initialStudentData={submission?.canvas_data ?? null}
             initialTeacherData={feedback?.canvas_data ?? null}
+            initialGrade={feedback?.grade ?? null}
           />
         </div>
 

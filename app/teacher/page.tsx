@@ -257,41 +257,6 @@ export default async function TeacherDashboard() {
     <div className="max-w-4xl mx-auto space-y-8">
       <h1 className="text-2xl font-bold text-purple-900">Teacher Dashboard</h1>
 
-      {/* Needs your attention — one prioritized queue instead of four
-          separate widgets (stat cards, notifications panel, recent
-          submissions feed, live alerts feed) that used to show overlapping
-          versions of the same information. */}
-      <div className="space-y-3">
-        <div className="flex items-center gap-2">
-          <h2 className="text-lg font-semibold text-gray-800">Needs your attention</h2>
-          {commentGroups.size > 0 && (
-            <span className="text-xs font-semibold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-full">
-              💬 {commentGroups.size} unread comment{commentGroups.size !== 1 ? 's' : ''}
-            </span>
-          )}
-        </div>
-        {queue.length === 0 ? (
-          <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
-            <div className="text-3xl mb-2">🎉</div>
-            <p className="text-gray-500 font-medium">You&apos;re all caught up!</p>
-          </div>
-        ) : (
-          <div className="bg-white border border-gray-200 rounded-xl divide-y divide-gray-100">
-            {queue.map(item => (
-              <Link key={item.id} href={item.href} className="flex items-center gap-4 px-5 py-3.5 hover:bg-purple-50 transition-colors">
-                <span className="text-xl flex-shrink-0">{item.icon}</span>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-gray-800 truncate">{item.text}</p>
-                  {item.sub && <p className="text-xs text-gray-400 truncate">{item.sub}</p>}
-                </div>
-                {item.time && <span className="text-xs text-gray-400 flex-shrink-0">{item.time}</span>}
-                <span className="text-xs font-semibold text-purple-600 bg-purple-50 px-2.5 py-1 rounded-full flex-shrink-0 whitespace-nowrap">{item.action} →</span>
-              </Link>
-            ))}
-          </div>
-        )}
-      </div>
-
       {/* Classes at a glance */}
       <div className="space-y-3">
         <h2 className="text-lg font-semibold text-gray-800">Classes</h2>
@@ -365,6 +330,41 @@ export default async function TeacherDashboard() {
                   )}
                 </div>
               </details>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Needs your attention — one prioritized queue instead of four
+          separate widgets (stat cards, notifications panel, recent
+          submissions feed, live alerts feed) that used to show overlapping
+          versions of the same information. */}
+      <div className="space-y-3">
+        <div className="flex items-center gap-2">
+          <h2 className="text-lg font-semibold text-gray-800">Needs your attention</h2>
+          {commentGroups.size > 0 && (
+            <span className="text-xs font-semibold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-full">
+              💬 {commentGroups.size} unread comment{commentGroups.size !== 1 ? 's' : ''}
+            </span>
+          )}
+        </div>
+        {queue.length === 0 ? (
+          <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
+            <div className="text-3xl mb-2">🎉</div>
+            <p className="text-gray-500 font-medium">You&apos;re all caught up!</p>
+          </div>
+        ) : (
+          <div className="bg-white border border-gray-200 rounded-xl divide-y divide-gray-100">
+            {queue.map(item => (
+              <Link key={item.id} href={item.href} className="flex items-center gap-4 px-5 py-3.5 hover:bg-purple-50 transition-colors">
+                <span className="text-xl flex-shrink-0">{item.icon}</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-gray-800 truncate">{item.text}</p>
+                  {item.sub && <p className="text-xs text-gray-400 truncate">{item.sub}</p>}
+                </div>
+                {item.time && <span className="text-xs text-gray-400 flex-shrink-0">{item.time}</span>}
+                <span className="text-xs font-semibold text-purple-600 bg-purple-50 px-2.5 py-1 rounded-full flex-shrink-0 whitespace-nowrap">{item.action} →</span>
+              </Link>
             ))}
           </div>
         )}
