@@ -319,7 +319,6 @@ export default async function TeacherDashboard() {
                     {cls.ungradedCount > 0 ? (
                       <Link
                         href={`/teacher/submissions?class=${cls.id}`}
-                        onClick={e => e.stopPropagation()}
                         className="text-xs font-semibold bg-purple-100 text-purple-700 px-3 py-1.5 rounded-full hover:bg-purple-200 transition-colors"
                       >
                         {cls.ungradedCount} to grade
@@ -329,7 +328,7 @@ export default async function TeacherDashboard() {
                     ) : (
                       <span className="text-xs text-gray-400">No submissions yet</span>
                     )}
-                    <Link href={`/teacher/class/${cls.id}`} onClick={e => e.stopPropagation()} className="text-xs text-purple-600 hover:underline font-medium whitespace-nowrap">Manage class →</Link>
+                    <Link href={`/teacher/class/${cls.id}`} className="text-xs text-purple-600 hover:underline font-medium whitespace-nowrap">Manage class →</Link>
                     <span className="text-gray-300 text-xs group-open:rotate-180 transition-transform">▾</span>
                   </div>
                 </summary>
