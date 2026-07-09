@@ -42,18 +42,25 @@ export async function GET(req: NextRequest) {
   // student board can reconcile it from the DB — this self-heals any live
   // broadcast that was dropped or arrived out of order.
   let feedbackCanvas: string | null = null
+  let grade: string | null = null
+  let textFeedback: string | null = null
   if (data?.id) {
     const { data: fb } = await admin
       .from('feedback')
-      .select('canvas_data')
+      .select('canvas_data, grade, text_feedback')
       .eq('submission_id', data.id)
       .maybeSingle()
     feedbackCanvas = fb?.canvas_data ?? null
+    grade = fb?.grade ?? null
+    textFeedback = fb?.text_feedback ?? null
   }
 
   return NextResponse.json({
+    submissionId: data?.id ?? null,
     canvasData: data?.canvas_data ?? null,
     feedbackCanvas,
+    grade,
+    textFeedback,
     updatedAt: data?.updated_at ?? null,
   })
 }

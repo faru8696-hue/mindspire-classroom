@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 import MiniBoard from '@/components/MiniBoard'
 import Comments from '@/components/Comments'
+import TeacherWatchBoard from './[studentId]/TeacherWatchBoard'
 import { GRADE_LIST } from '@/lib/grades'
 
 interface Student { id: string; full_name: string }
@@ -61,6 +62,15 @@ export default function LiveClassroomView({
   // same tradeoff notifications made before they got a real read flag.
   const [seenStudentIds, setSeenStudentIds] = useState<Set<string>>(new Set())
   const [commentsStudent, setCommentsStudent] = useState<Student | null>(null)
+  // Popup live board — lets the teacher draw/annotate on one student's board
+  // right from the grid without leaving it, so the rest of the class stays
+  // visible behind the dimmed backdrop and can be reached again with one click.
+  const [boardStudent, setBoardStudent] = useState<Student | null>(null)
+  const [boardLoading, setBoardLoading] = useState(false)
+  const [boardData, setBoardData] = useState<{
+    submissionId: string | null; studentData: string | null; teacherData: string | null
+    grade: string | null; feedbackText: string | null
+  } | null>(null)
   const [submissions, setSubmissions] = useState<Map<string, Submission>>(
     () => new Map(initialSubmissions.map(s => [s.student_id, s]))
   )
@@ -239,6 +249,28 @@ export default function LiveClassroomView({
     setCommentsStudent(student)
   }
 
+  async function openBoard(student: Student) {
+    setBoardStudent(student)
+    setBoardLoading(true)
+    setBoardData(null)
+    try {
+      const res = await fetch(`/api/submission?questionId=${questionId}&studentId=${student.id}`)
+      const data = await res.json() as {
+        submissionId: string | null; canvasData: string | null; feedbackCanvas: string | null
+        grade: string | null; textFeedback: string | null
+      }
+      setBoardData({
+        submissionId: data.submissionId,
+        studentData: data.canvasData,
+        teacherData: data.feedbackCanvas,
+        grade: data.grade,
+        feedbackText: data.textFeedback,
+      })
+    } finally {
+      setBoardLoading(false)
+    }
+  }
+
   async function markAllRead() {
     const ids = notifications.filter(n => !n.read).map(n => n.id)
     if (!ids.length) return
@@ -397,8 +429,8 @@ export default function LiveClassroomView({
                   <div
                     role="button"
                     tabIndex={0}
-                    onClick={() => { window.location.href = `/teacher/live/${classId}/${questionId}/${student.id}` }}
-                    onKeyDown={e => { if (e.key === 'Enter') window.location.href = `/teacher/live/${classId}/${questionId}/${student.id}` }}
+                    onClick={() => openBoard(student)}
+                    onKeyDown={e => { if (e.key === 'Enter') openBoard(student) }}
                     className={`w-full rounded-xl border-2 overflow-hidden text-left transition-all hover:shadow-xl bg-white cursor-pointer ${
                       isChecked   ? 'border-green-400 opacity-60' :
                       needsHelp   ? 'border-amber-400 shadow-lg shadow-amber-100' :
@@ -515,6 +547,37 @@ export default function LiveClassroomView({
               currentUserId={teacherId}
               currentUserName={teacherName}
             />
+          </div>
+        </div>
+      )}
+
+      {/* Live board popup — draw/grade on one student's board without
+          navigating away, so the rest of the class stays visible behind the
+          dimmed backdrop and one click gets the teacher back to the grid. */}
+      {boardStudent && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={() => setBoardStudent(null)}>
+          <div className="bg-gray-950 rounded-xl shadow-2xl w-full max-w-5xl h-[85vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="bg-gray-900 border-b border-gray-700 px-4 py-2.5 flex items-center justify-between flex-shrink-0">
+              <p className="font-semibold text-white text-sm">{boardStudent.full_name}</p>
+              <button onClick={() => setBoardStudent(null)} className="text-gray-400 hover:text-white text-sm px-3 py-1 bg-gray-800 rounded-lg">Close</button>
+            </div>
+            <div className="flex-1 min-h-0">
+              {boardLoading || !boardData ? (
+                <div className="w-full h-full flex items-center justify-center text-gray-500 text-sm">Loading board…</div>
+              ) : (
+                <TeacherWatchBoard
+                  key={boardStudent.id}
+                  classId={classId}
+                  questionId={questionId}
+                  studentId={boardStudent.id}
+                  submissionId={boardData.submissionId}
+                  initialStudentData={boardData.studentData}
+                  initialTeacherData={boardData.teacherData}
+                  initialGrade={boardData.grade}
+                  initialFeedbackText={boardData.feedbackText}
+                />
+              )}
+            </div>
           </div>
         </div>
       )}
