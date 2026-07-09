@@ -3,8 +3,14 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import LiveClassroomView from './LiveClassroomView'
 
-export default async function LiveClassroomPage({ params }: { params: Promise<{ classId: string; questionId: string }> }) {
+export default async function LiveClassroomPage({
+  params, searchParams,
+}: {
+  params: Promise<{ classId: string; questionId: string }>
+  searchParams: Promise<{ comment?: string }>
+}) {
   const { classId, questionId } = await params
+  const { comment: autoOpenCommentsStudentId } = await searchParams
   const supabase = await createAdminClient()
 
   const [{ data: cls }, { data: question }, { data: enrollments }, { data: units }] = await Promise.all([
@@ -110,6 +116,7 @@ export default async function LiveClassroomPage({ params }: { params: Promise<{ 
       })}
       teacherId={teacherProfile?.id ?? ''}
       teacherName={teacherProfile?.full_name ?? 'Teacher'}
+      autoOpenCommentsStudentId={autoOpenCommentsStudentId ?? null}
     />
   )
 }

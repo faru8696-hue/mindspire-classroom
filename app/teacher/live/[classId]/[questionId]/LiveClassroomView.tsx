@@ -31,6 +31,7 @@ interface Props {
   initialComments: CommentRow[]
   teacherId: string
   teacherName: string
+  autoOpenCommentsStudentId: string | null
 }
 
 const GRADE_COLOR: Record<string, string> = {
@@ -46,7 +47,7 @@ type Filter = 'all' | 'help' | 'done' | 'submitted' | 'unchecked'
 export default function LiveClassroomView({
   classId, questionId, classTitle, questionTitle, questionContent,
   allQuestions, questionHelp, students, initialSubmissions, initialFeedbacks, initialNotifications,
-  initialComments, teacherId, teacherName,
+  initialComments, teacherId, teacherName, autoOpenCommentsStudentId,
 }: Props) {
   const supabase = createClient()
   const [helpByQuestion, setHelpByQuestion] = useState<Record<string, number>>(questionHelp)
@@ -243,11 +244,36 @@ export default function LiveClassroomView({
     return () => { channels.forEach(ch => supabase.removeChannel(ch)) }
   }, [questionId, students])
 
+  // Clear the dashboard's "Needs your attention" comment row for this
+  // student now that the teacher has actually looked at the thread.
+  async function markCommentsSeen(studentId: string) {
+    setSeenStudentIds(prev => new Set(prev).add(studentId))
+    const unreadCommentIds = notifications
+      .filter(n => n.type === 'comment' && n.student_id === studentId && !n.read)
+      .map(n => n.id)
+    if (unreadCommentIds.length) {
+      await supabase.from('notifications').update({ read: true }).in('id', unreadCommentIds)
+      setNotifications(prev => prev.map(n => unreadCommentIds.includes(n.id) ? { ...n, read: true } : n))
+    }
+  }
+
+  // Deep link from the dashboard's "Needs your attention" queue — jump
+  // straight into a student's comment thread instead of just the grid.
+  useEffect(() => {
+    if (!autoOpenCommentsStudentId) return
+    const student = students.find(s => s.id === autoOpenCommentsStudentId)
+    if (student) {
+      setCommentsStudent(student)
+      markCommentsSeen(student.id)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoOpenCommentsStudentId, students])
+
   function openComments(student: Student, e: React.MouseEvent) {
     e.preventDefault()
     e.stopPropagation()
-    setSeenStudentIds(prev => new Set(prev).add(student.id))
     setCommentsStudent(student)
+    markCommentsSeen(student.id)
   }
 
   async function openBoard(student: Student) {

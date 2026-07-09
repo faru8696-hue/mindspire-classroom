@@ -126,6 +126,29 @@ export default async function TeacherDashboard() {
     })
   }
 
+  // Tier 1 — student comments (they sometimes type their actual answer into
+  // the comment box instead of the board, so these need to surface here too,
+  // not just on the live grid). Group multiple unread comments from the same
+  // student on the same question into one row instead of spamming the queue.
+  const commentNotifs = notifs.filter(n => n.type === 'comment')
+  const commentGroups = new Map<string, { notif: Notif; count: number }>()
+  for (const n of commentNotifs) {
+    const key = `${n.student_id}:${n.question_id}`
+    const existing = commentGroups.get(key)
+    if (existing) existing.count++
+    else commentGroups.set(key, { notif: n, count: 1 })
+  }
+  for (const { notif: n, count } of commentGroups.values()) {
+    queue.push({
+      id: n.id, tier: 1, icon: '💬',
+      text: `${nameOf(n.profiles)} commented${count > 1 ? ` (${count})` : ''}`,
+      sub: titleOf(n.questions),
+      time: timeAgo(n.created_at),
+      href: `/teacher/live/${n.class_id}/${n.question_id}?comment=${n.student_id}`,
+      action: 'View comment',
+    })
+  }
+
   // Tier 1 — a student just finished a specific question (jump straight to grading it)
   for (const n of notifs.filter(n => n.type === 'submitted')) {
     queue.push({
@@ -171,7 +194,14 @@ export default async function TeacherDashboard() {
           submissions feed, live alerts feed) that used to show overlapping
           versions of the same information. */}
       <div className="space-y-3">
-        <h2 className="text-lg font-semibold text-gray-800">Needs your attention</h2>
+        <div className="flex items-center gap-2">
+          <h2 className="text-lg font-semibold text-gray-800">Needs your attention</h2>
+          {commentGroups.size > 0 && (
+            <span className="text-xs font-semibold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-full">
+              💬 {commentGroups.size} unread comment{commentGroups.size !== 1 ? 's' : ''}
+            </span>
+          )}
+        </div>
         {queue.length === 0 ? (
           <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
             <div className="text-3xl mb-2">🎉</div>
