@@ -66,6 +66,7 @@ export default function LiveClassroomView({
   // right from the grid without leaving it, so the rest of the class stays
   // visible behind the dimmed backdrop and can be reached again with one click.
   const [boardStudent, setBoardStudent] = useState<Student | null>(null)
+  const [boardFullscreen, setBoardFullscreen] = useState(false)
   const [boardLoading, setBoardLoading] = useState(false)
   const [boardData, setBoardData] = useState<{
     submissionId: string | null; studentData: string | null; teacherData: string | null
@@ -251,6 +252,7 @@ export default function LiveClassroomView({
 
   async function openBoard(student: Student) {
     setBoardStudent(student)
+    setBoardFullscreen(false)
     setBoardLoading(true)
     setBoardData(null)
     try {
@@ -555,11 +557,20 @@ export default function LiveClassroomView({
           navigating away, so the rest of the class stays visible behind the
           dimmed backdrop and one click gets the teacher back to the grid. */}
       {boardStudent && (
-        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={() => setBoardStudent(null)}>
-          <div className="bg-gray-950 rounded-xl shadow-2xl w-full max-w-5xl h-[85vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className={`fixed inset-0 z-50 bg-black/60 flex items-center justify-center ${boardFullscreen ? '' : 'p-4'}`} onClick={() => setBoardStudent(null)}>
+          <div className={`bg-gray-950 shadow-2xl flex flex-col overflow-hidden ${boardFullscreen ? 'w-screen h-screen' : 'rounded-xl w-full max-w-5xl h-[85vh]'}`} onClick={e => e.stopPropagation()}>
             <div className="bg-gray-900 border-b border-gray-700 px-4 py-2.5 flex items-center justify-between flex-shrink-0">
               <p className="font-semibold text-white text-sm">{boardStudent.full_name}</p>
-              <button onClick={() => setBoardStudent(null)} className="text-gray-400 hover:text-white text-sm px-3 py-1 bg-gray-800 rounded-lg">Close</button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setBoardFullscreen(f => !f)}
+                  className="text-gray-400 hover:text-white text-sm px-3 py-1 bg-gray-800 rounded-lg"
+                  title={boardFullscreen ? 'Exit full screen' : 'Enter full screen'}
+                >
+                  {boardFullscreen ? '⤡ Exit full screen' : '⤢ Full screen'}
+                </button>
+                <button onClick={() => setBoardStudent(null)} className="text-gray-400 hover:text-white text-sm px-3 py-1 bg-gray-800 rounded-lg">Close</button>
+              </div>
             </div>
             <div className="flex-1 min-h-0">
               {boardLoading || !boardData ? (
