@@ -21,6 +21,8 @@ interface DrawObject {
   fillColor?: string
   shapeType?: 'rectangle' | 'circle' | 'line' | 'arrow'
   strokeWidth?: number
+  fontSize?: number
+  fontFamily?: string
   zIndex: number
 }
 
@@ -60,8 +62,8 @@ function contentBounds(objs: DrawObject[]): { minX: number; minY: number; maxX: 
         if (py > maxY) maxY = py
       }
     } else {
-      const w = o.type === 'text' ? 160 : (o.width ?? 100)
-      const h = o.type === 'text' ? 28 : (o.height ?? 100)
+      const w = o.width ?? (o.type === 'text' ? 160 : 100)
+      const h = o.height ?? (o.type === 'text' ? 28 : 100)
       if (o.x < minX) minX = o.x
       if (o.y < minY) minY = o.y
       if (o.x + w > maxX) maxX = o.x + w
@@ -131,6 +133,16 @@ export default function InfiniteWhiteboard({
   const [objCount, setObjCount] = useState(objsRef.current.length)
   const [broadcastTick, setBroadcastTick] = useState(0)
   const [selId, setSelId] = useState<string | null>(null)
+
+  // Text editing overlay — a real <textarea> positioned over the canvas so
+  // the text tool actually produces editable text instead of a permanent,
+  // unchangeable "Text..." placeholder. editingTextRef mirrors the state so
+  // the canvas draw loop (a plain callback, not a component re-render) can
+  // skip drawing the object currently being edited without stale closures.
+  interface EditingText { id: string; value: string; color: string; fontSize: number; fontFamily: string; x: number; y: number }
+  const [editingText, setEditingText] = useState<EditingText | null>(null)
+  const editingTextRef = useRef<EditingText | null>(null)
+  const textAreaElRef = useRef<HTMLTextAreaElement | null>(null)
 
   const setTool = (t: Tool) => { toolRef.current = t; _setTool(t) }
   const setColor = (c: string) => { colorRef.current = c; _setColor(c) }
@@ -287,8 +299,13 @@ export default function InfiniteWhiteboard({
             ctx.stroke()
           }
         } else if (obj.type === 'text') {
-          ctx.fillStyle = obj.color || '#000'; ctx.font = '16px Arial'
-          ctx.fillText(obj.data || '', 0, 20)
+          if (editingTextRef.current?.id !== obj.id) {
+            const fontSize = obj.fontSize ?? 20
+            ctx.fillStyle = obj.color || '#000'
+            ctx.font = `${fontSize}px ${obj.fontFamily || 'Arial'}`
+            const lines = (obj.data || '').split('\n')
+            lines.forEach((line, i) => ctx.fillText(line, 0, fontSize * (i + 1) * 1.2 - fontSize * 0.2))
+          }
         } else if (obj.type === 'sticky') {
           const w = obj.width ?? 150, h = obj.height ?? 150
           ctx.fillStyle = obj.fillColor || '#ffff00'; ctx.fillRect(0, 0, w, h)
@@ -364,8 +381,8 @@ export default function InfiniteWhiteboard({
           ctx.translate(v.panX + obj.x * v.zoom, v.panY + obj.y * v.zoom)
           ctx.scale(v.zoom, v.zoom)
           ctx.rotate((obj.rotation * Math.PI) / 180)
-          const w = obj.type === 'text' ? 160 : (obj.width ?? 100)
-          const h = obj.type === 'text' ? 28 : (obj.height ?? 100)
+          const w = obj.width ?? (obj.type === 'text' ? 160 : 100)
+          const h = obj.height ?? (obj.type === 'text' ? 28 : 100)
           const pad = 10 / v.zoom
           const hs = 14 / v.zoom  // bigger handles for touch
           const r = hs / 2
@@ -560,8 +577,8 @@ export default function InfiniteWhiteboard({
 
       const selObj = objsRef.current.find(o => o.id === selIdRef.current)
       if (selObj && ['image', 'shape', 'sticky', 'text'].includes(selObj.type)) {
-        const sw = selObj.type === 'text' ? 160 : (selObj.width ?? 100)
-        const sh = selObj.type === 'text' ? 28 : (selObj.height ?? 100)
+        const sw = selObj.width ?? (selObj.type === 'text' ? 160 : 100)
+        const sh = selObj.height ?? (selObj.type === 'text' ? 28 : 100)
         const sx = v.panX + selObj.x * v.zoom, sy = v.panY + selObj.y * v.zoom
         const swz = sw * v.zoom, shz = sh * v.zoom
         const pad = 10, ll = 28
@@ -592,8 +609,8 @@ export default function InfiniteWhiteboard({
       const hitObj = [...objsRef.current].reverse().find(o => {
         if (!['image', 'shape', 'sticky', 'text'].includes(o.type)) return false
         const v2 = viewRef.current
-        const sw = o.type === 'text' ? 160 : (o.width ?? 100)
-        const sh = o.type === 'text' ? 28 : (o.height ?? 100)
+        const sw = o.width ?? (o.type === 'text' ? 160 : 100)
+        const sh = o.height ?? (o.type === 'text' ? 28 : 100)
         const sx = v2.panX + o.x * v2.zoom, sy = v2.panY + o.y * v2.zoom
         return mx >= sx && mx <= sx + sw * v2.zoom && my >= sy && my <= sy + sh * v2.zoom
       })
@@ -601,8 +618,8 @@ export default function InfiniteWhiteboard({
       selIdRef.current = hitObj?.id ?? null
       setSelId(hitObj?.id ?? null)
       if (hitObj) {
-        const sw = hitObj.type === 'text' ? 160 : (hitObj.width ?? 100)
-        const sh = hitObj.type === 'text' ? 28 : (hitObj.height ?? 100)
+        const sw = hitObj.width ?? (hitObj.type === 'text' ? 160 : 100)
+        const sh = hitObj.height ?? (hitObj.type === 'text' ? 28 : 100)
         dragMode.current = 'move'; dragObjId.current = hitObj.id
         dragStartMouse.current = { x: mx, y: my }
         dragStartObj.current = { x: hitObj.x, y: hitObj.y, width: sw, height: sh, rotation: hitObj.rotation }
@@ -618,12 +635,61 @@ export default function InfiniteWhiteboard({
       shapeStart.current = canvasPos; shapeEnd.current = canvasPos
     } else if (toolRef.current === 'text') {
       pushHistory()
-      commitObjects(prev => [...prev, { id: `text-${Date.now()}`, type: 'text', x: canvasPos.x, y: canvasPos.y, rotation: 0, data: 'Text...', color: colorRef.current, zIndex: Date.now() }])
+      const id = `text-${Date.now()}`
+      const fontSize = 20, fontFamily = 'Arial, sans-serif'
+      commitObjects(prev => [...prev, { id, type: 'text', x: canvasPos.x, y: canvasPos.y, rotation: 0, data: '', color: colorRef.current, fontSize, fontFamily, zIndex: Date.now() }])
+      const e2 = { id, value: '', color: colorRef.current, fontSize, fontFamily, x: canvasPos.x, y: canvasPos.y }
+      editingTextRef.current = e2; setEditingText(e2)
+      setTool('pointer')
     } else if (toolRef.current === 'sticky') {
       pushHistory()
       commitObjects(prev => [...prev, { id: `sticky-${Date.now()}`, type: 'sticky', x: canvasPos.x, y: canvasPos.y, width: 150, height: 150, rotation: 0, data: 'Note...', fillColor: '#ffff00', color: '#000', zIndex: Date.now() }])
     }
   }, [screenToCanvas, commitObjects, pushHistory])
+
+  // Double-click an existing text object (in pointer mode) to edit it —
+  // opens the same overlay the text tool uses for a brand-new one.
+  const handleDoubleClick = useCallback((e: React.MouseEvent) => {
+    if (toolRef.current !== 'pointer') return
+    const { mx, my } = getScreenMouse(e)
+    const v = viewRef.current
+    const hitObj = [...objsRef.current].reverse().find(o => {
+      if (o.type !== 'text') return false
+      const sw = o.width ?? 160, sh = o.height ?? 28
+      const sx = v.panX + o.x * v.zoom, sy = v.panY + o.y * v.zoom
+      return mx >= sx && mx <= sx + sw * v.zoom && my >= sy && my <= sy + sh * v.zoom
+    })
+    if (!hitObj) return
+    pushHistory()
+    const e2 = {
+      id: hitObj.id, value: hitObj.data || '', color: hitObj.color || colorRef.current,
+      fontSize: hitObj.fontSize ?? 20, fontFamily: hitObj.fontFamily || 'Arial, sans-serif',
+      x: hitObj.x, y: hitObj.y,
+    }
+    editingTextRef.current = e2; setEditingText(e2)
+    selIdRef.current = hitObj.id; setSelId(hitObj.id)
+  }, [pushHistory])
+
+  // Commits the overlay's current value back onto the object (or removes it
+  // if left empty), and closes the editor.
+  const commitTextEdit = useCallback(() => {
+    const et = editingTextRef.current
+    if (!et) return
+    const trimmed = et.value
+    if (trimmed.trim() === '') {
+      commitObjects(prev => prev.filter(o => o.id !== et.id))
+    } else {
+      const lines = trimmed.split('\n')
+      const widest = Math.max(1, ...lines.map(l => l.length))
+      const width = Math.max(160, widest * et.fontSize * 0.6)
+      const height = Math.max(28, lines.length * et.fontSize * 1.2)
+      commitObjects(prev => prev.map(o => o.id === et.id
+        ? { ...o, data: et.value, color: et.color, fontSize: et.fontSize, fontFamily: et.fontFamily, width, height }
+        : o))
+    }
+    editingTextRef.current = null
+    setEditingText(null)
+  }, [commitObjects])
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     if (panStart.current) {
@@ -764,8 +830,8 @@ export default function InfiniteWhiteboard({
           const hit = (hx: number, hy: number) => Math.hypot(mx - hx, my - hy) <= HIT
           const selObj = objsRef.current.find(o => o.id === selIdRef.current)
           if (selObj && ['image', 'shape', 'sticky', 'text'].includes(selObj.type)) {
-            const sw = selObj.type === 'text' ? 160 : (selObj.width ?? 100)
-            const sh = selObj.type === 'text' ? 28 : (selObj.height ?? 100)
+            const sw = selObj.width ?? (selObj.type === 'text' ? 160 : 100)
+            const sh = selObj.height ?? (selObj.type === 'text' ? 28 : 100)
             const sx = v.panX + selObj.x * v.zoom, sy = v.panY + selObj.y * v.zoom
             const swz = sw * v.zoom, shz = sh * v.zoom
             const pad = 10, ll = 28
@@ -790,15 +856,15 @@ export default function InfiniteWhiteboard({
           }
           const hitObj = [...objsRef.current].reverse().find(o => {
             if (!['image', 'shape', 'sticky', 'text'].includes(o.type)) return false
-            const sw = o.type === 'text' ? 160 : (o.width ?? 100)
-            const sh = o.type === 'text' ? 28 : (o.height ?? 100)
+            const sw = o.width ?? (o.type === 'text' ? 160 : 100)
+            const sh = o.height ?? (o.type === 'text' ? 28 : 100)
             const sx = v.panX + o.x * v.zoom, sy = v.panY + o.y * v.zoom
             return mx >= sx && mx <= sx + sw * v.zoom && my >= sy && my <= sy + sh * v.zoom
           })
           selIdRef.current = hitObj?.id ?? null; setSelId(hitObj?.id ?? null)
           if (hitObj) {
-            const sw = hitObj.type === 'text' ? 160 : (hitObj.width ?? 100)
-            const sh = hitObj.type === 'text' ? 28 : (hitObj.height ?? 100)
+            const sw = hitObj.width ?? (hitObj.type === 'text' ? 160 : 100)
+            const sh = hitObj.height ?? (hitObj.type === 'text' ? 28 : 100)
             dragMode.current = 'move'; dragObjId.current = hitObj.id
             dragStartMouse.current = { x: mx, y: my }
             dragStartObj.current = { x: hitObj.x, y: hitObj.y, width: sw, height: sh, rotation: hitObj.rotation }
@@ -1183,13 +1249,155 @@ export default function InfiniteWhiteboard({
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
+          onDoubleClick={handleDoubleClick}
         />
+        {editingText && (
+          <TextEditOverlay
+            editingText={editingText}
+            view={view}
+            onChange={v => { editingTextRef.current = { ...editingTextRef.current!, ...v }; setEditingText(t => t ? { ...t, ...v } : t) }}
+            onCommit={commitTextEdit}
+            textAreaElRef={textAreaElRef}
+          />
+        )}
       </div>
 
       <div className="border-t border-gray-200 px-4 py-1 text-xs text-gray-400 flex justify-between bg-white">
         <span>Objects: {objCount}</span>
         <span>Scroll to pan · Ctrl+Scroll to zoom · Select tool to move/resize/rotate · Delete key to remove</span>
       </div>
+    </div>
+  )
+}
+
+// Quick-insert symbols for math and chemistry — a canvas whiteboard can't
+// render real LaTeX/formulas, so this is the pragmatic equivalent: unicode
+// sub/superscripts and common operators/arrows a student can drop into a
+// text box to write things like "H₂SO₄ → 2H⁺ + SO₄²⁻" or "x² + 3x = 0"
+// without hunting for a special-character keyboard.
+const SYMBOL_GROUPS: { label: string; symbols: string[] }[] = [
+  { label: 'Subscript', symbols: ['₀', '₁', '₂', '₃', '₄', '₅', '₆', '₇', '₈', '₉'] },
+  { label: 'Superscript', symbols: ['⁰', '¹', '²', '³', '⁴', '⁵', '⁶', '⁷', '⁸', '⁹', '⁺', '⁻'] },
+  { label: 'Chemistry', symbols: ['→', '⇌', '↔', '⇒', '°', 'Δ', '·', '↑', '↓'] },
+  { label: 'Math', symbols: ['±', '×', '÷', '≤', '≥', '≠', '≈', '√', 'π', '∞', '∑', '∫', '∂', '½', '¼', '¾'] },
+]
+
+interface EditingTextValue { id: string; value: string; color: string; fontSize: number; fontFamily: string; x: number; y: number }
+
+function TextEditOverlay({
+  editingText, view, onChange, onCommit, textAreaElRef,
+}: {
+  editingText: EditingTextValue
+  view: { panX: number; panY: number; zoom: number }
+  onChange: (v: Partial<EditingTextValue>) => void
+  onCommit: () => void
+  textAreaElRef: React.MutableRefObject<HTMLTextAreaElement | null>
+}) {
+  const [showSymbols, setShowSymbols] = useState(false)
+
+  function insertSymbol(sym: string) {
+    const ta = textAreaElRef.current
+    const start = ta?.selectionStart ?? editingText.value.length
+    const end = ta?.selectionEnd ?? editingText.value.length
+    const newValue = editingText.value.slice(0, start) + sym + editingText.value.slice(end)
+    onChange({ value: newValue })
+    requestAnimationFrame(() => {
+      if (!ta) return
+      ta.focus()
+      ta.selectionStart = ta.selectionEnd = start + sym.length
+    })
+  }
+
+  const left = view.panX + editingText.x * view.zoom
+  const top = view.panY + editingText.y * view.zoom
+  const fontPx = editingText.fontSize * view.zoom
+
+  return (
+    <div
+      className="absolute z-20"
+      style={{ left, top }}
+      onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) onCommit() }}
+    >
+      {/* Mini toolbar — sits above the text, follows it as it's placed anywhere on the board */}
+      <div className="absolute bottom-full left-0 mb-1 flex items-center gap-1 bg-white border border-gray-200 rounded-lg shadow-lg px-1.5 py-1 whitespace-nowrap" style={{ transform: 'translateY(-4px)' }}>
+        <input
+          type="color"
+          value={editingText.color}
+          onChange={e => onChange({ color: e.target.value })}
+          className="w-7 h-7 rounded cursor-pointer flex-shrink-0"
+          title="Text color"
+        />
+        <select
+          value={editingText.fontSize}
+          onChange={e => onChange({ fontSize: Number(e.target.value) })}
+          className="text-xs border border-gray-200 rounded px-1 py-1"
+          title="Font size"
+        >
+          {[14, 16, 20, 24, 28, 32, 40, 48].map(s => <option key={s} value={s}>{s}px</option>)}
+        </select>
+        <select
+          value={editingText.fontFamily}
+          onChange={e => onChange({ fontFamily: e.target.value })}
+          className="text-xs border border-gray-200 rounded px-1 py-1"
+          title="Font"
+        >
+          <option value="Arial, sans-serif">Sans</option>
+          <option value="'Times New Roman', serif">Serif</option>
+          <option value="'Courier New', monospace">Mono</option>
+        </select>
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setShowSymbols(s => !s)}
+            className={`text-xs px-2 py-1 rounded font-medium ${showSymbols ? 'bg-purple-600 text-white' : 'bg-gray-100 hover:bg-gray-200'}`}
+            title="Math & chemistry symbols"
+          >
+            √∑ Symbols
+          </button>
+          {showSymbols && (
+            <div className="absolute bottom-full left-0 mb-1 bg-white border border-gray-200 rounded-lg shadow-xl p-2 w-56 max-h-64 overflow-y-auto">
+              {SYMBOL_GROUPS.map(g => (
+                <div key={g.label} className="mb-1.5 last:mb-0">
+                  <p className="text-[10px] uppercase tracking-wide text-gray-400 mb-1">{g.label}</p>
+                  <div className="flex flex-wrap gap-1">
+                    {g.symbols.map(sym => (
+                      <button
+                        key={sym}
+                        type="button"
+                        onClick={() => insertSymbol(sym)}
+                        className="w-7 h-7 flex items-center justify-center text-sm bg-gray-50 hover:bg-purple-100 rounded border border-gray-200"
+                      >
+                        {sym}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={onCommit}
+          className="text-xs px-2.5 py-1 rounded font-semibold bg-green-600 hover:bg-green-700 text-white"
+        >
+          ✓ Done
+        </button>
+      </div>
+
+      <textarea
+        ref={el => { textAreaElRef.current = el }}
+        autoFocus
+        value={editingText.value}
+        onChange={e => onChange({ value: e.target.value })}
+        onKeyDown={e => {
+          if (e.key === 'Escape') { e.preventDefault(); onCommit() }
+        }}
+        placeholder="Type here..."
+        rows={Math.max(1, editingText.value.split('\n').length)}
+        className="bg-white/90 border-2 border-dashed border-purple-400 rounded px-1 outline-none resize-none min-w-[120px]"
+        style={{ color: editingText.color, fontSize: fontPx, fontFamily: editingText.fontFamily, lineHeight: 1.2 }}
+      />
     </div>
   )
 }

@@ -22,6 +22,8 @@ interface DrawObj {
   fillColor?: string
   shapeType?: string
   strokeWidth?: number
+  fontSize?: number
+  fontFamily?: string
   zIndex: number
 }
 
@@ -44,8 +46,8 @@ function contentBounds(objs: DrawObj[]) {
         if (py > maxY) maxY = py
       }
     } else {
-      const w = o.type === 'text' ? 160 : (o.width ?? 100)
-      const h = o.type === 'text' ? 28 : (o.height ?? 100)
+      const w = o.width ?? (o.type === 'text' ? 160 : 100)
+      const h = o.height ?? (o.type === 'text' ? 28 : 100)
       if (o.x < minX) minX = o.x
       if (o.y < minY) minY = o.y
       if (o.x + w > maxX) maxX = o.x + w
@@ -130,8 +132,10 @@ export default function MiniBoard({
           else if (o.shapeType === 'circle') { const r = Math.min(sw, sh) / 2; ctx.beginPath(); ctx.arc(r, r, r, 0, Math.PI * 2); ctx.stroke() }
           else if (o.shapeType === 'line' || o.shapeType === 'arrow') { ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(sw, sh); ctx.stroke() }
         } else if (o.type === 'text') {
-          ctx.fillStyle = o.color || '#000'; ctx.font = '16px Arial'; ctx.textAlign = 'left'
-          ctx.fillText(o.data || '', 0, 20)
+          const fontSize = o.fontSize ?? 20
+          ctx.fillStyle = o.color || '#000'; ctx.font = `${fontSize}px ${o.fontFamily || 'Arial'}`; ctx.textAlign = 'left'
+          const lines = (o.data || '').split('\n')
+          lines.forEach((line, i) => ctx.fillText(line, 0, fontSize * (i + 1) * 1.2 - fontSize * 0.2))
         } else if (o.type === 'sticky') {
           const sw = o.width ?? 150, sh = o.height ?? 150
           ctx.fillStyle = o.fillColor || '#ffff00'; ctx.fillRect(0, 0, sw, sh)
