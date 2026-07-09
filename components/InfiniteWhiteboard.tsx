@@ -794,6 +794,7 @@ export default function InfiniteWhiteboard({
   // ── Touch handlers (native, non-passive for no lag) ──────────
   const pinchStartDist = useRef<number | null>(null)
   const pinchStartZoom = useRef<number>(1)
+  const lastTap = useRef<{ time: number; x: number; y: number } | null>(null)
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -811,6 +812,33 @@ export default function InfiniteWhiteboard({
       if (e.touches.length === 1) {
         const t = e.touches[0]
         const canvasPos = screenToCanvas(t.clientX, t.clientY)
+
+        // Double-tap an existing text object (in pointer mode) to edit it —
+        // touch equivalent of the desktop double-click.
+        if (toolRef.current === 'pointer') {
+          const now = Date.now()
+          const last = lastTap.current
+          lastTap.current = { time: now, x: t.clientX, y: t.clientY }
+          if (last && now - last.time < 400 && Math.hypot(t.clientX - last.x, t.clientY - last.y) < 24) {
+            const hitText = [...objsRef.current].reverse().find(o => {
+              if (o.type !== 'text') return false
+              const sw = o.width ?? 160, sh = o.height ?? 28
+              return canvasPos.x >= o.x && canvasPos.x <= o.x + sw && canvasPos.y >= o.y && canvasPos.y <= o.y + sh
+            })
+            if (hitText) {
+              pushHistory()
+              const e2 = {
+                id: hitText.id, value: hitText.data || '', color: hitText.color || colorRef.current,
+                fontSize: hitText.fontSize ?? 20, fontFamily: hitText.fontFamily || 'Arial, sans-serif',
+                x: hitText.x, y: hitText.y,
+              }
+              editingTextRef.current = e2; setEditingText(e2)
+              selIdRef.current = hitText.id; setSelId(hitText.id)
+              lastTap.current = null
+              return
+            }
+          }
+        }
         const rect = containerRef.current?.getBoundingClientRect()
         const mx = t.clientX - (rect?.left ?? 0)
         const my = t.clientY - (rect?.top ?? 0)
@@ -824,6 +852,21 @@ export default function InfiniteWhiteboard({
         } else if (['rectangle', 'circle', 'line', 'arrow'].includes(toolRef.current)) {
           isDrawingRef.current = true
           shapeStart.current = canvasPos; shapeEnd.current = canvasPos
+        } else if (toolRef.current === 'text') {
+          // Touch never had a text-tool branch at all — tapping with Text
+          // selected on a tablet/touchscreen silently did nothing, since only
+          // this native touchstart listener fires there (it preventDefault()s
+          // the synthetic mouse events React's onMouseDown relies on).
+          pushHistory()
+          const id = `text-${Date.now()}`
+          const fontSize = 20, fontFamily = 'Arial, sans-serif'
+          commitObjects(prev => [...prev, { id, type: 'text', x: canvasPos.x, y: canvasPos.y, rotation: 0, data: '', color: colorRef.current, fontSize, fontFamily, zIndex: Date.now() }])
+          const e2 = { id, value: '', color: colorRef.current, fontSize, fontFamily, x: canvasPos.x, y: canvasPos.y }
+          editingTextRef.current = e2; setEditingText(e2)
+          setTool('pointer')
+        } else if (toolRef.current === 'sticky') {
+          pushHistory()
+          commitObjects(prev => [...prev, { id: `sticky-${Date.now()}`, type: 'sticky', x: canvasPos.x, y: canvasPos.y, width: 150, height: 150, rotation: 0, data: 'Note...', fillColor: '#ffff00', color: '#000', zIndex: Date.now() }])
         } else if (toolRef.current === 'pointer') {
           const v = viewRef.current
           const HIT = 22
