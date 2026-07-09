@@ -1,14 +1,16 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import InfiniteWhiteboard from '@/components/InfiniteWhiteboard'
+import InfiniteWhiteboard, { InfiniteWhiteboardHandle } from '@/components/InfiniteWhiteboard'
 import { GRADE_LIST } from '@/lib/grades'
 
 interface Props {
   classId: string
   questionId: string
   studentId: string
+  questionTitle: string
+  questionContent: string | null
   submissionId: string | null
   initialStudentData: string | null
   initialTeacherData: string | null
@@ -28,7 +30,7 @@ function extractImages(canvasJson: string | null): string[] {
 }
 
 export default function TeacherWatchBoard({
-  classId, questionId, studentId,
+  classId, questionId, studentId, questionTitle, questionContent,
   initialStudentData, initialTeacherData,
   initialGrade, initialFeedbackText,
 }: Props) {
@@ -41,6 +43,10 @@ export default function TeacherWatchBoard({
   const [saved, setSaved] = useState(false)
   const [lightbox, setLightbox] = useState<string | null>(null)
   const [studentData, setStudentData] = useState(initialStudentData)
+  const boardRef = useRef<InfiniteWhiteboardHandle>(null)
+  const [aiChecking, setAiChecking] = useState(false)
+  const [aiSuggestion, setAiSuggestion] = useState<{ grade: string; feedback: string } | null>(null)
+  const [aiError, setAiError] = useState<string | null>(null)
 
   // Extract image URLs from canvas JSON — updates whenever studentData changes
   const uploadedImages = useMemo(() => extractImages(studentData), [studentData])
@@ -136,6 +142,50 @@ export default function TeacherWatchBoard({
     }
   }
 
+  // AI reads a snapshot of the board and suggests a grade + feedback — a
+  // SUGGESTION only. Nothing is saved or sent to the student until the
+  // teacher reviews it and clicks "Use this" (or edits it first), same as
+  // grading manually.
+  async function runAiCheck() {
+    const snapshot = boardRef.current?.getSnapshot()
+    if (!snapshot) return
+    setAiChecking(true)
+    setAiError(null)
+    setAiSuggestion(null)
+    try {
+      const res = await fetch('/api/ai-check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ questionTitle, questionContent, boardImageDataUrl: snapshot }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'AI check failed')
+      setAiSuggestion(data)
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : 'AI check failed')
+    } finally {
+      setAiChecking(false)
+    }
+  }
+
+  // The teacher reviewing the suggestion and clicking this IS the human
+  // approval step — it applies the AI's grade/feedback exactly like
+  // clicking the grade buttons manually would (same save + notify path).
+  async function acceptAiSuggestion() {
+    if (!aiSuggestion) return
+    const { grade: newGrade, feedback } = aiSuggestion
+    setGrade(newGrade)
+    setFeedbackText(feedback)
+    setAiSuggestion(null)
+    setSaving(true)
+    const ok = await persistGrade(newGrade, feedback)
+    setSaving(false)
+    if (ok) {
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    }
+  }
+
   return (
     <div className="flex flex-col h-full">
       {/* Uploaded images strip — shown directly, no button needed */}
@@ -159,6 +209,7 @@ export default function TeacherWatchBoard({
       {/* Whiteboard */}
       <div className="flex-1 min-h-0">
         <InfiniteWhiteboard
+          ref={boardRef}
           questionId={questionId}
           studentId={studentId}
           role="teacher"
@@ -168,9 +219,48 @@ export default function TeacherWatchBoard({
         />
       </div>
 
+      {/* AI suggestion banner — appears after "AI Check", stays out of the
+          way until the teacher reviews and either applies or dismisses it.
+          Nothing here is saved or sent to the student on its own. */}
+      {(aiChecking || aiSuggestion || aiError) && (
+        <div className="bg-indigo-950 border-t border-indigo-700 px-4 py-2.5 flex-shrink-0">
+          {aiChecking && <p className="text-xs text-indigo-300">🤖 Reading the board…</p>}
+          {aiError && (
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs text-red-400">🤖 {aiError}</p>
+              <button onClick={() => setAiError(null)} className="text-xs text-gray-400 hover:text-white">✕</button>
+            </div>
+          )}
+          {aiSuggestion && (
+            <div className="flex items-start gap-3">
+              <span className={`flex-shrink-0 text-xs font-bold px-2 py-1 rounded-full ${aiSuggestion.grade === 'correct' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`}>
+                AI: {aiSuggestion.grade === 'correct' ? '✓ Correct' : '✗ Wrong'}
+              </span>
+              <p className="flex-1 text-xs text-indigo-100">{aiSuggestion.feedback}</p>
+              <div className="flex gap-1.5 flex-shrink-0">
+                <button onClick={acceptAiSuggestion} className="text-xs px-2.5 py-1 rounded-lg font-semibold bg-indigo-600 hover:bg-indigo-500 text-white whitespace-nowrap">
+                  Use this
+                </button>
+                <button onClick={() => setAiSuggestion(null)} className="text-xs px-2.5 py-1 rounded-lg text-gray-400 hover:text-white">
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Grading bar */}
       <div className="bg-gray-900 border-t border-gray-700 px-4 py-3 flex-shrink-0">
         <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={runAiCheck}
+            disabled={aiChecking}
+            title="Have AI read the board and suggest a grade + feedback"
+            className="text-xs px-3 py-1.5 rounded-lg font-semibold bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white whitespace-nowrap"
+          >
+            {aiChecking ? '🤖 Checking…' : '🤖 AI Check'}
+          </button>
           <span className="text-xs text-gray-400 font-semibold mr-1">Grade:</span>
           {/* Segmented control — one joined bar, flat fill only on the
               selected option, instead of five separate mismatched pills. */}

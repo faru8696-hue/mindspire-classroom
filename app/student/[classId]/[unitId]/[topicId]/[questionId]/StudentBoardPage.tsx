@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import InfiniteWhiteboard from '@/components/InfiniteWhiteboard'
+import InfiniteWhiteboard, { InfiniteWhiteboardHandle } from '@/components/InfiniteWhiteboard'
 import ZoomableImage from '@/components/ZoomableImage'
 import { GRADE_MAP } from '@/lib/grades'
 
@@ -46,6 +46,10 @@ export default function StudentBoardPage({
   const [submissionId, setSubmissionId] = useState<string | null>(initialSubmissionId ?? null)
   const channelRef = useRef(supabase.channel('teacher-alerts'))
   const audioRef = useRef<AudioContext | null>(null)
+  const boardRef = useRef<InfiniteWhiteboardHandle>(null)
+  const [hintLoading, setHintLoading] = useState(false)
+  const [hint, setHint] = useState<string | null>(null)
+  const [hintError, setHintError] = useState<string | null>(null)
 
   function playTone(freq: number, duration = 0.4) {
     try {
@@ -182,6 +186,31 @@ export default function StudentBoardPage({
     setTimeout(() => setDoneSent(false), 5000)
   }
 
+  // AI reads whatever's currently on the board and gives one Socratic-style
+  // hint — a nudge toward the next step, never the final answer. Nothing
+  // here is graded or shown to the teacher; it's just for the student.
+  async function askForHint() {
+    const snapshot = boardRef.current?.getSnapshot()
+    if (!snapshot) return
+    setHintLoading(true)
+    setHintError(null)
+    setHint(null)
+    try {
+      const res = await fetch('/api/ai-hint', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ questionTitle, questionContent, boardImageDataUrl: snapshot }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Could not get a hint')
+      setHint(data.hint)
+    } catch (err) {
+      setHintError(err instanceof Error ? err.message : 'Could not get a hint')
+    } finally {
+      setHintLoading(false)
+    }
+  }
+
   return (
     <div className="flex flex-col h-full gap-2 relative">
       {/* Question — AP exam paper style */}
@@ -242,6 +271,7 @@ export default function StudentBoardPage({
 
       <div className="flex-1 min-h-0">
         <InfiniteWhiteboard
+          ref={boardRef}
           questionId={questionId}
           studentId={studentId}
           role="student"
@@ -251,7 +281,29 @@ export default function StudentBoardPage({
         />
       </div>
 
+      {/* AI hint panel — appears above the action buttons, dismissible,
+          never auto-shown. Purely a "help me get unstuck" tool; it never
+          grades anything or reaches the teacher. */}
+      {(hintLoading || hint || hintError) && (
+        <div className="flex-shrink-0 bg-indigo-50 border border-indigo-200 rounded-xl px-4 py-3 flex items-start gap-3">
+          <span className="text-lg flex-shrink-0">🤖</span>
+          <div className="flex-1 min-w-0">
+            {hintLoading && <p className="text-sm text-indigo-700">Thinking about your work…</p>}
+            {hintError && <p className="text-sm text-red-600">{hintError}</p>}
+            {hint && <p className="text-sm text-indigo-900">{hint}</p>}
+          </div>
+          <button onClick={() => { setHint(null); setHintError(null) }} className="text-indigo-400 hover:text-indigo-700 text-lg leading-none flex-shrink-0">×</button>
+        </div>
+      )}
+
       <div className="flex gap-2 flex-shrink-0">
+        <button
+          onClick={askForHint}
+          disabled={hintLoading}
+          className="flex-1 py-3 rounded-xl font-semibold text-sm transition-all border bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-300 disabled:opacity-50"
+        >
+          {hintLoading ? '🤖 Thinking…' : '🤖 Ask for a Hint'}
+        </button>
         <button
           onClick={handleHelp}
           className={`flex-1 py-3 rounded-xl font-semibold text-sm transition-all border ${

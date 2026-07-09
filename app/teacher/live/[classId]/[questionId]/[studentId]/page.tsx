@@ -149,6 +149,8 @@ export default async function TeacherWatchPage({
               classId={classId}
               questionId={questionId}
               studentId={studentId}
+              questionTitle={question.title}
+              questionContent={question.content ?? null}
               submissionId={submission?.id ?? null}
               initialStudentData={submission?.canvas_data ?? null}
               initialTeacherData={feedback?.canvas_data ?? null}

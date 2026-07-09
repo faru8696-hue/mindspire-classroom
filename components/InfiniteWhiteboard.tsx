@@ -1,8 +1,16 @@
 'use client'
 
-import { useRef, useEffect, useState, useCallback } from 'react'
+import { useRef, useEffect, useState, useCallback, forwardRef, useImperativeHandle } from 'react'
 import { flushSync } from 'react-dom'
 import { createClient } from '@/lib/supabase/client'
+
+export interface InfiniteWhiteboardHandle {
+  // Rasterizes the current canvas exactly as displayed (both layers merged)
+  // to a PNG data URL — used to hand a snapshot to the AI grading/hint
+  // features without needing a server-side re-implementation of the same
+  // drawing logic.
+  getSnapshot: () => string | null
+}
 
 const imageCache = new Map<string, HTMLImageElement>()
 
@@ -75,15 +83,19 @@ function contentBounds(objs: DrawObject[]): { minX: number; minY: number; maxX: 
   return { minX, minY, maxX, maxY }
 }
 
-export default function InfiniteWhiteboard({
+function InfiniteWhiteboardInner({
   questionId, studentId, role,
   initialStudentData, initialTeacherData,
   onSaveStudent, onSaveTeacher,
-}: Props) {
+}: Props, ref: React.ForwardedRef<InfiniteWhiteboardHandle>) {
   const supabase = createClient()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  useImperativeHandle(ref, () => ({
+    getSnapshot: () => canvasRef.current?.toDataURL('image/png') ?? null,
+  }), [])
 
   // ── All canvas state lives in refs so render loop always sees latest ──
   // Each user owns their own layer; the other user's layer is read-only
@@ -1330,6 +1342,9 @@ export default function InfiniteWhiteboard({
     </div>
   )
 }
+
+const InfiniteWhiteboard = forwardRef(InfiniteWhiteboardInner)
+export default InfiniteWhiteboard
 
 // Quick-insert symbols for math and chemistry — a canvas whiteboard can't
 // render real LaTeX/formulas, so this is the pragmatic equivalent: unicode

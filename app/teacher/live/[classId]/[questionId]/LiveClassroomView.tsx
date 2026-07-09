@@ -638,6 +638,8 @@ export default function LiveClassroomView({
                   classId={classId}
                   questionId={questionId}
                   studentId={boardStudent.id}
+                  questionTitle={questionTitle}
+                  questionContent={questionContent}
                   submissionId={boardData.submissionId}
                   initialStudentData={boardData.studentData}
                   initialTeacherData={boardData.teacherData}
