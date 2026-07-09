@@ -16,9 +16,14 @@ interface Props {
   studentId: string
   currentUserId: string
   currentUserName: string
+  // Only needed on the student side, to stamp the instant teacher-alert
+  // broadcast with a real class_id — without it the teacher's notification
+  // bell links to `/teacher/live//<questionId>` (blank classId segment) and
+  // 404s the moment the teacher clicks "View" on that toast.
+  classId?: string
 }
 
-export default function Comments({ questionId, studentId, currentUserId, currentUserName }: Props) {
+export default function Comments({ questionId, studentId, currentUserId, currentUserName, classId }: Props) {
   const supabase = createClient()
   const [comments, setComments] = useState<Comment[]>([])
   const [message, setMessage] = useState('')
@@ -167,7 +172,7 @@ export default function Comments({ questionId, studentId, currentUserId, current
             type: 'comment',
             student_id: studentId,
             question_id: questionId,
-            class_id: '',
+            class_id: classId ?? '',
             created_at: now,
             read: false,
             student_name: currentUserName,

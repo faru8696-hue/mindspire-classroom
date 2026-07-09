@@ -141,6 +141,7 @@ export default async function QuestionPage({ params }: { params: Promise<{ class
         {/* Comments — 1/4 width */}
         <div>
           <Comments
+            classId={classId}
             questionId={questionId}
             studentId={studentId}
             currentUserId={studentId}

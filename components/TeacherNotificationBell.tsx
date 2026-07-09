@@ -215,8 +215,8 @@ export default function TeacherNotificationBell({ initialNotifications }: Props)
                         </div>
                         <div className="flex flex-col gap-1.5 flex-shrink-0 items-end">
                           <Link
-                            href={`/teacher/live/${n.class_id}/${n.question_id}`}
-                            onClick={() => { markRead(n.id); setOpen(false) }}
+                            href={`/teacher/live/${n.class_id}/${n.question_id}${n.type === 'comment' ? `?comment=${n.student_id}` : ''}`}
+                            onClick={() => { if (n.type !== 'comment') markRead(n.id); setOpen(false) }}
                             className="text-xs bg-purple-600 text-white px-2 py-1 rounded-lg hover:bg-purple-700 whitespace-nowrap"
                           >
                             View
@@ -253,7 +253,7 @@ export default function TeacherNotificationBell({ initialNotifications }: Props)
               </div>
               <div className="flex flex-col gap-1 flex-shrink-0 items-end">
                 <Link
-                  href={`/teacher/live/${t.class_id}/${t.question_id}`}
+                  href={`/teacher/live/${t.class_id}/${t.question_id}${t.type === 'comment' ? `?comment=${t.student_id}` : ''}`}
                   onClick={() => dismissToast(t.id)}
                   className="text-xs bg-white/20 hover:bg-white/30 px-2 py-1 rounded-lg whitespace-nowrap"
                 >
