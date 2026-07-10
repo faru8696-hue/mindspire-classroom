@@ -1,12 +1,15 @@
 // Thin wrapper around the Gemini API for checking a student's handwritten
 // board work. Uses the REST generateContent endpoint directly (no SDK
-// dependency) so it's just a fetch call — gemini-2.0-flash has a free tier
-// generous enough for classroom use.
+// dependency) so it's just a fetch call.
 //
 // Requires GEMINI_API_KEY in the environment. Get one at
 // https://aistudio.google.com/apikey
-
-const MODEL = 'gemini-2.0-flash'
+//
+// Uses the "-latest" alias rather than a pinned version — pinned model names
+// (e.g. gemini-2.0-flash) get retired from new API keys/projects over time
+// and start returning 404 "no longer available to new users". The alias
+// always resolves to whatever current fast model Google has live.
+const MODEL = 'gemini-flash-latest'
 
 interface GeminiPart {
   text?: string
