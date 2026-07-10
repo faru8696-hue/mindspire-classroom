@@ -16,29 +16,43 @@ interface GeminiPart {
   inline_data?: { mime_type: string; data: string }
 }
 
-async function callGemini(parts: GeminiPart[], responseSchema?: object): Promise<string> {
+// Google's shared free-tier model occasionally returns 503 "high demand" —
+// transient overload, not a real failure. Retry a couple times with a short
+// backoff before giving up, so students don't see a failure for something
+// that resolves itself a second later.
+async function postToGemini(body: Record<string, unknown>): Promise<string> {
   const apiKey = process.env.GEMINI_API_KEY
   if (!apiKey) throw new Error('GEMINI_API_KEY is not set')
 
+  const delays = [0, 800, 2000]
+  let lastError: Error | null = null
+  for (const delay of delays) {
+    if (delay) await new Promise(r => setTimeout(r, delay))
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${apiKey}`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
+    )
+    if (res.ok) {
+      const data = await res.json()
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text
+      if (!text) throw new Error('Gemini returned no content')
+      return text
+    }
+    const errText = await res.text()
+    lastError = new Error(`Gemini API error ${res.status}: ${errText}`)
+    if (res.status !== 503) throw lastError
+  }
+  throw lastError
+}
+
+async function callGemini(parts: GeminiPart[], responseSchema?: object): Promise<string> {
   const body: Record<string, unknown> = {
     contents: [{ parts }],
   }
   if (responseSchema) {
     body.generationConfig = { responseMimeType: 'application/json', responseSchema }
   }
-
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${apiKey}`,
-    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
-  )
-  if (!res.ok) {
-    const errText = await res.text()
-    throw new Error(`Gemini API error ${res.status}: ${errText}`)
-  }
-  const data = await res.json()
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text
-  if (!text) throw new Error('Gemini returned no content')
-  return text
+  return postToGemini(body)
 }
 
 function imagePart(dataUrl: string): GeminiPart {
@@ -91,28 +105,10 @@ export interface ChatTurn {
 }
 
 async function callGeminiChat(systemInstruction: string, contents: { role: string; parts: GeminiPart[] }[]): Promise<string> {
-  const apiKey = process.env.GEMINI_API_KEY
-  if (!apiKey) throw new Error('GEMINI_API_KEY is not set')
-
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        system_instruction: { parts: [{ text: systemInstruction }] },
-        contents,
-      }),
-    }
-  )
-  if (!res.ok) {
-    const errText = await res.text()
-    throw new Error(`Gemini API error ${res.status}: ${errText}`)
-  }
-  const data = await res.json()
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text
-  if (!text) throw new Error('Gemini returned no content')
-  return text
+  return postToGemini({
+    system_instruction: { parts: [{ text: systemInstruction }] },
+    contents,
+  })
 }
 
 // Runs a Socratic tutoring dialogue: the AI only ever asks the student a
