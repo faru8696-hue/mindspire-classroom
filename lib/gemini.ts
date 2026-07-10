@@ -20,14 +20,11 @@ interface GeminiPart {
 // transient overload, not a real failure. Retry a couple times with a short
 // backoff before giving up, so students don't see a failure for something
 // that resolves itself a second later.
-async function postToGemini(body: Record<string, unknown>): Promise<string> {
+async function postToGemini(body: Record<string, unknown>, thinkingBudget: number): Promise<string> {
   const apiKey = process.env.GEMINI_API_KEY
   if (!apiKey) throw new Error('GEMINI_API_KEY is not set')
 
-  // Reading a student's handwriting/diagrams accurately and reasoning about
-  // whether their chemistry is actually correct benefits from the model's
-  // "thinking" mode (dynamic budget) — worth the extra latency here.
-  const generationConfig = { ...(body.generationConfig as Record<string, unknown> | undefined), thinkingConfig: { thinkingBudget: -1 } }
+  const generationConfig = { ...(body.generationConfig as Record<string, unknown> | undefined), thinkingConfig: { thinkingBudget } }
   body = { ...body, generationConfig }
 
   const delays = [0, 800, 2000]
@@ -58,7 +55,10 @@ async function callGemini(parts: GeminiPart[], responseSchema?: object): Promise
   if (responseSchema) {
     body.generationConfig = { responseMimeType: 'application/json', responseSchema }
   }
-  return postToGemini(body)
+  // Reading handwriting/diagrams accurately and judging correctness
+  // benefits from the model's "thinking" mode (dynamic budget) — worth
+  // the extra cost/latency for grading specifically.
+  return postToGemini(body, -1)
 }
 
 function imagePart(dataUrl: string): GeminiPart {
@@ -111,10 +111,13 @@ export interface ChatTurn {
 }
 
 async function callGeminiChat(systemInstruction: string, contents: { role: string; parts: GeminiPart[] }[]): Promise<string> {
+  // Chat replies are short guiding questions, not deep grading judgments —
+  // thinking mode roughly doubles token cost here for no real benefit, so
+  // it's off for chat specifically (kept on for grading in callGemini).
   return postToGemini({
     system_instruction: { parts: [{ text: systemInstruction }] },
     contents,
-  })
+  }, 0)
 }
 
 // Runs a Socratic tutoring dialogue: the AI only ever asks the student a

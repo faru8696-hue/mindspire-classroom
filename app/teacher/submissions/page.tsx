@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import Comments from '@/components/Comments'
-import InfiniteWhiteboard from '@/components/InfiniteWhiteboard'
+import AiChatHistory from '@/components/AiChatHistory'
+import InfiniteWhiteboard, { InfiniteWhiteboardHandle } from '@/components/InfiniteWhiteboard'
 import ZoomableImage from '@/components/ZoomableImage'
 import { GRADE_LIST, GRADE_MAP } from '@/lib/grades'
 
@@ -35,6 +36,10 @@ export default function SubmissionsPage() {
   const [grading, setGrading] = useState(false)
   const [questionCollapsed, setQuestionCollapsed] = useState(false)
   const [currentUser, setCurrentUser] = useState<{ id: string; name: string } | null>(null)
+  const boardRef = useRef<InfiniteWhiteboardHandle>(null)
+  const [aiChecking, setAiChecking] = useState(false)
+  const [aiSuggestion, setAiSuggestion] = useState<{ grade: 'correct' | 'incorrect'; feedback: string } | null>(null)
+  const [aiError, setAiError] = useState<string | null>(null)
 
   useEffect(() => {
     load()
@@ -120,6 +125,45 @@ export default function SubmissionsPage() {
     setSelected(sub)
     setGrade(sub.feedback?.grade ?? null)
     setTextFeedback(sub.feedback?.text_feedback ?? '')
+    setAiSuggestion(null)
+    setAiError(null)
+  }
+
+  // AI reads a snapshot of the board and suggests a grade + feedback — a
+  // SUGGESTION only, same as the live-class AI check. Nothing is graded or
+  // sent to the student until the teacher clicks "Use this".
+  async function runAiCheck() {
+    if (!selected) return
+    const snapshot = boardRef.current?.getSnapshot()
+    if (!snapshot) return
+    setAiChecking(true)
+    setAiError(null)
+    setAiSuggestion(null)
+    try {
+      const res = await fetch('/api/ai-check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          questionTitle: selected.questions?.title,
+          questionContent: selected.questions?.content ?? null,
+          boardImageDataUrl: snapshot,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'AI check failed')
+      setAiSuggestion(data)
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : 'AI check failed')
+    } finally {
+      setAiChecking(false)
+    }
+  }
+
+  function acceptAiSuggestion() {
+    if (!aiSuggestion) return
+    setGrade(aiSuggestion.grade)
+    setTextFeedback(aiSuggestion.feedback)
+    setAiSuggestion(null)
   }
 
   // Keep `selected` in sync after a reload (e.g. grade saved) so its feedback is fresh
@@ -266,6 +310,13 @@ export default function SubmissionsPage() {
                   {remaining > 0 && (
                     <span className="text-xs font-semibold text-purple-700 bg-purple-50 px-2 py-1 rounded-full">{remaining} left to grade</span>
                   )}
+                  <button
+                    onClick={runAiCheck}
+                    disabled={aiChecking}
+                    className="text-sm font-semibold px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 disabled:opacity-50"
+                  >
+                    {aiChecking ? '🤖 Checking…' : '🤖 AI Check'}
+                  </button>
                   {/* Segmented control — one joined bar, flat fill only on the
                       selected option, instead of separate mismatched pills. */}
                   <div className="inline-flex rounded-lg border border-gray-200 overflow-hidden">
@@ -288,6 +339,31 @@ export default function SubmissionsPage() {
                   </button>
                 </div>
               </div>
+              {(aiChecking || aiSuggestion || aiError) && (
+                <div className="mt-2 pt-2 border-t border-gray-100 flex items-start gap-2">
+                  <span className="text-sm flex-shrink-0">🤖</span>
+                  <div className="flex-1 min-w-0">
+                    {aiChecking && <p className="text-sm text-indigo-600 italic">Reading the board…</p>}
+                    {aiError && <p className="text-sm text-red-600">{aiError}</p>}
+                    {aiSuggestion && (
+                      <>
+                        <p className={`text-sm font-bold ${aiSuggestion.grade === 'correct' ? 'text-green-700' : 'text-red-700'}`}>
+                          AI says: {aiSuggestion.grade === 'correct' ? '✓ Correct' : '✗ Incorrect'}
+                        </p>
+                        <p className="text-sm text-gray-700 mt-0.5">{aiSuggestion.feedback}</p>
+                        <div className="flex gap-2 mt-1.5">
+                          <button onClick={acceptAiSuggestion} className="text-xs font-bold px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white">
+                            Use this
+                          </button>
+                          <button onClick={() => setAiSuggestion(null)} className="text-xs font-medium px-2.5 py-1 rounded-lg bg-white border border-indigo-200 text-indigo-600 hover:bg-indigo-100">
+                            Dismiss
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Full question — so the teacher can read what was asked */}
@@ -317,6 +393,7 @@ export default function SubmissionsPage() {
             <div className="flex-1 overflow-hidden">
               <InfiniteWhiteboard
                 key={selected.id}
+                ref={boardRef}
                 questionId={selected.question_id}
                 studentId={selected.student_id}
                 role="teacher"
@@ -327,8 +404,8 @@ export default function SubmissionsPage() {
             </div>
           </div>
 
-          {/* Comments */}
-          <div className="w-64 flex-shrink-0">
+          {/* Comments + AI Faridah chat */}
+          <div className="w-64 flex-shrink-0 flex flex-col gap-3 overflow-y-auto">
             {currentUser && (
               <Comments
                 questionId={selected.question_id}
@@ -337,6 +414,10 @@ export default function SubmissionsPage() {
                 currentUserName={currentUser.name}
               />
             )}
+            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+              <p className="px-4 py-3 border-b border-gray-100 font-semibold text-gray-700 text-sm">🎓 AI Faridah Chat</p>
+              <AiChatHistory questionId={selected.question_id} studentId={selected.student_id} />
+            </div>
           </div>
         </div>
       ) : (
