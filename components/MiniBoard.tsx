@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
+import { parseObjs, contentBounds } from '@/lib/boardObjects'
 
 // Read-only renderer for a saved whiteboard snapshot (the JSON array of
 // strokes/shapes InfiniteWhiteboard produces) — draws it fit-to-frame onto a
@@ -8,55 +9,6 @@ import { useEffect, useRef } from 'react'
 // (previously these places tried to use canvas_data directly as an <img src>,
 // which silently fails since it's JSON, not an image URL — thumbnails looked
 // blank even when the student had real work saved).
-
-interface DrawObj {
-  id: string
-  type: string
-  x: number
-  y: number
-  width?: number
-  height?: number
-  rotation: number
-  data?: string
-  color?: string
-  fillColor?: string
-  shapeType?: string
-  strokeWidth?: number
-  fontSize?: number
-  fontFamily?: string
-  zIndex: number
-}
-
-function parseObjs(json: string | null): DrawObj[] {
-  if (!json) return []
-  try { return JSON.parse(json) as DrawObj[] } catch { return [] }
-}
-
-function contentBounds(objs: DrawObj[]) {
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
-  for (const o of objs) {
-    if (o.type === 'pen' || o.type === 'highlighter') {
-      let pts: { x: number; y: number }[] = []
-      try { pts = JSON.parse(o.data || '[]') } catch {}
-      for (const p of pts) {
-        const px = o.x + p.x, py = o.y + p.y
-        if (px < minX) minX = px
-        if (py < minY) minY = py
-        if (px > maxX) maxX = px
-        if (py > maxY) maxY = py
-      }
-    } else {
-      const w = o.width ?? (o.type === 'text' ? 160 : 100)
-      const h = o.height ?? (o.type === 'text' ? 28 : 100)
-      if (o.x < minX) minX = o.x
-      if (o.y < minY) minY = o.y
-      if (o.x + w > maxX) maxX = o.x + w
-      if (o.y + h > maxY) maxY = o.y + h
-    }
-  }
-  if (!isFinite(minX)) return null
-  return { minX, minY, maxX, maxY }
-}
 
 const imageCache = new Map<string, HTMLImageElement>()
 

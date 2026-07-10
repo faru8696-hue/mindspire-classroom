@@ -7,6 +7,7 @@ import MiniBoard from '@/components/MiniBoard'
 import Comments from '@/components/Comments'
 import TeacherWatchBoard from './[studentId]/TeacherWatchBoard'
 import { GRADE_LIST } from '@/lib/grades'
+import { renderBoardSnapshot } from '@/lib/renderBoardSnapshot'
 
 interface Student { id: string; full_name: string }
 interface Submission { id: string; student_id: string; canvas_data: string | null; text_answer: string | null; updated_at: string }
@@ -102,16 +103,15 @@ export default function LiveClassroomView({
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set())
   const [gradingId, setGradingId] = useState<string | null>(null)
   const audioRef = useRef<AudioContext | null>(null)
+  const [aiResults, setAiResults] = useState<Map<string, {
+    loading: boolean; grade?: 'correct' | 'incorrect'; feedback?: string; error?: string; approved?: boolean
+  }>>(new Map())
+  const [aiCheckingAll, setAiCheckingAll] = useState(false)
 
-  // Grade a student right from the grid — no need to open their individual
-  // board just to mark Correct/Wrong. Same service-role write + broadcast
-  // pattern the single-student live board uses, so both views (and the
-  // student's own toast) stay in sync regardless of which one the grade was
-  // given from.
-  async function gradeStudent(studentId: string, grade: string, e: React.MouseEvent) {
-    e.preventDefault()
-    e.stopPropagation()
-    const newGrade = grades.get(studentId) === grade ? null : grade
+  // Same service-role write + broadcast pattern the single-student live board
+  // uses, so both views (and the student's own toast) stay in sync regardless
+  // of which one the grade was given from.
+  async function applyGrade(studentId: string, newGrade: string | null) {
     setGradingId(studentId)
     setGrades(prev => {
       const next = new Map(prev)
@@ -136,6 +136,111 @@ export default function LiveClassroomView({
     } finally {
       setGradingId(null)
     }
+  }
+
+  // Grade a student right from the grid — no need to open their individual
+  // board just to mark Correct/Wrong.
+  async function gradeStudent(studentId: string, grade: string, e: React.MouseEvent) {
+    e.preventDefault()
+    e.stopPropagation()
+    const newGrade = grades.get(studentId) === grade ? null : grade
+    await applyGrade(studentId, newGrade)
+  }
+
+  // AI reads a rendered snapshot of the student's board (their strokes +
+  // any teacher annotation already on it) and suggests a grade + feedback —
+  // a SUGGESTION only. Nothing is graded or sent to the student until the
+  // teacher clicks Approve.
+  async function runAiCheck(studentId: string) {
+    const sub = submissions.get(studentId)
+    const teacherCanvas = feedbackCanvasByStudent.get(studentId) ?? null
+    setAiResults(prev => new Map(prev).set(studentId, { loading: true }))
+    try {
+      const snapshot = await renderBoardSnapshot(sub?.canvas_data ?? null, teacherCanvas)
+      if (!snapshot) {
+        setAiResults(prev => new Map(prev).set(studentId, { loading: false, error: 'No work on the board to check' }))
+        return
+      }
+      const res = await fetch('/api/ai-check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ questionTitle, questionContent, boardImageDataUrl: snapshot }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'AI check failed')
+      setAiResults(prev => new Map(prev).set(studentId, { loading: false, grade: data.grade, feedback: data.feedback }))
+    } catch (err) {
+      setAiResults(prev => new Map(prev).set(studentId, { loading: false, error: err instanceof Error ? err.message : 'AI check failed' }))
+    }
+  }
+
+  // Checks every student with work on the board, one at a time (gentler on
+  // the shared Gemini rate limit than firing them all at once).
+  async function runAiCheckAll() {
+    setAiCheckingAll(true)
+    try {
+      for (const student of filteredStudents) {
+        const sub = submissions.get(student.id)
+        const teacherCanvas = feedbackCanvasByStudent.get(student.id) ?? null
+        if (!sub?.canvas_data && !teacherCanvas) continue
+        await runAiCheck(student.id)
+      }
+    } finally {
+      setAiCheckingAll(false)
+    }
+  }
+
+  // Teacher approves the AI's suggestion — actually applies the grade AND
+  // sends the AI's feedback text to the student as a teacher comment, same
+  // as if the teacher had typed it themselves in the Comments panel.
+  async function approveAiSuggestion(student: Student) {
+    const result = aiResults.get(student.id)
+    if (!result?.grade) return
+    await applyGrade(student.id, result.grade)
+
+    if (result.feedback) {
+      const now = new Date().toISOString()
+      const { data: inserted, error } = await supabase.from('comments').insert({
+        question_id: questionId,
+        student_id: student.id,
+        author_id: teacherId,
+        message: result.feedback,
+      }).select('id').single()
+
+      if (!error && inserted) {
+        const payload = {
+          id: inserted.id, message: result.feedback, created_at: now,
+          author_id: teacherId, author: { full_name: teacherName, role: 'teacher' },
+        }
+        await supabase.channel(`comments:${questionId}:${student.id}`).send({
+          type: 'broadcast', event: 'new-comment', payload,
+        })
+        setCommentsByStudent(prev => {
+          const next = new Map(prev)
+          const list = next.get(student.id) ?? []
+          next.set(student.id, [...list, {
+            id: inserted.id, student_id: student.id, author_id: teacherId,
+            message: result.feedback!, created_at: now, authorRole: 'teacher',
+          }])
+          return next
+        })
+        fetch('/api/notify-student', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ studentId: student.id, questionId, type: 'comment', feedback: result.feedback }),
+        })
+      }
+    }
+
+    setAiResults(prev => new Map(prev).set(student.id, { ...result, approved: true }))
+  }
+
+  function dismissAiSuggestion(studentId: string) {
+    setAiResults(prev => {
+      const next = new Map(prev)
+      next.delete(studentId)
+      return next
+    })
   }
 
   async function toggleChecked(studentId: string, e: React.MouseEvent) {
@@ -415,6 +520,13 @@ export default function LiveClassroomView({
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={runAiCheckAll}
+            disabled={aiCheckingAll}
+            className="text-xs font-bold px-3 py-1.5 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50"
+          >
+            {aiCheckingAll ? '🤖 Checking…' : '🤖 AI Check All'}
+          </button>
           <span className="text-xs text-gray-600 bg-gray-100 px-3 py-1.5 rounded-full">
             {submittedCount}/{students.length} submitted
           </span>
@@ -480,6 +592,7 @@ export default function LiveClassroomView({
               const isChecked = checkedIds.has(student.id)
               const studentComments = commentsByStudent.get(student.id) ?? []
               const hasUnseenComment = studentComments.some(c => c.authorRole !== 'teacher') && !seenStudentIds.has(student.id)
+              const aiResult = aiResults.get(student.id)
 
               return (
                 <div key={student.id} className="relative">
@@ -525,6 +638,41 @@ export default function LiveClassroomView({
                         <span className="text-white text-xs font-bold bg-black/60 px-2 py-1 rounded-lg">Open board</span>
                       </div>
                     </div>
+                    {/* AI check suggestion — read-only until the teacher
+                        clicks Approve, which is what actually applies the
+                        grade and sends the feedback to the student. */}
+                    {aiResult && (
+                      <div className="px-3 py-2 bg-indigo-50 border-t border-indigo-100 flex items-start gap-2" onClick={e => e.stopPropagation()}>
+                        <span className="text-sm flex-shrink-0">🤖</span>
+                        <div className="flex-1 min-w-0">
+                          {aiResult.loading && <p className="text-xs text-indigo-600 italic">Reading the board…</p>}
+                          {aiResult.error && <p className="text-xs text-red-600">{aiResult.error}</p>}
+                          {aiResult.grade && !aiResult.approved && (
+                            <>
+                              <p className={`text-xs font-bold ${aiResult.grade === 'correct' ? 'text-green-700' : 'text-red-700'}`}>
+                                AI says: {aiResult.grade === 'correct' ? '✓ Correct' : '✗ Incorrect'}
+                              </p>
+                              <p className="text-xs text-indigo-900 mt-0.5">{aiResult.feedback}</p>
+                              <div className="flex gap-2 mt-1.5">
+                                <button
+                                  onClick={() => approveAiSuggestion(student)}
+                                  className="text-xs font-bold px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white"
+                                >
+                                  ✓ Approve &amp; send
+                                </button>
+                                <button
+                                  onClick={() => dismissAiSuggestion(student.id)}
+                                  className="text-xs font-medium px-2.5 py-1 rounded-lg bg-white border border-indigo-200 text-indigo-600 hover:bg-indigo-100"
+                                >
+                                  Dismiss
+                                </button>
+                              </div>
+                            </>
+                          )}
+                          {aiResult.approved && <p className="text-xs text-green-700 font-semibold">✓ Sent to student</p>}
+                        </div>
+                      </div>
+                    )}
                     <div className="px-3 py-2 bg-white border-t border-gray-100 flex items-center justify-between gap-2">
                       <div className="min-w-0">
                         <p className={`text-sm font-semibold truncate ${isChecked ? 'text-green-600 line-through' : 'text-gray-900'}`}>{student.full_name}</p>
@@ -533,6 +681,14 @@ export default function LiveClassroomView({
                       {/* Grade right from the grid — no need to open the
                           student's individual board just to mark it. */}
                       <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <button
+                          onClick={e => { e.stopPropagation(); runAiCheck(student.id) }}
+                          disabled={aiResult?.loading}
+                          title="AI check this board"
+                          className="flex-shrink-0 text-xs font-bold px-2 py-1.5 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 disabled:opacity-50"
+                        >
+                          🤖
+                        </button>
                         <div className="inline-flex rounded-lg border border-gray-200 overflow-hidden">
                           {GRADE_LIST.map((g, i) => (
                             <button
