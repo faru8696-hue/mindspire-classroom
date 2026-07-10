@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getCaller, createAdminClient } from '@/lib/supabase/server'
 import { chatSocratic, ChatTurn } from '@/lib/gemini'
 
+// Caps how many messages a single student can send AI Faridah per rolling
+// 24 hours (across all questions) — a cost guardrail, not a per-question
+// limit. Keeps worst-case spend for a whole class bounded and predictable.
+const DAILY_STUDENT_MESSAGE_LIMIT = 10
+
 // Student-facing Socratic tutor chat. The AI only ever asks guiding
 // questions toward the next step — see the system instruction in
 // lib/gemini.ts for the actual behavior rules. Every turn is persisted to
@@ -17,6 +22,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Missing questionId, studentId, questionTitle, or history' }, { status: 400 })
   }
 
+  const admin = await createAdminClient()
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+  const { count } = await admin
+    .from('ai_chat_messages')
+    .select('id', { count: 'exact', head: true })
+    .eq('student_id', studentId)
+    .eq('role', 'user')
+    .gte('created_at', since)
+
+  if ((count ?? 0) >= DAILY_STUDENT_MESSAGE_LIMIT) {
+    return NextResponse.json(
+      { error: `You've reached today's limit of ${DAILY_STUDENT_MESSAGE_LIMIT} AI Faridah messages. Ask your teacher for help, or try again tomorrow.` },
+      { status: 429 }
+    )
+  }
+
   try {
     const reply = await chatSocratic(
       questionTitle,
@@ -25,7 +46,6 @@ export async function POST(req: NextRequest) {
       history as ChatTurn[],
     )
 
-    const admin = await createAdminClient()
     const lastUserTurn = history[history.length - 1] as ChatTurn
     await admin.from('ai_chat_messages').insert([
       { question_id: questionId, student_id: studentId, role: 'user', message: lastUserTurn.text },

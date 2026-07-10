@@ -53,6 +53,19 @@ export default function StudentBoardPage({
   const [chatLoading, setChatLoading] = useState(false)
   const [chatError, setChatError] = useState<string | null>(null)
   const chatEndRef = useRef<HTMLDivElement>(null)
+  const DAILY_CHAT_LIMIT = 10
+  const [chatUsedToday, setChatUsedToday] = useState(0)
+
+  // Counts across ALL questions (the daily cap is global per student, not
+  // per-question — see app/api/ai-chat/route.ts), so the student sees the
+  // limit coming before they hit it instead of just getting blocked.
+  async function refreshChatUsage() {
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+    const { count } = await supabase.from('ai_chat_messages')
+      .select('id', { count: 'exact', head: true })
+      .eq('student_id', studentId).eq('role', 'user').gte('created_at', since)
+    setChatUsedToday(count ?? 0)
+  }
 
   function playTone(freq: number, duration = 0.4) {
     try {
@@ -199,6 +212,7 @@ export default function StudentBoardPage({
       .then(({ data }) => {
         if (data) setChatMessages(data.map(d => ({ role: d.role as 'user' | 'model', text: d.message })))
       })
+    refreshChatUsage()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [questionId, studentId])
 
@@ -228,6 +242,7 @@ export default function StudentBoardPage({
       setChatError(err instanceof Error ? err.message : 'AI Faridah failed to respond')
     } finally {
       setChatLoading(false)
+      refreshChatUsage()
     }
   }
 
@@ -308,7 +323,12 @@ export default function StudentBoardPage({
         <div className="flex-shrink-0 bg-indigo-50 border border-indigo-200 rounded-xl flex flex-col max-h-72">
           <div className="flex items-center justify-between px-4 py-2 border-b border-indigo-200">
             <span className="text-sm font-semibold text-indigo-900">🤖 AI Faridah</span>
-            <button onClick={() => setChatOpen(false)} className="text-indigo-400 hover:text-indigo-700 text-lg leading-none">×</button>
+            <div className="flex items-center gap-2">
+              <span className={`text-xs font-medium ${chatUsedToday >= DAILY_CHAT_LIMIT ? 'text-red-500' : 'text-indigo-400'}`}>
+                {chatUsedToday}/{DAILY_CHAT_LIMIT} today
+              </span>
+              <button onClick={() => setChatOpen(false)} className="text-indigo-400 hover:text-indigo-700 text-lg leading-none">×</button>
+            </div>
           </div>
           <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3 space-y-2">
             {chatMessages.length === 0 && !chatLoading && (
@@ -330,29 +350,35 @@ export default function StudentBoardPage({
           <div className="px-3 pt-2 border-t border-indigo-200">
             <button
               onClick={() => sendChatMessage('Can you recheck my board and tell me if I\'m on the right track?')}
-              disabled={chatLoading}
+              disabled={chatLoading || chatUsedToday >= DAILY_CHAT_LIMIT}
               className="text-xs font-semibold px-3 py-1.5 rounded-full bg-white border border-indigo-300 text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
             >
               🔄 Recheck my board
             </button>
           </div>
-          <div className="flex gap-2 px-3 py-2">
-            <input
-              value={chatInput}
-              onChange={e => setChatInput(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChatMessage() } }}
-              placeholder="Type your question or answer…"
-              disabled={chatLoading}
-              className="flex-1 rounded-lg border border-indigo-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 disabled:opacity-50"
-            />
-            <button
-              onClick={() => sendChatMessage()}
-              disabled={chatLoading || !chatInput.trim()}
-              className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold disabled:opacity-50"
-            >
-              Send
-            </button>
-          </div>
+          {chatUsedToday >= DAILY_CHAT_LIMIT ? (
+            <p className="px-4 py-3 text-xs text-red-600">
+              You've reached today's limit of {DAILY_CHAT_LIMIT} messages with AI Faridah. Ask your teacher for help, or come back tomorrow.
+            </p>
+          ) : (
+            <div className="flex gap-2 px-3 py-2">
+              <input
+                value={chatInput}
+                onChange={e => setChatInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChatMessage() } }}
+                placeholder="Type your question or answer…"
+                disabled={chatLoading}
+                className="flex-1 rounded-lg border border-indigo-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 disabled:opacity-50"
+              />
+              <button
+                onClick={() => sendChatMessage()}
+                disabled={chatLoading || !chatInput.trim()}
+                className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold disabled:opacity-50"
+              >
+                Send
+              </button>
+            </div>
+          )}
         </div>
       )}
 
