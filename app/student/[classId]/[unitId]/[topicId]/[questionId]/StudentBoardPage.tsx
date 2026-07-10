@@ -47,9 +47,12 @@ export default function StudentBoardPage({
   const channelRef = useRef(supabase.channel('teacher-alerts'))
   const audioRef = useRef<AudioContext | null>(null)
   const boardRef = useRef<InfiniteWhiteboardHandle>(null)
-  const [hintLoading, setHintLoading] = useState(false)
-  const [hint, setHint] = useState<string | null>(null)
-  const [hintError, setHintError] = useState<string | null>(null)
+  const [chatOpen, setChatOpen] = useState(false)
+  const [chatMessages, setChatMessages] = useState<{ role: 'user' | 'model'; text: string }[]>([])
+  const [chatInput, setChatInput] = useState('')
+  const [chatLoading, setChatLoading] = useState(false)
+  const [chatError, setChatError] = useState<string | null>(null)
+  const chatEndRef = useRef<HTMLDivElement>(null)
 
   function playTone(freq: number, duration = 0.4) {
     try {
@@ -186,28 +189,35 @@ export default function StudentBoardPage({
     setTimeout(() => setDoneSent(false), 5000)
   }
 
-  // AI reads whatever's currently on the board and gives one Socratic-style
-  // hint — a nudge toward the next step, never the final answer. Nothing
+  // Socratic AI tutor chat — never gives the final answer, only asks guiding
+  // questions toward the next step (see lib/gemini.ts for the rules). Nothing
   // here is graded or shown to the teacher; it's just for the student.
-  async function askForHint() {
-    const snapshot = boardRef.current?.getSnapshot()
-    if (!snapshot) return
-    setHintLoading(true)
-    setHintError(null)
-    setHint(null)
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [chatMessages, chatLoading])
+
+  async function sendChatMessage() {
+    const text = chatInput.trim()
+    if (!text || chatLoading) return
+    const snapshot = boardRef.current?.getSnapshot() ?? null
+    const newHistory = [...chatMessages, { role: 'user' as const, text }]
+    setChatMessages(newHistory)
+    setChatInput('')
+    setChatLoading(true)
+    setChatError(null)
     try {
-      const res = await fetch('/api/ai-hint', {
+      const res = await fetch('/api/ai-chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ questionTitle, questionContent, boardImageDataUrl: snapshot }),
+        body: JSON.stringify({ questionTitle, questionContent, boardImageDataUrl: snapshot, history: newHistory }),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Could not get a hint')
-      setHint(data.hint)
+      if (!res.ok) throw new Error(data.error || 'AI tutor failed to respond')
+      setChatMessages(h => [...h, { role: 'model', text: data.reply }])
     } catch (err) {
-      setHintError(err instanceof Error ? err.message : 'Could not get a hint')
+      setChatError(err instanceof Error ? err.message : 'AI tutor failed to respond')
     } finally {
-      setHintLoading(false)
+      setChatLoading(false)
     }
   }
 
@@ -281,28 +291,60 @@ export default function StudentBoardPage({
         />
       </div>
 
-      {/* AI hint panel — appears above the action buttons, dismissible,
-          never auto-shown. Purely a "help me get unstuck" tool; it never
-          grades anything or reaches the teacher. */}
-      {(hintLoading || hint || hintError) && (
-        <div className="flex-shrink-0 bg-indigo-50 border border-indigo-200 rounded-xl px-4 py-3 flex items-start gap-3">
-          <span className="text-lg flex-shrink-0">🤖</span>
-          <div className="flex-1 min-w-0">
-            {hintLoading && <p className="text-sm text-indigo-700">Thinking about your work…</p>}
-            {hintError && <p className="text-sm text-red-600">{hintError}</p>}
-            {hint && <p className="text-sm text-indigo-900">{hint}</p>}
+      {/* AI tutor chat — dismissible, never auto-shown. Purely a "help me
+          think it through" tool; it never grades anything or reaches the
+          teacher, and only ever asks guiding questions (see lib/gemini.ts). */}
+      {chatOpen && (
+        <div className="flex-shrink-0 bg-indigo-50 border border-indigo-200 rounded-xl flex flex-col max-h-72">
+          <div className="flex items-center justify-between px-4 py-2 border-b border-indigo-200">
+            <span className="text-sm font-semibold text-indigo-900">🤖 AI Tutor</span>
+            <button onClick={() => setChatOpen(false)} className="text-indigo-400 hover:text-indigo-700 text-lg leading-none">×</button>
           </div>
-          <button onClick={() => { setHint(null); setHintError(null) }} className="text-indigo-400 hover:text-indigo-700 text-lg leading-none flex-shrink-0">×</button>
+          <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3 space-y-2">
+            {chatMessages.length === 0 && !chatLoading && (
+              <p className="text-sm text-indigo-500 italic">Ask me anything about this question — I'll help you think it through step by step, without just giving you the answer.</p>
+            )}
+            {chatMessages.map((m, i) => (
+              <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <div className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm whitespace-pre-wrap ${
+                  m.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-white text-indigo-900 border border-indigo-200'
+                }`}>
+                  {m.text}
+                </div>
+              </div>
+            ))}
+            {chatLoading && <p className="text-sm text-indigo-500 italic">Thinking…</p>}
+            {chatError && <p className="text-sm text-red-600">{chatError}</p>}
+            <div ref={chatEndRef} />
+          </div>
+          <div className="flex gap-2 px-3 py-2 border-t border-indigo-200">
+            <input
+              value={chatInput}
+              onChange={e => setChatInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChatMessage() } }}
+              placeholder="Type your question or answer…"
+              disabled={chatLoading}
+              className="flex-1 rounded-lg border border-indigo-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 disabled:opacity-50"
+            />
+            <button
+              onClick={sendChatMessage}
+              disabled={chatLoading || !chatInput.trim()}
+              className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold disabled:opacity-50"
+            >
+              Send
+            </button>
+          </div>
         </div>
       )}
 
       <div className="flex gap-2 flex-shrink-0">
         <button
-          onClick={askForHint}
-          disabled={hintLoading}
-          className="flex-1 py-3 rounded-xl font-semibold text-sm transition-all border bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-300 disabled:opacity-50"
+          onClick={() => setChatOpen(o => !o)}
+          className={`flex-1 py-3 rounded-xl font-semibold text-sm transition-all border ${
+            chatOpen ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-300'
+          }`}
         >
-          {hintLoading ? '🤖 Thinking…' : '🤖 Ask for a Hint'}
+          🤖 Ask AI Tutor
         </button>
         <button
           onClick={handleHelp}

@@ -85,19 +85,69 @@ Decide whether the student's answer is fundamentally correct (the right final an
   return parsed
 }
 
-// Gives a student a Socratic hint based on their current work — guides them
-// toward the next step without just handing them the answer.
-export async function hintForStudentWork(
-  questionTitle: string, questionContent: string | null, boardImageDataUrl: string
+export interface ChatTurn {
+  role: 'user' | 'model'
+  text: string
+}
+
+async function callGeminiChat(systemInstruction: string, contents: { role: string; parts: GeminiPart[] }[]): Promise<string> {
+  const apiKey = process.env.GEMINI_API_KEY
+  if (!apiKey) throw new Error('GEMINI_API_KEY is not set')
+
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${apiKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        system_instruction: { parts: [{ text: systemInstruction }] },
+        contents,
+      }),
+    }
+  )
+  if (!res.ok) {
+    const errText = await res.text()
+    throw new Error(`Gemini API error ${res.status}: ${errText}`)
+  }
+  const data = await res.json()
+  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text
+  if (!text) throw new Error('Gemini returned no content')
+  return text
+}
+
+// Runs a Socratic tutoring dialogue: the AI only ever asks the student a
+// guiding question toward the next step. It affirms correct steps and moves
+// to the next question, nudges around wrong ones without stating the fix,
+// and only switches to a direct step-by-step explanation once the student
+// has clearly signaled they're stuck (e.g. said "I don't know" repeatedly).
+export async function chatSocratic(
+  questionTitle: string,
+  questionContent: string | null,
+  boardImageDataUrl: string | null,
+  history: ChatTurn[],
 ): Promise<string> {
-  const prompt = `You are a supportive chemistry teacher helping a student who is stuck on a problem.
+  const systemInstruction = `You are a warm, patient AP/Honors Chemistry tutor holding a one-on-one Socratic dialogue with a student about this question:
 
 Question: ${questionTitle}
 ${questionContent ? `Question details: ${questionContent}` : ''}
 
-The image shows the student's current handwritten work on their whiteboard (it may be blank, partial, or contain a mistake). Read it carefully.
+You can see a snapshot of the student's current whiteboard work attached to their latest message — read any handwriting, formulas, equations, or diagrams carefully.
 
-Give ONE short, encouraging hint (2-3 sentences max) that nudges them toward the next correct step. Do NOT give the final answer or do the work for them. If they've made a specific mistake, gently point them toward reconsidering that part without stating the fix outright. If the board is blank, suggest a concrete first step (e.g., what formula or concept to start with).`
+Rules for every reply:
+- NEVER state the final answer, and never do a calculation or reasoning step for them.
+- Reply with ONE short guiding question (1-2 sentences) that leads them to figure out the next step themselves.
+- If their last message/work shows they got a step right, briefly affirm it (just a few words), then ask the question that leads to the NEXT step.
+- If they're wrong or off track, don't just say "wrong" — ask a smaller, more specific question that helps them notice the issue on their own.
+- ONLY if the student has clearly signaled they're stuck or confused across multiple turns (e.g. they say "I don't know", "I'm lost", or ask you to just explain, more than once) should you switch to a clear, direct step-by-step explanation of the CURRENT step only — still stop short of the final answer beyond that step, and return to asking questions afterward.
+- Keep tone encouraging and concise, like a teacher standing beside them at a whiteboard. Plain text only, no markdown.`
 
-  return (await callGemini([{ text: prompt }])).trim()
+  const contents = history.map((turn, i) => {
+    const parts: GeminiPart[] = [{ text: turn.text }]
+    if (boardImageDataUrl && turn.role === 'user' && i === history.length - 1) {
+      parts.push(imagePart(boardImageDataUrl))
+    }
+    return { role: turn.role, parts }
+  })
+
+  return (await callGeminiChat(systemInstruction, contents)).trim()
 }
