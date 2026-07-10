@@ -70,6 +70,7 @@ export default function LiveClassroomView({
   // visible behind the dimmed backdrop and can be reached again with one click.
   const [boardStudent, setBoardStudent] = useState<Student | null>(null)
   const [boardFullscreen, setBoardFullscreen] = useState(false)
+  const [boardQuestionCollapsed, setBoardQuestionCollapsed] = useState(false)
   const [boardLoading, setBoardLoading] = useState(false)
   const [boardData, setBoardData] = useState<{
     submissionId: string | null; studentData: string | null; teacherData: string | null
@@ -830,23 +831,66 @@ export default function LiveClassroomView({
                 <button onClick={() => setBoardStudent(null)} className="text-gray-400 hover:text-white text-sm px-3 py-1 bg-gray-800 rounded-lg">Close</button>
               </div>
             </div>
-            <div className="flex-1 min-h-0">
+            <div className="flex-1 min-h-0 flex">
               {boardLoading || !boardData ? (
                 <div className="w-full h-full flex items-center justify-center text-gray-500 text-sm">Loading board…</div>
               ) : (
-                <TeacherWatchBoard
-                  key={boardStudent.id}
-                  classId={classId}
-                  questionId={questionId}
-                  studentId={boardStudent.id}
-                  questionTitle={questionTitle}
-                  questionContent={questionContent}
-                  submissionId={boardData.submissionId}
-                  initialStudentData={boardData.studentData}
-                  initialTeacherData={boardData.teacherData}
-                  initialGrade={boardData.grade}
-                  initialFeedbackText={boardData.feedbackText}
-                />
+                <>
+                  <div className="flex-1 min-w-0 flex flex-col">
+                    {/* Question — collapsible, same as the individual student
+                        watch page and the async submissions review page, so
+                        this popup (fullscreen or not) has the same context
+                        instead of just a bare canvas. */}
+                    <div className="bg-gray-900 border-b border-gray-700 px-4 py-2 flex-shrink-0 max-h-[35%] overflow-y-auto">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-bold uppercase tracking-wide text-gray-500">Question</span>
+                        <button onClick={() => setBoardQuestionCollapsed(c => !c)} className="text-xs text-gray-500 hover:text-gray-300 font-medium flex-shrink-0">
+                          {boardQuestionCollapsed ? '▼ expand' : '▲ collapse'}
+                        </button>
+                      </div>
+                      {!boardQuestionCollapsed && (
+                        <div className="mt-1.5">
+                          <p className="text-sm font-semibold text-white">{questionTitle}</p>
+                          {questionContent && <p className="text-xs text-gray-400 mt-1 whitespace-pre-wrap leading-relaxed">{questionContent}</p>}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex-1 min-h-0">
+                      <TeacherWatchBoard
+                        key={boardStudent.id}
+                        classId={classId}
+                        questionId={questionId}
+                        studentId={boardStudent.id}
+                        questionTitle={questionTitle}
+                        questionContent={questionContent}
+                        submissionId={boardData.submissionId}
+                        initialStudentData={boardData.studentData}
+                        initialTeacherData={boardData.teacherData}
+                        initialGrade={boardData.grade}
+                        initialFeedbackText={boardData.feedbackText}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Comments + AI Faridah chat — same sidebar the individual
+                      student watch page has, missing here before. */}
+                  <div className="w-72 flex-shrink-0 border-l border-gray-700 flex flex-col overflow-hidden">
+                    <div className="p-3 border-b border-gray-800 flex-shrink-0">
+                      <Comments
+                        questionId={questionId}
+                        studentId={boardStudent.id}
+                        currentUserId={teacherId}
+                        currentUserName={teacherName}
+                      />
+                    </div>
+                    <div className="flex-1 min-h-0 overflow-hidden flex flex-col p-3">
+                      <p className="text-xs text-gray-500 uppercase tracking-wide font-semibold mb-2 flex-shrink-0">🎓 AI Faridah Chat</p>
+                      <div className="flex-1 min-h-0 bg-gray-900 rounded-lg overflow-hidden">
+                        <AiChatHistory questionId={questionId} studentId={boardStudent.id} />
+                      </div>
+                    </div>
+                  </div>
+                </>
               )}
             </div>
           </div>
