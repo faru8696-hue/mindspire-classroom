@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import TeacherWatchBoard from './TeacherWatchBoard'
 import Comments from '@/components/Comments'
+import AiChatHistory from '@/components/AiChatHistory'
 import ZoomableImage from '@/components/ZoomableImage'
 import QuestionSwitcher from './QuestionSwitcher'
 
@@ -109,15 +110,22 @@ export default async function TeacherWatchPage({
           )}
 
           {/* Comments */}
-          <div className="flex-1 min-h-0 overflow-hidden flex flex-col p-4">
+          <div className="flex-shrink-0 overflow-hidden flex flex-col p-4 border-b border-gray-800">
             <p className="text-xs text-gray-500 uppercase tracking-wide font-semibold mb-2 flex-shrink-0">Comments</p>
-            <div className="flex-1 min-h-0">
-              <Comments
-                questionId={questionId}
-                studentId={studentId}
-                currentUserId={teacherProfile?.id ?? ''}
-                currentUserName={teacherProfile?.full_name ?? 'Teacher'}
-              />
+            <Comments
+              questionId={questionId}
+              studentId={studentId}
+              currentUserId={teacherProfile?.id ?? ''}
+              currentUserName={teacherProfile?.full_name ?? 'Teacher'}
+            />
+          </div>
+
+          {/* AI Faridah chat — read-only transcript of what the student
+              asked and how the AI guided them. */}
+          <div className="flex-1 min-h-0 overflow-hidden flex flex-col p-4">
+            <p className="text-xs text-gray-500 uppercase tracking-wide font-semibold mb-2 flex-shrink-0">🎓 AI Faridah Chat</p>
+            <div className="flex-1 min-h-0 bg-gray-800 rounded-lg overflow-hidden">
+              <AiChatHistory questionId={questionId} studentId={studentId} />
             </div>
           </div>
         </div>

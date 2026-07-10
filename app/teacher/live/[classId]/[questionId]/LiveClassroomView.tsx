@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 import MiniBoard from '@/components/MiniBoard'
 import Comments from '@/components/Comments'
+import AiChatHistory from '@/components/AiChatHistory'
 import TeacherWatchBoard from './[studentId]/TeacherWatchBoard'
 import { GRADE_LIST } from '@/lib/grades'
 import { renderBoardSnapshot } from '@/lib/renderBoardSnapshot'
@@ -107,6 +108,27 @@ export default function LiveClassroomView({
     loading: boolean; grade?: 'correct' | 'incorrect'; feedback?: string; error?: string; approved?: boolean
   }>>(new Map())
   const [aiCheckingAll, setAiCheckingAll] = useState(false)
+  const [aiChatCounts, setAiChatCounts] = useState<Record<string, number>>({})
+  const [aiChatStudent, setAiChatStudent] = useState<Student | null>(null)
+
+  // Poll AI Faridah chat counts so the grid can badge which students have
+  // used it — ai_chat_messages is RLS-gated to the student's own rows, same
+  // reasoning as the feedback-canvas poll above, so this can't be realtime
+  // via postgres_changes for a teacher client.
+  useEffect(() => {
+    let active = true
+    async function poll() {
+      try {
+        const res = await fetch(`/api/ai-chat-counts?questionId=${questionId}`)
+        if (!res.ok || !active) return
+        const { countByStudent } = await res.json() as { countByStudent: Record<string, number> }
+        setAiChatCounts(countByStudent)
+      } catch {}
+    }
+    poll()
+    const interval = setInterval(poll, 10000)
+    return () => { active = false; clearInterval(interval) }
+  }, [questionId])
 
   // Same service-role write + broadcast pattern the single-student live board
   // uses, so both views (and the student's own toast) stay in sync regardless
@@ -716,6 +738,15 @@ export default function LiveClassroomView({
                             <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white" />
                           )}
                         </button>
+                        <button
+                          onClick={e => { e.preventDefault(); e.stopPropagation(); setAiChatStudent(student) }}
+                          title={aiChatCounts[student.id] ? `${aiChatCounts[student.id]} AI Faridah messages` : 'No AI Faridah chat yet'}
+                          className={`flex-shrink-0 text-xs font-bold px-2 py-1.5 rounded-lg transition-colors ${
+                            aiChatCounts[student.id] ? 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100' : 'text-gray-300 hover:text-gray-500 hover:bg-gray-50'
+                          }`}
+                        >
+                          🎓{aiChatCounts[student.id] > 0 && <span className="ml-1">{aiChatCounts[student.id]}</span>}
+                        </button>
                         <Link
                           href={`/teacher/students/${student.id}`}
                           onClick={e => e.stopPropagation()}
@@ -762,6 +793,20 @@ export default function LiveClassroomView({
               currentUserId={teacherId}
               currentUserName={teacherName}
             />
+          </div>
+        </div>
+      )}
+
+      {/* AI Faridah chat transcript — read-only, so the teacher can see
+          exactly what a student asked and how the AI guided them. */}
+      {aiChatStudent && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => setAiChatStudent(null)}>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
+              <p className="font-semibold text-gray-900 text-sm">🎓 {aiChatStudent.full_name} — AI Faridah chat</p>
+              <button onClick={() => setAiChatStudent(null)} className="text-gray-400 hover:text-gray-700 text-lg leading-none">×</button>
+            </div>
+            <AiChatHistory questionId={questionId} studentId={aiChatStudent.id} />
           </div>
         </div>
       )}

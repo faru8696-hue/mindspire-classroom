@@ -189,9 +189,19 @@ export default function StudentBoardPage({
     setTimeout(() => setDoneSent(false), 5000)
   }
 
-  // Socratic AI tutor chat — never gives the final answer, only asks guiding
-  // questions toward the next step (see lib/gemini.ts for the rules). Nothing
-  // here is graded or shown to the teacher; it's just for the student.
+  // Socratic AI Faridah chat — never gives the final answer, only asks
+  // guiding questions toward the next step (see lib/gemini.ts for the rules).
+  // The transcript IS visible to the teacher (ai_chat_messages), so reload
+  // whatever's already there instead of starting blank every visit.
+  useEffect(() => {
+    supabase.from('ai_chat_messages').select('role, message')
+      .eq('question_id', questionId).eq('student_id', studentId).order('created_at')
+      .then(({ data }) => {
+        if (data) setChatMessages(data.map(d => ({ role: d.role as 'user' | 'model', text: d.message })))
+      })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [questionId, studentId])
+
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [chatMessages, chatLoading])
@@ -209,7 +219,7 @@ export default function StudentBoardPage({
       const res = await fetch('/api/ai-chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ questionTitle, questionContent, boardImageDataUrl: snapshot, history: newHistory }),
+        body: JSON.stringify({ questionId, studentId, questionTitle, questionContent, boardImageDataUrl: snapshot, history: newHistory }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'AI Faridah failed to respond')
