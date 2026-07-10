@@ -1,11 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCaller, createAdminClient } from '@/lib/supabase/server'
 import { chatSocratic, ChatTurn } from '@/lib/gemini'
-
-// Caps how many messages a single student can send AI Faridah per rolling
-// 24 hours (across all questions) — a cost guardrail, not a per-question
-// limit. Keeps worst-case spend for a whole class bounded and predictable.
-const DAILY_STUDENT_MESSAGE_LIMIT = 10
+import { DAILY_STUDENT_MESSAGE_LIMIT, hasReachedDailyLimit, windowStart } from '@/lib/chatLimit'
+import { isQuotaExceeded, isOverloaded } from '@/lib/geminiErrors'
 
 // Student-facing Socratic tutor chat. The AI only ever asks guiding
 // questions toward the next step — see the system instruction in
@@ -23,15 +20,14 @@ export async function POST(req: NextRequest) {
   }
 
   const admin = await createAdminClient()
-  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
   const { count } = await admin
     .from('ai_chat_messages')
     .select('id', { count: 'exact', head: true })
     .eq('student_id', studentId)
     .eq('role', 'user')
-    .gte('created_at', since)
+    .gte('created_at', windowStart(new Date()))
 
-  if ((count ?? 0) >= DAILY_STUDENT_MESSAGE_LIMIT) {
+  if (hasReachedDailyLimit(count ?? 0)) {
     return NextResponse.json(
       { error: `You've reached today's limit of ${DAILY_STUDENT_MESSAGE_LIMIT} AI Faridah messages. Ask your teacher for help, or try again tomorrow.` },
       { status: 429 }
@@ -56,12 +52,11 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     console.error('ai-chat error:', err)
     const message = err instanceof Error ? err.message : String(err)
-    if (message.includes('429') || message.includes('RESOURCE_EXHAUSTED')) {
+    if (isQuotaExceeded(message)) {
       return NextResponse.json({ error: 'AI Faridah: daily limit reached. Try again tomorrow.' }, { status: 429 })
     }
-    const unavailable = message.includes('503') || message.includes('UNAVAILABLE')
     return NextResponse.json(
-      { error: unavailable ? 'AI Faridah is not available right now. Please try again in a bit.' : `AI Faridah failed: ${message}` },
+      { error: isOverloaded(message) ? 'AI Faridah is not available right now. Please try again in a bit.' : `AI Faridah failed: ${message}` },
       { status: 503 }
     )
   }
