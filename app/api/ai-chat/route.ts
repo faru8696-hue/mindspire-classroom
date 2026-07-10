@@ -36,6 +36,9 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     console.error('ai-chat error:', err)
     const message = err instanceof Error ? err.message : String(err)
+    if (message.includes('429') || message.includes('RESOURCE_EXHAUSTED')) {
+      return NextResponse.json({ error: 'AI Faridah: daily limit reached. Try again tomorrow.' }, { status: 429 })
+    }
     const unavailable = message.includes('503') || message.includes('UNAVAILABLE')
     return NextResponse.json(
       { error: unavailable ? 'AI Faridah is not available right now. Please try again in a bit.' : `AI Faridah failed: ${message}` },

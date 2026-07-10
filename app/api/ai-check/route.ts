@@ -21,7 +21,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(result)
   } catch (err) {
     console.error('ai-check error:', err)
-    const detail = err instanceof Error ? err.message : String(err)
-    return NextResponse.json({ error: `AI check failed: ${detail}` }, { status: 500 })
+    const message = err instanceof Error ? err.message : String(err)
+    if (message.includes('429') || message.includes('RESOURCE_EXHAUSTED')) {
+      return NextResponse.json({ error: 'AI check: daily limit reached. Try again tomorrow.' }, { status: 429 })
+    }
+    const unavailable = message.includes('503') || message.includes('UNAVAILABLE')
+    return NextResponse.json(
+      { error: unavailable ? 'AI check is not available right now. Please try again in a bit.' : `AI check failed: ${message}` },
+      { status: 503 }
+    )
   }
 }
