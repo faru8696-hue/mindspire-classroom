@@ -26,7 +26,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ reply })
   } catch (err) {
     console.error('ai-chat error:', err)
-    const detail = err instanceof Error ? err.message : String(err)
-    return NextResponse.json({ error: `AI tutor failed: ${detail}` }, { status: 500 })
+    const message = err instanceof Error ? err.message : String(err)
+    const unavailable = message.includes('503') || message.includes('UNAVAILABLE')
+    return NextResponse.json(
+      { error: unavailable ? 'AI Tutor is not available right now. Please try again in a bit.' : `AI tutor failed: ${message}` },
+      { status: 503 }
+    )
   }
 }
