@@ -24,6 +24,12 @@ async function postToGemini(body: Record<string, unknown>): Promise<string> {
   const apiKey = process.env.GEMINI_API_KEY
   if (!apiKey) throw new Error('GEMINI_API_KEY is not set')
 
+  // These calls are short, conversational replies (a grade + a sentence, or
+  // one guiding question) — the model's "thinking" mode adds real latency
+  // for reasoning depth this task doesn't need, so turn it off.
+  const generationConfig = { ...(body.generationConfig as Record<string, unknown> | undefined), thinkingConfig: { thinkingBudget: 0 } }
+  body = { ...body, generationConfig }
+
   const delays = [0, 800, 2000]
   let lastError: Error | null = null
   for (const delay of delays) {
