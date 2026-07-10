@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
     const message = err instanceof Error ? err.message : String(err)
     const unavailable = message.includes('503') || message.includes('UNAVAILABLE')
     return NextResponse.json(
-      { error: unavailable ? 'AI Tutor is not available right now. Please try again in a bit.' : `AI tutor failed: ${message}` },
+      { error: unavailable ? 'AI Faridah is not available right now. Please try again in a bit.' : `AI Faridah failed: ${message}` },
       { status: 503 }
     )
   }

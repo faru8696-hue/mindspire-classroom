@@ -196,8 +196,8 @@ export default function StudentBoardPage({
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [chatMessages, chatLoading])
 
-  async function sendChatMessage() {
-    const text = chatInput.trim()
+  async function sendChatMessage(presetText?: string) {
+    const text = (presetText ?? chatInput).trim()
     if (!text || chatLoading) return
     const snapshot = boardRef.current?.getSnapshot() ?? null
     const newHistory = [...chatMessages, { role: 'user' as const, text }]
@@ -212,10 +212,10 @@ export default function StudentBoardPage({
         body: JSON.stringify({ questionTitle, questionContent, boardImageDataUrl: snapshot, history: newHistory }),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'AI tutor failed to respond')
+      if (!res.ok) throw new Error(data.error || 'AI Faridah failed to respond')
       setChatMessages(h => [...h, { role: 'model', text: data.reply }])
     } catch (err) {
-      setChatError(err instanceof Error ? err.message : 'AI tutor failed to respond')
+      setChatError(err instanceof Error ? err.message : 'AI Faridah failed to respond')
     } finally {
       setChatLoading(false)
     }
@@ -291,13 +291,13 @@ export default function StudentBoardPage({
         />
       </div>
 
-      {/* AI tutor chat — dismissible, never auto-shown. Purely a "help me
+      {/* AI Faridah chat — dismissible, never auto-shown. Purely a "help me
           think it through" tool; it never grades anything or reaches the
           teacher, and only ever asks guiding questions (see lib/gemini.ts). */}
       {chatOpen && (
         <div className="flex-shrink-0 bg-indigo-50 border border-indigo-200 rounded-xl flex flex-col max-h-72">
           <div className="flex items-center justify-between px-4 py-2 border-b border-indigo-200">
-            <span className="text-sm font-semibold text-indigo-900">🤖 AI Tutor</span>
+            <span className="text-sm font-semibold text-indigo-900">🤖 AI Faridah</span>
             <button onClick={() => setChatOpen(false)} className="text-indigo-400 hover:text-indigo-700 text-lg leading-none">×</button>
           </div>
           <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3 space-y-2">
@@ -317,7 +317,16 @@ export default function StudentBoardPage({
             {chatError && <p className="text-sm text-red-600">{chatError}</p>}
             <div ref={chatEndRef} />
           </div>
-          <div className="flex gap-2 px-3 py-2 border-t border-indigo-200">
+          <div className="px-3 pt-2 border-t border-indigo-200">
+            <button
+              onClick={() => sendChatMessage('Can you recheck my board and tell me if I\'m on the right track?')}
+              disabled={chatLoading}
+              className="text-xs font-semibold px-3 py-1.5 rounded-full bg-white border border-indigo-300 text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
+            >
+              🔄 Recheck my board
+            </button>
+          </div>
+          <div className="flex gap-2 px-3 py-2">
             <input
               value={chatInput}
               onChange={e => setChatInput(e.target.value)}
@@ -327,7 +336,7 @@ export default function StudentBoardPage({
               className="flex-1 rounded-lg border border-indigo-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 disabled:opacity-50"
             />
             <button
-              onClick={sendChatMessage}
+              onClick={() => sendChatMessage()}
               disabled={chatLoading || !chatInput.trim()}
               className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold disabled:opacity-50"
             >
@@ -344,7 +353,7 @@ export default function StudentBoardPage({
             chatOpen ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-300'
           }`}
         >
-          🤖 Ask AI Tutor
+          🤖 Ask AI Faridah
         </button>
         <button
           onClick={handleHelp}
