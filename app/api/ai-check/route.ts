@@ -21,6 +21,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(result)
   } catch (err) {
     console.error('ai-check error:', err)
-    return NextResponse.json({ error: 'AI check failed. Try again, or grade manually.' }, { status: 500 })
+    const detail = err instanceof Error ? err.message : String(err)
+    return NextResponse.json({ error: `AI check failed: ${detail}` }, { status: 500 })
   }
 }

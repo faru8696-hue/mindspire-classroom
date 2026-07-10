@@ -21,6 +21,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ hint })
   } catch (err) {
     console.error('ai-hint error:', err)
-    return NextResponse.json({ error: 'AI hint failed. Try again in a moment.' }, { status: 500 })
+    const detail = err instanceof Error ? err.message : String(err)
+    return NextResponse.json({ error: `AI hint failed: ${detail}` }, { status: 500 })
   }
 }
