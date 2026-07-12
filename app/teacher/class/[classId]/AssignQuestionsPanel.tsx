@@ -28,6 +28,7 @@ export default function AssignQuestionsPanel({ classId, units, topics, questions
     () => new Map(initialAssignments.filter(a => a.due_date).map(a => [a.question_id, a.due_date!]))
   )
   const [saving, setSaving] = useState<string | null>(null)
+  const [savingTopic, setSavingTopic] = useState<string | null>(null)
   const [openUnit, setOpenUnit] = useState<string | null>(units[0]?.id ?? null)
 
   async function toggle(questionId: string) {
@@ -53,6 +54,37 @@ export default function AssignQuestionsPanel({ classId, units, topics, questions
       }
     }
     setSaving(null)
+  }
+
+  // Assigns every not-yet-assigned question in a topic in one go, instead
+  // of flipping each toggle individually — "make this topic live" for the
+  // whole class at once. Already-assigned questions in the topic are left
+  // alone (their due dates aren't touched).
+  async function assignTopic(topicId: string) {
+    const topicQs = questions.filter(q => q.topic_id === topicId && !assignments.has(q.id))
+    if (topicQs.length === 0) return
+    setSavingTopic(topicId)
+    try {
+      const { error } = await supabase.from('assignments').insert(
+        topicQs.map(q => ({ question_id: q.id, class_id: classId, due_date: null }))
+      )
+      if (!error) {
+        setAssignments(prev => {
+          const m = new Map(prev)
+          for (const q of topicQs) m.set(q.id, null)
+          return m
+        })
+        for (const q of topicQs) {
+          fetch('/api/notify-assignment', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ classId, questionId: q.id, questionTitle: q.title }),
+          })
+        }
+      }
+    } finally {
+      setSavingTopic(null)
+    }
   }
 
   async function updateDueDate(questionId: string, date: string) {
@@ -100,10 +132,20 @@ export default function AssignQuestionsPanel({ classId, units, topics, questions
                 {unitTopics.map(topic => {
                   const topicQs = questions.filter(q => q.topic_id === topic.id)
                   if (topicQs.length === 0) return null
+                  const topicUnassignedCount = topicQs.filter(q => !assignments.has(q.id)).length
                   return (
                     <div key={topic.id}>
-                      <div className="px-5 py-2 bg-gray-50 border-b border-gray-100">
+                      <div className="px-5 py-2 bg-gray-50 border-b border-gray-100 flex items-center justify-between gap-2">
                         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{topic.title}</p>
+                        {topicUnassignedCount > 0 && (
+                          <button
+                            onClick={() => assignTopic(topic.id)}
+                            disabled={savingTopic === topic.id}
+                            className="text-xs font-semibold bg-purple-600 hover:bg-purple-700 text-white px-2.5 py-1 rounded-lg flex-shrink-0 disabled:opacity-50"
+                          >
+                            {savingTopic === topic.id ? 'Assigning…' : `▶ Make all ${topicUnassignedCount} live`}
+                          </button>
+                        )}
                       </div>
                       {topicQs.map(q => {
                         const isAssigned = assignments.has(q.id)
