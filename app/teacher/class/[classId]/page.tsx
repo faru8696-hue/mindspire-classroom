@@ -2,6 +2,7 @@ import { createAdminClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import AssignQuestionsPanel from './AssignQuestionsPanel'
+import SendRemindersPanel from './SendRemindersPanel'
 
 export default async function ClassDetailPage({ params }: { params: Promise<{ classId: string }> }) {
   const { classId } = await params
@@ -70,6 +71,8 @@ export default async function ClassDetailPage({ params }: { params: Promise<{ cl
           </Link>
         </div>
       </div>
+
+      <SendRemindersPanel classId={classId} />
 
       {/* Units → Topics → Questions: browse, assign, and jump straight into
           watching every student's live board for a question. This replaces
