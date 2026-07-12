@@ -30,6 +30,18 @@ export default function AssignQuestionsPanel({ classId, units, topics, questions
   const [saving, setSaving] = useState<string | null>(null)
   const [savingTopic, setSavingTopic] = useState<string | null>(null)
   const [openUnit, setOpenUnit] = useState<string | null>(units[0]?.id ?? null)
+  // Topics default collapsed — with some topics now holding 30-40 questions,
+  // showing every question in every topic at once made the page an endless
+  // scroll. Collapsed by default, one click expands just the topic you want.
+  const [openTopics, setOpenTopics] = useState<Set<string>>(new Set())
+
+  function toggleTopic(topicId: string) {
+    setOpenTopics(prev => {
+      const next = new Set(prev)
+      next.has(topicId) ? next.delete(topicId) : next.add(topicId)
+      return next
+    })
+  }
 
   async function toggle(questionId: string) {
     const isAssigned = assignments.has(questionId)
@@ -133,10 +145,19 @@ export default function AssignQuestionsPanel({ classId, units, topics, questions
                   const topicQs = questions.filter(q => q.topic_id === topic.id)
                   if (topicQs.length === 0) return null
                   const topicUnassignedCount = topicQs.filter(q => !assignments.has(q.id)).length
+                  const topicAssignedCount = topicQs.length - topicUnassignedCount
+                  const isTopicOpen = openTopics.has(topic.id)
                   return (
                     <div key={topic.id}>
                       <div className="px-5 py-2 bg-gray-50 border-b border-gray-100 flex items-center justify-between gap-2">
-                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{topic.title}</p>
+                        <button
+                          onClick={() => toggleTopic(topic.id)}
+                          className="flex items-center gap-2 flex-1 min-w-0 text-left"
+                        >
+                          <span className="text-gray-400 text-xs flex-shrink-0">{isTopicOpen ? '▼' : '▶'}</span>
+                          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide truncate">{topic.title}</p>
+                          <span className="text-xs text-gray-400 flex-shrink-0">({topicAssignedCount}/{topicQs.length})</span>
+                        </button>
                         {topicUnassignedCount > 0 && (
                           <button
                             onClick={() => assignTopic(topic.id)}
@@ -147,7 +168,7 @@ export default function AssignQuestionsPanel({ classId, units, topics, questions
                           </button>
                         )}
                       </div>
-                      {topicQs.map(q => {
+                      {isTopicOpen && topicQs.map(q => {
                         const isAssigned = assignments.has(q.id)
                         const isSaving = saving === q.id
                         const dueDate = dueDateInputs.get(q.id) ?? ''
