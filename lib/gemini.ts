@@ -68,6 +68,17 @@ function imagePart(dataUrl: string): GeminiPart {
   return { inline_data: { mime_type: match[1], data: match[2] } }
 }
 
+// Question diagrams are stored as public Storage URLs, not data URLs — this
+// fetches one and re-encodes it the same way imagePart expects.
+async function imagePartFromUrl(url: string): Promise<GeminiPart> {
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`Could not fetch question image: ${res.status}`)
+  const mimeType = res.headers.get('content-type') || 'image/png'
+  const buf = await res.arrayBuffer()
+  const data = Buffer.from(buf).toString('base64')
+  return { inline_data: { mime_type: mimeType, data } }
+}
+
 export interface AiGradeResult {
   grade: 'correct' | 'incorrect'
   feedback: string
@@ -156,4 +167,39 @@ Rules for every reply:
   })
 
   return (await callGeminiChat(systemInstruction, contents)).trim()
+}
+
+// Generates a teacher-facing answer key/solution for a question — an AI
+// DRAFT the teacher compares against while grading, always visible and
+// editable so any error can be fixed rather than trusted blindly. Uses full
+// thinking mode (same as grading) since accuracy is the entire point here.
+export async function generateAnswerKey(
+  questionTitle: string,
+  questionContent: string | null,
+  imageUrl: string | null,
+): Promise<string> {
+  const prompt = `You are an expert AP/Honors Chemistry teacher writing an internal answer key for another teacher to reference while grading — the student never sees this text.
+
+Question: ${questionTitle}
+${questionContent ? `Question details: ${questionContent}` : ''}
+${imageUrl ? 'A diagram/graph/data table image is attached — read it carefully, it may contain values needed for the solution.' : ''}
+
+Write the complete, correct solution:
+- Show the full step-by-step work a teacher would check against (formulas used, values substituted, unit conversions, dimensional analysis).
+- State the final answer clearly at the end, with correct units and significant figures for a numeric answer, or the correct conceptual answer if it's not a calculation.
+- Double-check your arithmetic, units, and chemistry (e.g. valences, stoichiometric ratios, sig figs) before finalizing — this is used as the reference for grading, so it must be correct.
+- Be concise but complete: enough shown to verify correctness at a glance, not padded with restating the question.
+- Plain text only, no markdown formatting (no **, no #, no bullet characters — use line breaks and "Step 1:", "Step 2:" style labels instead).`
+
+  const parts: GeminiPart[] = [{ text: prompt }]
+  if (imageUrl) {
+    try {
+      parts.push(await imagePartFromUrl(imageUrl))
+    } catch {
+      // If the image can't be fetched, still generate from title/content
+      // alone rather than failing the whole request.
+    }
+  }
+
+  return (await callGemini(parts)).trim()
 }

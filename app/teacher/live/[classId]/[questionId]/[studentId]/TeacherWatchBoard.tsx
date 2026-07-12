@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import InfiniteWhiteboard, { InfiniteWhiteboardHandle } from '@/components/InfiniteWhiteboard'
+import AnswerKeyPanel from '@/components/AnswerKeyPanel'
 import { GRADE_LIST } from '@/lib/grades'
 
 interface Props {
@@ -11,6 +12,7 @@ interface Props {
   studentId: string
   questionTitle: string
   questionContent: string | null
+  answerKey?: string | null
   submissionId: string | null
   initialStudentData: string | null
   initialTeacherData: string | null
@@ -30,7 +32,7 @@ function extractImages(canvasJson: string | null): string[] {
 }
 
 export default function TeacherWatchBoard({
-  classId, questionId, studentId, questionTitle, questionContent,
+  classId, questionId, studentId, questionTitle, questionContent, answerKey,
   initialStudentData, initialTeacherData,
   initialGrade, initialFeedbackText,
 }: Props) {
@@ -249,6 +251,11 @@ export default function TeacherWatchBoard({
           )}
         </div>
       )}
+
+      {/* Answer key — compare against student work while grading */}
+      <div className="px-4 pt-2 flex-shrink-0 bg-gray-900">
+        <AnswerKeyPanel questionId={questionId} initialAnswerKey={answerKey ?? null} dark />
+      </div>
 
       {/* Grading bar */}
       <div className="bg-gray-900 border-t border-gray-700 px-4 py-3 flex-shrink-0">

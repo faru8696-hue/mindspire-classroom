@@ -15,7 +15,7 @@ export default async function LiveClassroomPage({
 
   const [{ data: cls }, { data: question }, { data: enrollments }, { data: units }] = await Promise.all([
     supabase.from('classes').select('title').eq('id', classId).single(),
-    supabase.from('questions').select('title, content').eq('id', questionId).single(),
+    supabase.from('questions').select('title, content, answer_key').eq('id', questionId).single(),
     supabase.from('class_enrollments').select('student_id').eq('class_id', classId),
     supabase.from('units').select('id, title, order_index').eq('class_id', classId),
   ])
@@ -103,6 +103,7 @@ export default async function LiveClassroomPage({
       classTitle={cls.title}
       questionTitle={question.title}
       questionContent={question.content}
+      answerKey={question.answer_key}
       allQuestions={allQuestions}
       questionHelp={questionHelp}
       students={students ?? []}

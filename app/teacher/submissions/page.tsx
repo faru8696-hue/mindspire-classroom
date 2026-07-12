@@ -8,6 +8,7 @@ import InfiniteWhiteboard, { InfiniteWhiteboardHandle } from '@/components/Infin
 import ZoomableImage from '@/components/ZoomableImage'
 import { GRADE_LIST, GRADE_MAP } from '@/lib/grades'
 import { renderBoardSnapshot } from '@/lib/renderBoardSnapshot'
+import AnswerKeyPanel from '@/components/AnswerKeyPanel'
 
 interface Submission {
   id: string
@@ -17,7 +18,7 @@ interface Submission {
   student_id: string
   question_id: string
   profiles: { full_name: string; email: string } | null
-  questions: { title: string; content: string | null; image_url: string | null; topics: { title: string; units: { title: string; classes: { id: string; title: string } | null } | null } | null } | null
+  questions: { title: string; content: string | null; image_url: string | null; answer_key: string | null; topics: { title: string; units: { title: string; classes: { id: string; title: string } | null } | null } | null } | null
   feedback: { id: string; text_feedback: string | null; canvas_data: string | null; grade: string | null } | null
 }
 
@@ -64,7 +65,7 @@ export default function SubmissionsPage() {
   async function load() {
     const { data } = await supabase
       .from('submissions')
-      .select(`*, profiles(full_name, email), questions(title, content, image_url, topics(title, units(title, classes(id, title)))), feedback(id, text_feedback, canvas_data, grade)`)
+      .select(`*, profiles(full_name, email), questions(title, content, image_url, answer_key, topics(title, units(title, classes(id, title)))), feedback(id, text_feedback, canvas_data, grade)`)
       .order('updated_at', { ascending: false })
     setSubmissions((data as unknown as Submission[]) ?? [])
   }
@@ -476,6 +477,8 @@ export default function SubmissionsPage() {
                 </div>
               )}
             </div>
+
+            <AnswerKeyPanel questionId={selected.question_id} initialAnswerKey={selected.questions?.answer_key ?? null} />
 
             <div className="flex-1 overflow-hidden">
               <InfiniteWhiteboard

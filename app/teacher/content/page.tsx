@@ -3,11 +3,12 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
+import AnswerKeyPanel from '@/components/AnswerKeyPanel'
 
 interface Class { id: string; title: string; order_index: number }
 interface Unit { id: string; title: string; class_id: string }
 interface Topic { id: string; title: string; unit_id: string }
-interface Question { id: string; title: string; content: string | null; image_url: string | null; topic_id: string }
+interface Question { id: string; title: string; content: string | null; image_url: string | null; answer_key: string | null; topic_id: string }
 
 export default function ContentPage() {
   const supabase = createClient()
@@ -191,12 +192,15 @@ export default function ContentPage() {
               </div>
               <div className="space-y-1 overflow-y-auto">
                 {questions.map(q => (
-                  <div key={q.id} className="flex items-start justify-between p-2 rounded-lg hover:bg-purple-50 group">
-                    <div className="flex-1 min-w-0">
-                      <Link href={`/teacher/questions/${q.id}`} className="text-sm font-medium text-gray-800 hover:text-purple-700 truncate block">{q.title}</Link>
-                      {q.content && <p className="text-xs text-gray-400 truncate">{q.content}</p>}
+                  <div key={q.id} className="p-2 rounded-lg hover:bg-purple-50 group space-y-1.5">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1 min-w-0">
+                        <Link href={`/teacher/questions/${q.id}`} className="text-sm font-medium text-gray-800 hover:text-purple-700 truncate block">{q.title}</Link>
+                        {q.content && <p className="text-xs text-gray-400 truncate">{q.content}</p>}
+                      </div>
+                      <button onClick={() => del('questions', q.id, () => loadQuestions(selectedTopic!))} className="text-gray-400 hover:text-red-500 text-xs ml-2 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">✕</button>
                     </div>
-                    <button onClick={() => del('questions', q.id, () => loadQuestions(selectedTopic!))} className="text-gray-400 hover:text-red-500 text-xs ml-2 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">✕</button>
+                    <AnswerKeyPanel questionId={q.id} initialAnswerKey={q.answer_key} />
                   </div>
                 ))}
               </div>

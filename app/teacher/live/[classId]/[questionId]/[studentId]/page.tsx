@@ -18,7 +18,7 @@ export default async function TeacherWatchPage({
   const supabase = await createAdminClient()
 
   const [{ data: question }, { data: student }, { data: cls }, { data: submission }] = await Promise.all([
-    supabase.from('questions').select('id, title, content, image_url').eq('id', questionId).single(),
+    supabase.from('questions').select('id, title, content, image_url, answer_key').eq('id', questionId).single(),
     supabase.from('profiles').select('id, full_name').eq('id', studentId).single(),
     supabase.from('classes').select('title').eq('id', classId).single(),
     supabase.from('submissions')
@@ -159,6 +159,7 @@ export default async function TeacherWatchPage({
               studentId={studentId}
               questionTitle={question.title}
               questionContent={question.content ?? null}
+              answerKey={question.answer_key ?? null}
               submissionId={submission?.id ?? null}
               initialStudentData={submission?.canvas_data ?? null}
               initialTeacherData={feedback?.canvas_data ?? null}

@@ -6,6 +6,7 @@ import Link from 'next/link'
 import MiniBoard from '@/components/MiniBoard'
 import Comments from '@/components/Comments'
 import AiChatHistory from '@/components/AiChatHistory'
+import AnswerKeyPanel from '@/components/AnswerKeyPanel'
 import TeacherWatchBoard from './[studentId]/TeacherWatchBoard'
 import { GRADE_LIST, GRADE_MAP } from '@/lib/grades'
 import { renderBoardSnapshot } from '@/lib/renderBoardSnapshot'
@@ -24,6 +25,7 @@ interface Props {
   classTitle: string
   questionTitle: string
   questionContent: string | null
+  answerKey: string | null
   allQuestions: ClassQuestion[]
   questionHelp: Record<string, number>
   students: Student[]
@@ -48,7 +50,7 @@ const GRADE_COLOR: Record<string, string> = {
 type Filter = 'all' | 'help' | 'done' | 'submitted' | 'unchecked'
 
 export default function LiveClassroomView({
-  classId, questionId, classTitle, questionTitle, questionContent,
+  classId, questionId, classTitle, questionTitle, questionContent, answerKey,
   allQuestions, questionHelp, students, initialSubmissions, initialFeedbacks, initialNotifications,
   initialComments, teacherId, teacherName, autoOpenCommentsStudentId,
 }: Props) {
@@ -596,6 +598,13 @@ export default function LiveClassroomView({
         ))}
       </div>
 
+      {/* Answer key — sits above the tiles (not inside the scroll area) so
+          it's visible the whole time the teacher is comparing student work
+          against it, not just at the top of a scroll. */}
+      <div className="bg-white border-b border-gray-200 px-5 py-2 flex-shrink-0">
+        <AnswerKeyPanel questionId={questionId} initialAnswerKey={answerKey} />
+      </div>
+
       {/* Grid — big enough tiles to actually read a student's handwriting at
           a glance, so a teacher can watch everyone at once (a few per row,
           scroll for the rest) instead of tiny unreadable thumbnails. */}
@@ -868,6 +877,7 @@ export default function LiveClassroomView({
                         studentId={boardStudent.id}
                         questionTitle={questionTitle}
                         questionContent={questionContent}
+                        answerKey={answerKey}
                         submissionId={boardData.submissionId}
                         initialStudentData={boardData.studentData}
                         initialTeacherData={boardData.teacherData}
