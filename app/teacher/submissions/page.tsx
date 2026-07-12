@@ -7,6 +7,7 @@ import AiChatHistory from '@/components/AiChatHistory'
 import InfiniteWhiteboard, { InfiniteWhiteboardHandle } from '@/components/InfiniteWhiteboard'
 import ZoomableImage from '@/components/ZoomableImage'
 import { GRADE_LIST, GRADE_MAP } from '@/lib/grades'
+import { renderBoardSnapshot } from '@/lib/renderBoardSnapshot'
 
 interface Submission {
   id: string
@@ -40,6 +41,16 @@ export default function SubmissionsPage() {
   const [aiChecking, setAiChecking] = useState(false)
   const [aiSuggestion, setAiSuggestion] = useState<{ grade: 'correct' | 'incorrect'; feedback: string } | null>(null)
   const [aiError, setAiError] = useState<string | null>(null)
+
+  // Class-wide "AI Check All Pending" — checks every ungraded submission
+  // across the whole class in one click, instead of the teacher opening
+  // each question/student individually. Keyed by submission id so results
+  // persist as the teacher reviews them one at a time.
+  const [classAiResults, setClassAiResults] = useState<Map<string, {
+    loading: boolean; grade?: 'correct' | 'incorrect'; feedback?: string; error?: string; approved?: boolean
+  }>>(new Map())
+  const [classAiRunning, setClassAiRunning] = useState(false)
+  const [classAiProgress, setClassAiProgress] = useState<{ done: number; total: number } | null>(null)
 
   useEffect(() => {
     load()
@@ -166,6 +177,71 @@ export default function SubmissionsPage() {
     setAiSuggestion(null)
   }
 
+  // Checks every ungraded submission in the current class, one at a time
+  // (gentler on the shared Gemini rate limit than firing them all at once).
+  // Each is a SUGGESTION only — nothing is graded/sent until the teacher
+  // reviews the results panel and clicks Approve on that one.
+  async function runClassAiCheckAll() {
+    const pending = activeClass?.subs.filter(s => !s.feedback?.grade) ?? []
+    if (pending.length === 0) return
+    setClassAiRunning(true)
+    setClassAiResults(new Map())
+    setClassAiProgress({ done: 0, total: pending.length })
+    for (let i = 0; i < pending.length; i++) {
+      const sub = pending[i]
+      setClassAiResults(prev => new Map(prev).set(sub.id, { loading: true }))
+      try {
+        const snapshot = await renderBoardSnapshot(sub.canvas_data, sub.feedback?.canvas_data ?? null)
+        if (!snapshot) {
+          setClassAiResults(prev => new Map(prev).set(sub.id, { loading: false, error: 'No work on the board to check' }))
+        } else {
+          const res = await fetch('/api/ai-check', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              questionTitle: sub.questions?.title,
+              questionContent: sub.questions?.content ?? null,
+              boardImageDataUrl: snapshot,
+            }),
+          })
+          const data = await res.json()
+          if (!res.ok) throw new Error(data.error || 'AI check failed')
+          setClassAiResults(prev => new Map(prev).set(sub.id, { loading: false, grade: data.grade, feedback: data.feedback }))
+        }
+      } catch (err) {
+        setClassAiResults(prev => new Map(prev).set(sub.id, { loading: false, error: err instanceof Error ? err.message : 'AI check failed' }))
+      }
+      setClassAiProgress({ done: i + 1, total: pending.length })
+    }
+    setClassAiRunning(false)
+  }
+
+  async function approveClassAiResult(sub: Submission) {
+    const result = classAiResults.get(sub.id)
+    if (!result?.grade) return
+    await fetch('/api/grade', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        studentId: sub.student_id,
+        questionId: sub.question_id,
+        grade: result.grade,
+        textFeedback: result.feedback || null,
+        notify: true,
+      }),
+    })
+    setClassAiResults(prev => new Map(prev).set(sub.id, { ...result, approved: true }))
+    load()
+  }
+
+  function dismissClassAiResult(subId: string) {
+    setClassAiResults(prev => {
+      const next = new Map(prev)
+      next.delete(subId)
+      return next
+    })
+  }
+
   // Keep `selected` in sync after a reload (e.g. grade saved) so its feedback is fresh
   useEffect(() => {
     if (!selected) return
@@ -254,7 +330,18 @@ export default function SubmissionsPage() {
         {/* Level: Students */}
         {classId && !studentId && (
           <div>
-            <p className="px-3 pt-3 pb-1 text-xs font-bold text-gray-400 uppercase tracking-wide">Students ({students.length})</p>
+            <div className="px-3 pt-3 pb-2">
+              <button
+                onClick={runClassAiCheckAll}
+                disabled={classAiRunning || ungraded(activeClass?.subs ?? []) === 0}
+                className="w-full text-xs font-bold px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50"
+              >
+                {classAiRunning
+                  ? `🤖 Checking ${classAiProgress?.done ?? 0}/${classAiProgress?.total ?? 0}…`
+                  : `🤖 AI Check All Pending (${ungraded(activeClass?.subs ?? [])})`}
+              </button>
+            </div>
+            <p className="px-3 pb-1 text-xs font-bold text-gray-400 uppercase tracking-wide">Students ({students.length})</p>
             {students.map(st => (
               <button key={st.id} onClick={() => openStudent(st.id)}
                 className="w-full text-left p-3 hover:bg-purple-50 transition-colors border-b border-gray-50 flex items-center justify-between">
@@ -419,6 +506,53 @@ export default function SubmissionsPage() {
               <AiChatHistory questionId={selected.question_id} studentId={selected.student_id} />
             </div>
           </div>
+        </div>
+      ) : classAiResults.size > 0 ? (
+        <div className="flex-1 bg-white rounded-xl border border-gray-200 overflow-y-auto p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="font-bold text-purple-900">🤖 AI Check results — {activeClass?.title}</p>
+            <button onClick={() => setClassAiResults(new Map())} className="text-xs text-gray-400 hover:text-gray-700">Clear all</button>
+          </div>
+          {(activeClass?.subs ?? [])
+            .filter(sub => classAiResults.has(sub.id))
+            .map(sub => {
+              const result = classAiResults.get(sub.id)!
+              return (
+                <div key={sub.id} className="border border-gray-200 rounded-lg p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-gray-900 truncate">{sub.profiles?.full_name} — {sub.questions?.title}</p>
+                      <p className="text-xs text-gray-400 truncate">{sub.questions?.topics?.title}</p>
+                    </div>
+                    <button
+                      onClick={() => { setClassId(classOf(sub)?.id ?? 'other'); setStudentId(sub.student_id); openWork(sub) }}
+                      className="flex-shrink-0 text-xs text-purple-600 hover:underline whitespace-nowrap"
+                    >
+                      Open board →
+                    </button>
+                  </div>
+                  {result.loading && <p className="text-sm text-indigo-600 italic mt-1.5">Reading the board…</p>}
+                  {result.error && <p className="text-sm text-red-600 mt-1.5">{result.error}</p>}
+                  {result.grade && !result.approved && (
+                    <div className="mt-1.5">
+                      <p className={`text-sm font-bold ${result.grade === 'correct' ? 'text-green-700' : 'text-red-700'}`}>
+                        AI says: {result.grade === 'correct' ? '✓ Correct' : '✗ Incorrect'}
+                      </p>
+                      <p className="text-sm text-gray-700 mt-0.5">{result.feedback}</p>
+                      <div className="flex gap-2 mt-1.5">
+                        <button onClick={() => approveClassAiResult(sub)} className="text-xs font-bold px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white">
+                          ✓ Approve &amp; send
+                        </button>
+                        <button onClick={() => dismissClassAiResult(sub.id)} className="text-xs font-medium px-2.5 py-1 rounded-lg bg-white border border-indigo-200 text-indigo-600 hover:bg-indigo-100">
+                          Dismiss
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  {result.approved && <p className="text-sm text-green-700 font-semibold mt-1.5">✓ Grade sent to student</p>}
+                </div>
+              )
+            })}
         </div>
       ) : (
         <div className="flex-1 bg-white rounded-xl border border-gray-200 flex items-center justify-center">
