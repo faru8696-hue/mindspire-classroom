@@ -70,7 +70,7 @@ export default function AnswerKeyPanel({
       </button>
       {error && <p className="px-3 pb-2 text-xs text-red-500">{error}</p>}
       {open && answerKey && (
-        <div className="px-3 pb-3">
+        <div className="px-3 pb-3 max-h-72 overflow-y-auto">
           {editing ? (
             <>
               <textarea
@@ -91,7 +91,7 @@ export default function AnswerKeyPanel({
           ) : (
             <>
               <p className="text-xs whitespace-pre-wrap leading-relaxed">{answerKey}</p>
-              <div className="flex gap-2 mt-1.5">
+              <div className="flex gap-2 mt-1.5 sticky bottom-0 bg-inherit pt-1">
                 <button onClick={() => setEditing(true)} className="text-xs font-medium px-2.5 py-1 rounded-lg bg-white border border-emerald-200 text-emerald-700 hover:bg-emerald-100">
                   ✏️ Edit
                 </button>
