@@ -6,8 +6,13 @@ const TYPE_META: Record<ActivityEvent['type'], { icon: string; verb: string; cls
   submitted:  { icon: '✓',  verb: 'marked done on',           cls: 'bg-purple-50 border-purple-200' },
   comment:    { icon: '💬', verb: 'commented on',              cls: 'bg-blue-50 border-blue-200' },
   assignment: { icon: '📋', verb: 'was assigned',              cls: 'bg-gray-50 border-gray-200' },
-  graded:     { icon: '📝', verb: 'was graded on',             cls: 'bg-green-50 border-green-200' },
   ai_chat:    { icon: '🎓', verb: 'asked AI Faridah about',    cls: 'bg-indigo-50 border-indigo-200' },
+}
+
+const GRADE_BADGE_CLS: Record<string, string> = {
+  correct: 'bg-green-100 text-green-700',
+  incomplete: 'bg-gray-200 text-gray-700',
+  ungraded: 'bg-amber-100 text-amber-700',
 }
 
 function timeAgo(iso: string): string {
@@ -48,7 +53,7 @@ export default function ActivityFeed({ events, showStudentName = true }: { event
                   </>
                 ) : ' a question'}
                 {e.grade && (
-                  <span className={`ml-2 text-xs font-bold px-1.5 py-0.5 rounded-full ${e.grade === 'correct' ? 'bg-green-100 text-green-700' : e.grade === 'incomplete' ? 'bg-gray-200 text-gray-700' : 'bg-red-100 text-red-700'}`}>
+                  <span className={`ml-2 text-xs font-bold px-1.5 py-0.5 rounded-full ${GRADE_BADGE_CLS[e.grade] ?? 'bg-red-100 text-red-700'}`}>
                     {e.grade}
                   </span>
                 )}
