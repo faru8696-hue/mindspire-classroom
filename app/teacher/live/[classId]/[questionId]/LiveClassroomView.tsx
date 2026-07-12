@@ -57,6 +57,7 @@ export default function LiveClassroomView({
   const supabase = createClient()
   const [helpByQuestion, setHelpByQuestion] = useState<Record<string, number>>(questionHelp)
   const [switcherOpen, setSwitcherOpen] = useState(false)
+  const [questionCollapsed, setQuestionCollapsed] = useState(false)
   const [commentsByStudent, setCommentsByStudent] = useState<Map<string, CommentRow[]>>(() => {
     const m = new Map<string, CommentRow[]>()
     for (const c of initialComments) m.set(c.student_id, [...(m.get(c.student_id) ?? []), c])
@@ -490,23 +491,33 @@ export default function LiveClassroomView({
         <div className="flex items-center gap-4 min-w-0">
           <Link href="/teacher" className="text-gray-500 hover:text-gray-900 text-sm flex-shrink-0">← Back</Link>
           <div className="relative min-w-0">
-            <button
-              onClick={() => setSwitcherOpen(o => !o)}
-              className="flex items-center gap-2 text-left hover:bg-gray-100 rounded-lg px-2 py-1 -mx-2 transition-colors"
-            >
-              <div className="min-w-0">
-                <p className="text-[10px] uppercase tracking-widest text-gray-400 leading-none mb-0.5">{classTitle}</p>
-                <h1 className="font-bold text-gray-900 text-sm flex items-center gap-1.5 truncate">
-                  <span className="truncate">{questionTitle}</span>
-                  <span className="text-gray-400 flex-shrink-0">▾</span>
-                </h1>
-              </div>
-              {otherHelp > 0 && (
-                <span className="flex-shrink-0 bg-amber-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
-                  🙋 {otherHelp} on other Qs
-                </span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setSwitcherOpen(o => !o)}
+                className="flex items-center gap-2 text-left hover:bg-gray-100 rounded-lg px-2 py-1 -mx-2 transition-colors"
+              >
+                <div className="min-w-0">
+                  <p className="text-[10px] uppercase tracking-widest text-gray-400 leading-none mb-0.5">{classTitle}</p>
+                  <h1 className="font-bold text-gray-900 text-sm flex items-center gap-1.5 truncate">
+                    <span className="truncate">{questionTitle}</span>
+                    <span className="text-gray-400 flex-shrink-0">▾</span>
+                  </h1>
+                </div>
+                {otherHelp > 0 && (
+                  <span className="flex-shrink-0 bg-amber-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+                    🙋 {otherHelp} on other Qs
+                  </span>
+                )}
+              </button>
+              {questionContent && (
+                <button
+                  onClick={() => setQuestionCollapsed(c => !c)}
+                  className="flex-shrink-0 text-xs text-gray-400 hover:text-gray-700 font-medium px-2 py-1 rounded-lg hover:bg-gray-100"
+                >
+                  {questionCollapsed ? '▼ show details' : '▲ hide details'}
+                </button>
               )}
-            </button>
+            </div>
 
             {switcherOpen && (
               <>
@@ -541,7 +552,9 @@ export default function LiveClassroomView({
                 </div>
               </>
             )}
-            {questionContent && <p className="text-xs text-gray-500 whitespace-pre-wrap leading-relaxed max-w-2xl">{questionContent}</p>}
+            {questionContent && !questionCollapsed && (
+              <p className="text-xs text-gray-500 whitespace-pre-wrap leading-relaxed max-w-2xl max-h-40 overflow-y-auto">{questionContent}</p>
+            )}
           </div>
         </div>
 
