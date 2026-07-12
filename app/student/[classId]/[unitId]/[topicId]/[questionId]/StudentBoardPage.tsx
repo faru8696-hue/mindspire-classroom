@@ -26,6 +26,7 @@ const GRADE_LABEL: Record<string, { text: string; cls: string }> = {
   partial:   { text: '~ Partially correct', cls: 'bg-amber-400 text-white' },
   discussed: { text: '💬 Discussed',        cls: 'bg-blue-500 text-white' },
   incorrect: { text: '✗ Incorrect',         cls: 'bg-red-500 text-white' },
+  incomplete: { text: '… Incomplete',       cls: 'bg-gray-500 text-white' },
   needsmore: { text: '🔄 Needs more work',  cls: 'bg-purple-600 text-white' },
   comment:    { text: '💬 Teacher comment',   cls: 'bg-blue-600 text-white' },
   assignment: { text: '📋 New question!',    cls: 'bg-purple-600 text-white' },
@@ -281,16 +282,22 @@ export default function StudentBoardPage({
         )}
       </div>
 
-      {/* Big persistent Correct/Wrong badge — the toast above only flashes
-          for 8 seconds, which left students unsure whether they'd been
-          graded once it disappeared, especially mid-drawing. This stays on
-          the board the whole time so there's never any doubt. */}
+      {/* Big persistent Correct/Wrong/Incomplete badge — the toast above only
+          flashes for 8 seconds, which left students unsure whether they'd
+          been graded once it disappeared, especially mid-drawing. This stays
+          on the board the whole time so there's never any doubt. */}
       {grade && (
         <div className={`absolute top-4 right-4 z-40 flex items-center gap-2 px-5 py-3 rounded-2xl shadow-xl border-4 ${
-          GRADE_MAP[grade]?.value === 'correct' ? 'bg-green-500 border-green-300 text-white' : 'bg-red-500 border-red-300 text-white'
+          GRADE_MAP[grade]?.value === 'correct' ? 'bg-green-500 border-green-300 text-white' :
+          GRADE_MAP[grade]?.value === 'incomplete' ? 'bg-gray-500 border-gray-300 text-white' :
+          'bg-red-500 border-red-300 text-white'
         }`}>
-          <span className="text-4xl leading-none">{GRADE_MAP[grade]?.value === 'correct' ? '✓' : '✗'}</span>
-          <span className="text-xl font-black uppercase tracking-wide">{GRADE_MAP[grade]?.value === 'correct' ? 'Correct' : 'Wrong'}</span>
+          <span className="text-4xl leading-none">
+            {GRADE_MAP[grade]?.value === 'correct' ? '✓' : GRADE_MAP[grade]?.value === 'incomplete' ? '…' : '✗'}
+          </span>
+          <span className="text-xl font-black uppercase tracking-wide">
+            {GRADE_MAP[grade]?.value === 'correct' ? 'Correct' : GRADE_MAP[grade]?.value === 'incomplete' ? 'Incomplete' : 'Wrong'}
+          </span>
         </div>
       )}
 

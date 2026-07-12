@@ -7,7 +7,7 @@ import MiniBoard from '@/components/MiniBoard'
 import Comments from '@/components/Comments'
 import AiChatHistory from '@/components/AiChatHistory'
 import TeacherWatchBoard from './[studentId]/TeacherWatchBoard'
-import { GRADE_LIST } from '@/lib/grades'
+import { GRADE_LIST, GRADE_MAP } from '@/lib/grades'
 import { renderBoardSnapshot } from '@/lib/renderBoardSnapshot'
 
 interface Student { id: string; full_name: string }
@@ -37,11 +37,12 @@ interface Props {
 }
 
 const GRADE_COLOR: Record<string, string> = {
-  correct:   'border-green-400',
-  partial:   'border-amber-400',
-  incorrect: 'border-red-400',
-  discussed: 'border-blue-400',
-  needsmore: 'border-purple-400',
+  correct:    'border-green-400',
+  partial:    'border-amber-400',
+  incorrect:  'border-red-400',
+  incomplete: 'border-gray-400',
+  discussed:  'border-blue-400',
+  needsmore:  'border-purple-400',
 }
 
 type Filter = 'all' | 'help' | 'done' | 'submitted' | 'unchecked'
@@ -650,7 +651,11 @@ export default function LiveClassroomView({
                       )}
                       {needsHelp && <span className="absolute top-2 right-2 bg-amber-500 text-white text-xs px-2 py-1 rounded-full font-bold">🙋 Help</span>}
                       {isDone && !needsHelp && <span className="absolute top-2 right-2 bg-purple-600 text-white text-xs px-2 py-1 rounded-full font-bold">✓ Done</span>}
-                      {grade && <span className={`absolute bottom-2 left-2 text-xs px-2 py-1 rounded-full font-bold text-white ${grade === 'correct' ? 'bg-green-500' : grade === 'incorrect' ? 'bg-red-500' : grade === 'discussed' ? 'bg-blue-500' : grade === 'needsmore' ? 'bg-purple-500' : 'bg-amber-500'}`}>{grade === 'correct' ? '✓ Correct' : grade === 'incorrect' ? '✗ Wrong' : grade === 'discussed' ? '💬 Discussed' : grade === 'needsmore' ? '½ Partial' : grade}</span>}
+                      {grade && (
+                        <span className={`absolute bottom-2 left-2 text-xs px-2 py-1 rounded-full font-bold text-white ${GRADE_MAP[grade]?.solid ?? 'bg-amber-500'}`}>
+                          {GRADE_MAP[grade] ? `${GRADE_MAP[grade].icon} ${GRADE_MAP[grade].label}` : grade}
+                        </span>
+                      )}
                       {/* Checked overlay */}
                       {isChecked && (
                         <div className="absolute inset-0 bg-green-50/70 flex items-center justify-center">

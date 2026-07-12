@@ -15,7 +15,7 @@ describe('grade vocabulary', () => {
     }
   })
 
-  it('only correct/incorrect are offered as selectable grades (the intentional simplification)', () => {
-    expect(GRADE_LIST.map(g => g.value).sort()).toEqual(['correct', 'incorrect'])
+  it('only correct/incorrect/incomplete are offered as selectable grades (the intentional simplification)', () => {
+    expect(GRADE_LIST.map(g => g.value).sort()).toEqual(['correct', 'incomplete', 'incorrect'])
   })
 })
