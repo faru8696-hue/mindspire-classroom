@@ -3,6 +3,11 @@ import { getCaller, createAdminClient } from '@/lib/supabase/server'
 import { sendEmail } from '@/lib/email'
 import { buildClassDigests } from '@/lib/reminders'
 
+// Resend's rate limit is 10 requests/second. sendEmail() already retries on
+// 429, but pacing sends slightly slower than the limit avoids hitting it in
+// the first place for a large class.
+const SEND_PACING_MS = 150
+
 function digestHtml(studentName: string, className: string, digest: { subtopics: { topicTitle: string; unitTitle: string; remaining: number }[]; dueSoon: { questionTitle: string; dueDate: string }[] }): string {
   const subtopicRows = digest.subtopics
     .map(s => `<li><strong>${s.topicTitle}</strong>${s.unitTitle ? ` (${s.unitTitle})` : ''} — ${s.remaining} question${s.remaining > 1 ? 's' : ''} remaining</li>`)
@@ -67,6 +72,7 @@ export async function POST(req: NextRequest) {
           failed++
           errors.push(err instanceof Error ? err.message : String(err))
         }
+        await new Promise(r => setTimeout(r, SEND_PACING_MS))
       }
     } else if (type === 'digest') {
       const digests = await buildClassDigests(classId)
@@ -84,6 +90,7 @@ export async function POST(req: NextRequest) {
           failed++
           errors.push(err instanceof Error ? err.message : String(err))
         }
+        await new Promise(r => setTimeout(r, SEND_PACING_MS))
       }
     } else {
       return NextResponse.json({ error: 'Unknown type' }, { status: 400 })
