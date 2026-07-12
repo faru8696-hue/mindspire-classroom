@@ -541,7 +541,7 @@ export default function LiveClassroomView({
                 </div>
               </>
             )}
-            {questionContent && <p className="text-xs text-gray-500 truncate max-w-xl">{questionContent}</p>}
+            {questionContent && <p className="text-xs text-gray-500 whitespace-pre-wrap leading-relaxed max-w-2xl">{questionContent}</p>}
           </div>
         </div>
 
