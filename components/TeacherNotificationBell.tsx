@@ -17,16 +17,48 @@ interface Notification {
   message?: string | null
 }
 
+interface ClassItem { id: string; title: string }
+
 interface Props {
   initialNotifications: Notification[]
+  classes: ClassItem[]
 }
 
-export default function TeacherNotificationBell({ initialNotifications }: Props) {
+const MUTED_CLASSES_KEY = 'mindspire_muted_class_ids'
+
+export default function TeacherNotificationBell({ initialNotifications, classes }: Props) {
   const supabase = createClient()
   const [notifications, setNotifications] = useState<Notification[]>(initialNotifications)
   const [open, setOpen] = useState(false)
+  const [mutePanelOpen, setMutePanelOpen] = useState(false)
   const [toasts, setToasts] = useState<Notification[]>([])
   const audioRef = useRef<AudioContext | null>(null)
+
+  // Which classes' toast/beep are silenced right now — e.g. muting Honors
+  // Chem while live-teaching AP Chem so those students' help/comment/done
+  // pings don't interrupt. Notifications from a muted class still land in
+  // the bell/badge count for later, they just don't pop up or beep.
+  // Persisted to localStorage (not a DB setting) so it's per-browser/session
+  // and never accidentally affects what other devices see.
+  const [mutedClassIds, setMutedClassIds] = useState<Set<string>>(new Set())
+  const mutedRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(MUTED_CLASSES_KEY) ?? '[]') as string[]
+      setMutedClassIds(new Set(saved))
+      mutedRef.current = new Set(saved)
+    } catch {}
+  }, [])
+
+  function toggleMute(classId: string) {
+    setMutedClassIds(prev => {
+      const next = new Set(prev)
+      next.has(classId) ? next.delete(classId) : next.add(classId)
+      mutedRef.current = next
+      try { localStorage.setItem(MUTED_CLASSES_KEY, JSON.stringify([...next])) } catch {}
+      return next
+    })
+  }
   // Track which notification ids we've already surfaced, so the broadcast
   // (instant) and the polling fallback (durable) never double-toast.
   const seenRef = useRef<Set<string>>(new Set(initialNotifications.map(n => n.id)))
@@ -86,7 +118,13 @@ export default function TeacherNotificationBell({ initialNotifications }: Props)
   }
 
   // Surface a fresh notification: toast + beep + relay to any live view.
+  // Skipped entirely for a muted class — it still lands in `notifications`
+  // (so the bell badge/list has it for later), it just doesn't interrupt.
+  // Reads mutedRef (not the mutedClassIds state) because this function is
+  // captured once inside the mount-time broadcast/poll effects below and
+  // never recreated, so only a ref stays current across mute toggles.
   function surface(n: Notification) {
+    if (mutedRef.current.has(n.class_id)) return
     setToasts(prev => [{ ...n }, ...prev].slice(0, 5))
     playBeep()
     setTimeout(() => dismissToast(n.id), 12000)
@@ -149,7 +187,47 @@ export default function TeacherNotificationBell({ initialNotifications }: Props)
   }
 
   return (
-    <div className="relative">
+    <div className="relative flex items-center gap-1">
+      {/* Mute — silence toast/beep for specific classes (e.g. muting Honors
+          Chem's pings while live-teaching AP Chem). Muted notifications
+          still land in the bell for later, they just don't interrupt. */}
+      <div className="relative">
+        <button
+          onClick={() => setMutePanelOpen(o => !o)}
+          title="Mute notifications from a class"
+          className={`relative p-2 rounded-full hover:bg-purple-800 transition-colors ${mutedClassIds.size > 0 ? 'text-amber-300' : ''}`}
+        >
+          <span className="text-xl">{mutedClassIds.size > 0 ? '🔕' : '🔊'}</span>
+        </button>
+        {mutePanelOpen && (
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setMutePanelOpen(false)} />
+            <div className="absolute right-0 top-10 w-64 bg-white rounded-xl shadow-xl border border-gray-200 z-50 overflow-hidden">
+              <p className="px-4 py-2.5 border-b border-gray-100 text-xs font-bold text-gray-500 uppercase tracking-wide">Mute a class's notifications</p>
+              <div className="max-h-72 overflow-y-auto">
+                {classes.length === 0 ? (
+                  <p className="px-4 py-3 text-sm text-gray-400">No classes yet</p>
+                ) : classes.map(c => {
+                  const muted = mutedClassIds.has(c.id)
+                  return (
+                    <button
+                      key={c.id}
+                      onClick={() => toggleMute(c.id)}
+                      className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-gray-50 transition-colors text-left"
+                    >
+                      <span className="text-sm text-gray-800 truncate">{c.title}</span>
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${muted ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-400'}`}>
+                        {muted ? '🔕 Muted' : 'Unmuted'}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+
       <button
         onClick={() => setOpen(o => !o)}
         className="relative p-2 rounded-full hover:bg-purple-800 transition-colors"

@@ -61,7 +61,7 @@ export default async function TeacherLayout({ children }: { children: React.Reac
           <Link href="/teacher/progress" className="text-purple-200 hover:text-white text-sm transition-colors">Progress</Link>
         </div>
         <div className="flex items-center gap-3">
-          <TeacherNotificationBell initialNotifications={initialNotifications} />
+          <TeacherNotificationBell initialNotifications={initialNotifications} classes={classList ?? []} />
           <span className="text-purple-200 text-sm">{profile.full_name}</span>
           <form action={logout}>
             <button className="text-sm bg-purple-700 hover:bg-purple-600 px-3 py-1 rounded-lg transition-colors">
