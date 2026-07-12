@@ -2,6 +2,8 @@ import { createAdminClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import StudentNotes from './StudentNotes'
+import { getRecentActivity } from '@/lib/activity'
+import ActivityFeed from '@/components/ActivityFeed'
 
 const GRADE: Record<string, { label: string; cls: string }> = {
   correct:   { label: '✓ Correct',   cls: 'bg-green-100 text-green-700' },
@@ -12,6 +14,7 @@ const GRADE: Record<string, { label: string; cls: string }> = {
 export default async function StudentDetailPage({ params }: { params: Promise<{ studentId: string }> }) {
   const { studentId } = await params
   const supabase = await createAdminClient()
+  const studentActivity = await getRecentActivity({ studentId, limit: 100 })
 
   // Select core fields first; extended fields (parent_name etc.) added via migration
   const { data: student, error: studentError } = await supabase
@@ -196,6 +199,15 @@ export default async function StudentDetailPage({ params }: { params: Promise<{ 
 
       {/* Private notes */}
       <StudentNotes studentId={studentId} />
+
+      {/* Activity — everything this student has done: help requests, done
+          pings, comments, grades received, AI Faridah usage, newest first. */}
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <p className="px-4 py-3 border-b border-gray-100 font-bold text-gray-800">Recent Activity</p>
+        <div className="p-3 max-h-96 overflow-y-auto">
+          <ActivityFeed events={studentActivity} showStudentName={false} />
+        </div>
+      </div>
 
       {/* Units */}
       {(units ?? []).length === 0 && (
