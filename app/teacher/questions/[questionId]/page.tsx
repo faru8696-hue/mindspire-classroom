@@ -2,6 +2,7 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import QuestionResultsView from './QuestionResultsView'
+import TopicNav from './TopicNav'
 
 export default async function QuestionResultsPage({
   params,
@@ -88,6 +89,46 @@ export default async function QuestionResultsPage({
         .in('submission_id', subIds)
     : { data: [] as { submission_id: string; grade: string | null }[] }
 
+  // Full unit → topic tree for this class, with each topic's first question id,
+  // so the nav dropdowns below can jump straight to any topic (assigned or not)
+  // without detouring back through the Content page.
+  const { data: allUnits } = await supabase
+    .from('units')
+    .select('id, title, order_index')
+    .eq('class_id', cls.id)
+    .order('order_index')
+
+  const allUnitIds = (allUnits ?? []).map(u => u.id)
+  const { data: allTopics } = allUnitIds.length > 0
+    ? await supabase
+        .from('topics')
+        .select('id, title, unit_id, order_index')
+        .in('unit_id', allUnitIds)
+        .order('order_index')
+    : { data: [] as { id: string; title: string; unit_id: string; order_index: number }[] }
+
+  const allTopicIds = (allTopics ?? []).map(t => t.id)
+  const { data: allTopicQuestions } = allTopicIds.length > 0
+    ? await supabase
+        .from('questions')
+        .select('id, topic_id, order_index')
+        .in('topic_id', allTopicIds)
+        .order('order_index')
+    : { data: [] as { id: string; topic_id: string; order_index: number }[] }
+
+  const firstQuestionByTopic = new Map<string, string>()
+  for (const q of allTopicQuestions ?? []) {
+    if (!firstQuestionByTopic.has(q.topic_id)) firstQuestionByTopic.set(q.topic_id, q.id)
+  }
+
+  const navUnits = (allUnits ?? []).map(u => ({
+    id: u.id,
+    title: u.title,
+    topics: (allTopics ?? [])
+      .filter(t => t.unit_id === u.id)
+      .map(t => ({ id: t.id, title: t.title, firstQuestionId: firstQuestionByTopic.get(t.id) ?? null })),
+  }))
+
   return (
     <div className="max-w-7xl mx-auto">
       {/* Breadcrumb */}
@@ -96,9 +137,7 @@ export default async function QuestionResultsPage({
         <span>›</span>
         <Link href={`/teacher/class/${cls.id}`} className="hover:text-purple-600">{cls.title}</Link>
         <span>›</span>
-        <span className="text-gray-400">{unit.title}</span>
-        <span>›</span>
-        <span className="text-gray-700 font-medium">{topic.title}</span>
+        <TopicNav navUnits={navUnits} currentUnitId={unit.id} currentTopicId={topic.id} />
       </div>
 
       <QuestionResultsView

@@ -189,11 +189,13 @@ export default function AssignQuestionsPanel({ classId, units, topics, questions
                               />
                             </button>
 
-                            {/* Question info */}
-                            <div className="flex-1 min-w-0">
-                              <p className={`text-sm font-medium truncate ${isAssigned ? 'text-gray-800' : 'text-gray-500'}`}>{q.title}</p>
+                            {/* Question info — always a link to the review page, so
+                                unassigned ("unlive") questions can be reviewed too,
+                                not just ones currently assigned to students. */}
+                            <Link href={`/teacher/questions/${q.id}`} className="flex-1 min-w-0">
+                              <p className={`text-sm font-medium truncate hover:text-purple-700 hover:underline ${isAssigned ? 'text-gray-800' : 'text-gray-500'}`}>{q.title}</p>
                               {q.content && <p className="text-xs text-gray-400 truncate">{q.content}</p>}
-                            </div>
+                            </Link>
 
                             {/* Due date + submitted count + jump straight into
                                 watching every student's live board for this
@@ -220,6 +222,14 @@ export default function AssignQuestionsPanel({ classId, units, topics, questions
                                   🔴 Go Live
                                 </Link>
                               </>
+                            )}
+                            {!isAssigned && (
+                              <Link
+                                href={`/teacher/questions/${q.id}`}
+                                className="text-xs font-medium text-purple-600 hover:text-purple-800 flex-shrink-0 whitespace-nowrap"
+                              >
+                                Review →
+                              </Link>
                             )}
                           </div>
                         )

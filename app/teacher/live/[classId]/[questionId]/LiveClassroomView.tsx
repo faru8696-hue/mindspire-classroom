@@ -468,6 +468,10 @@ export default function LiveClassroomView({
     setNotifications(prev => prev.map(n => ({ ...n, read: true })))
   }
 
+  const currentQuestionIndex = allQuestions.findIndex(q => q.id === questionId)
+  const prevQuestion = currentQuestionIndex > 0 ? allQuestions[currentQuestionIndex - 1] : null
+  const nextQuestion = currentQuestionIndex >= 0 && currentQuestionIndex < allQuestions.length - 1 ? allQuestions[currentQuestionIndex + 1] : null
+
   const otherHelp = allQuestions.reduce((sum, q) => q.id !== questionId ? sum + (helpByQuestion[q.id] ?? 0) : sum, 0)
   const submittedCount = students.filter(s => submissions.has(s.id)).length
   // A student no longer "needs review" once either the teacher has checked
@@ -490,6 +494,24 @@ export default function LiveClassroomView({
       <div className="bg-white border-b border-gray-200 px-5 py-3 flex items-center justify-between flex-shrink-0">
         <div className="flex items-center gap-4 min-w-0">
           <Link href="/teacher" className="text-gray-500 hover:text-gray-900 text-sm flex-shrink-0">← Back</Link>
+          <div className="flex items-center gap-0.5 flex-shrink-0">
+            <button
+              onClick={() => prevQuestion && (window.location.href = `/teacher/live/${classId}/${prevQuestion.id}`)}
+              disabled={!prevQuestion}
+              title={prevQuestion ? `Previous: ${prevQuestion.title}` : 'No previous question'}
+              className="text-gray-400 hover:text-gray-900 disabled:opacity-25 disabled:cursor-not-allowed px-1.5 py-1 rounded-lg hover:bg-gray-100 text-sm"
+            >
+              ‹
+            </button>
+            <button
+              onClick={() => nextQuestion && (window.location.href = `/teacher/live/${classId}/${nextQuestion.id}`)}
+              disabled={!nextQuestion}
+              title={nextQuestion ? `Next: ${nextQuestion.title}` : 'No next question'}
+              className="text-gray-400 hover:text-gray-900 disabled:opacity-25 disabled:cursor-not-allowed px-1.5 py-1 rounded-lg hover:bg-gray-100 text-sm"
+            >
+              ›
+            </button>
+          </div>
           <div className="relative min-w-0">
             <div className="flex items-center gap-2">
               <button
