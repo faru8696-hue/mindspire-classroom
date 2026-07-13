@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import AnswerKeyText from './AnswerKeyText'
 
 // Shows a question's AI-drafted answer key so a teacher can compare it
 // against student work while grading, without doing the calculation
@@ -90,7 +91,7 @@ export default function AnswerKeyPanel({
             </>
           ) : (
             <>
-              <p className="text-xs whitespace-pre-wrap leading-relaxed">{answerKey}</p>
+              <AnswerKeyText text={answerKey} className="text-xs whitespace-pre-wrap leading-relaxed" />
               <div className="flex gap-2 mt-1.5 sticky bottom-0 bg-inherit pt-1">
                 <button onClick={() => setEditing(true)} className="text-xs font-medium px-2.5 py-1 rounded-lg bg-white border border-emerald-200 text-emerald-700 hover:bg-emerald-100">
                   ✏️ Edit
