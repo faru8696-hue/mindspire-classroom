@@ -494,24 +494,14 @@ export default function LiveClassroomView({
       <div className="bg-white border-b border-gray-200 px-5 py-3 flex items-center justify-between flex-shrink-0">
         <div className="flex items-center gap-4 min-w-0">
           <Link href="/teacher" className="text-gray-500 hover:text-gray-900 text-sm flex-shrink-0">← Back</Link>
-          <div className="flex items-center gap-0.5 flex-shrink-0">
-            <button
-              onClick={() => prevQuestion && (window.location.href = `/teacher/live/${classId}/${prevQuestion.id}`)}
-              disabled={!prevQuestion}
-              title={prevQuestion ? `Previous: ${prevQuestion.title}` : 'No previous question'}
-              className="text-gray-400 hover:text-gray-900 disabled:opacity-25 disabled:cursor-not-allowed px-1.5 py-1 rounded-lg hover:bg-gray-100 text-sm"
-            >
-              ‹
-            </button>
-            <button
-              onClick={() => nextQuestion && (window.location.href = `/teacher/live/${classId}/${nextQuestion.id}`)}
-              disabled={!nextQuestion}
-              title={nextQuestion ? `Next: ${nextQuestion.title}` : 'No next question'}
-              className="text-gray-400 hover:text-gray-900 disabled:opacity-25 disabled:cursor-not-allowed px-1.5 py-1 rounded-lg hover:bg-gray-100 text-sm"
-            >
-              ›
-            </button>
-          </div>
+          <button
+            onClick={() => prevQuestion && (window.location.href = `/teacher/live/${classId}/${prevQuestion.id}`)}
+            disabled={!prevQuestion}
+            title={prevQuestion ? `Previous: ${prevQuestion.title}` : 'No previous question'}
+            className="text-gray-400 hover:text-gray-900 disabled:opacity-25 disabled:cursor-not-allowed px-1.5 py-1 rounded-lg hover:bg-gray-100 text-sm flex-shrink-0"
+          >
+            ‹
+          </button>
           <div className="relative min-w-0">
             <div className="flex items-center gap-2">
               <button
@@ -614,6 +604,15 @@ export default function LiveClassroomView({
               ✓ {doneIds.size} done
             </button>
           )}
+          <button
+            onClick={() => nextQuestion && (window.location.href = `/teacher/live/${classId}/${nextQuestion.id}`)}
+            disabled={!nextQuestion}
+            title={nextQuestion ? `Next: ${nextQuestion.title}` : 'No next question'}
+            className="flex items-center gap-1.5 text-xs font-bold px-4 py-1.5 rounded-full bg-gray-900 hover:bg-gray-700 text-white disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-gray-900"
+          >
+            Next question
+            <span aria-hidden>→</span>
+          </button>
         </div>
       </div>
 
