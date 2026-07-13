@@ -490,8 +490,10 @@ export default function LiveClassroomView({
 
   return (
     <div className="h-screen flex flex-col bg-gray-50 overflow-hidden">
-      {/* Top bar */}
-      <div className="bg-white border-b border-gray-200 px-5 py-3 flex items-center justify-between flex-shrink-0">
+      {/* Top bar — flex-wrap so the right-side status badges (and the Next
+          question button) wrap onto a second line instead of overflowing
+          off-screen when the class has several help/done/checked badges. */}
+      <div className="bg-white border-b border-gray-200 px-5 py-3 flex items-center justify-between flex-wrap gap-y-2 flex-shrink-0">
         <div className="flex items-center gap-4 min-w-0">
           <Link href="/teacher" className="text-gray-500 hover:text-gray-900 text-sm flex-shrink-0">← Back</Link>
           <button
@@ -608,7 +610,7 @@ export default function LiveClassroomView({
             onClick={() => nextQuestion && (window.location.href = `/teacher/live/${classId}/${nextQuestion.id}`)}
             disabled={!nextQuestion}
             title={nextQuestion ? `Next: ${nextQuestion.title}` : 'No next question'}
-            className="flex items-center gap-1.5 text-xs font-bold px-4 py-1.5 rounded-full bg-gray-900 hover:bg-gray-700 text-white disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-gray-900"
+            className="flex items-center gap-1.5 text-xs font-bold px-4 py-1.5 rounded-full bg-purple-600 hover:bg-purple-700 text-white disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-purple-600 flex-shrink-0"
           >
             Next question
             <span aria-hidden>→</span>
