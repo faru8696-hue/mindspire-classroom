@@ -34,10 +34,20 @@ export default async function AllProgressPage() {
     ? await supabase.from('assignments').select('question_id, class_id').in('class_id', classIds)
     : { data: [] }
 
-  // Load all submissions + feedback
+  // Load all submissions + feedback. Deliberately NOT also filtering by
+  // .in('question_id', questionIds) here — with hundreds of questions across
+  // all classes, combining that with the student_id filter builds a request
+  // URL long enough that PostgREST rejects it outright with a silent 400
+  // (Supabase returns { data: null, error }, and since callers do
+  // `submissions ?? []`, every student's progress quietly rendered as 0/0
+  // instead of surfacing the failure). The student_id filter alone keeps the
+  // row count bounded to what these students have actually submitted;
+  // matching against a specific question is still done downstream via the
+  // `${studentId}:${questionId}` progressMap lookup, so the extra rows for
+  // questions outside a given class are simply never read.
   const studentIds = allStudents?.map(s => s.id) ?? []
-  const { data: submissions } = studentIds.length > 0 && questionIds.length > 0
-    ? await supabase.from('submissions').select('id, student_id, question_id').in('student_id', studentIds).in('question_id', questionIds)
+  const { data: submissions } = studentIds.length > 0
+    ? await supabase.from('submissions').select('id, student_id, question_id').in('student_id', studentIds)
     : { data: [] }
 
   const submissionIds = submissions?.map(s => s.id) ?? []

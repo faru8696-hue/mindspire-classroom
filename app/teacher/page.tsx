@@ -86,10 +86,17 @@ export default async function TeacherDashboard() {
     { title: q.title, topicTitle: topicById.get(q.topic_id)?.title ?? '' },
   ]))
 
+  // No .in('question_id', questionIds) filter here on purpose — as the
+  // question bank grows past a few hundred rows, that filter alone builds a
+  // request URL long enough for PostgREST to reject with a silent 400 (data
+  // comes back null, and every downstream `allSubs ?? []` quietly renders as
+  // empty instead of surfacing the failure). Fetching all submissions
+  // unfiltered is cheap at this app's scale and matching against a specific
+  // question still happens downstream via questionMeta/Map lookups.
   type Sub = { id: string; student_id: string; question_id: string; updated_at: string; canvas_data: string | null; text_answer: string | null }
-  const { data: allSubs } = questionIds.length > 0
-    ? await supabase.from('submissions').select('id, student_id, question_id, updated_at, canvas_data, text_answer').in('question_id', questionIds)
-    : { data: [] as Sub[] }
+  const { data: allSubs } = await supabase
+    .from('submissions')
+    .select('id, student_id, question_id, updated_at, canvas_data, text_answer')
 
   // A submission row can exist with no real content (e.g. an empty '[]'
   // canvas the grade API auto-creates before the student's drawn anything),

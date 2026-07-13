@@ -52,8 +52,15 @@ export async function buildClassDigests(classId: string, dueSoonDays = 3): Promi
   const assignedQuestionIds = new Set((assignments ?? []).map(a => a.question_id))
   const dueDateByQuestion = new Map((assignments ?? []).map(a => [a.question_id, a.due_date]))
 
-  const { data: submissions } = questionIds.length > 0
-    ? await admin.from('submissions').select('question_id, student_id').in('student_id', studentIds).in('question_id', questionIds)
+  // Not also filtering by .in('question_id', questionIds) here — combined
+  // with the student_id filter, a large enough question bank builds a
+  // request URL long enough for PostgREST to reject with a silent 400 (data
+  // comes back null, so every reminder would quietly compute as "nothing
+  // pending" instead of surfacing the failure). The student_id filter alone
+  // keeps this bounded; membership is still checked per specific question
+  // via submittedSet below.
+  const { data: submissions } = studentIds.length > 0
+    ? await admin.from('submissions').select('question_id, student_id').in('student_id', studentIds)
     : { data: [] as { question_id: string; student_id: string }[] }
 
   const submittedSet = new Set((submissions ?? []).map(s => `${s.student_id}:${s.question_id}`))

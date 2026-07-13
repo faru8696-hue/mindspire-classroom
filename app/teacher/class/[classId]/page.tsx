@@ -42,9 +42,17 @@ export default async function ClassDetailPage({ params }: { params: Promise<{ cl
   // each question in the browse tree, without pulling in the full
   // student/grade breakdown (that lives on the Progress page and each
   // student's own page, one click away via nav).
+  // Deliberately not also filtering by .in('question_id', questionIds) — as
+  // the class's question bank grows, combining that with the student_id
+  // filter can build a request URL long enough that PostgREST rejects it
+  // outright with a silent 400 (data comes back null, so every "submitted"
+  // count would quietly render as 0 instead of surfacing the failure — this
+  // exact bug hit the Progress page once the DB crossed ~600 questions). The
+  // student_id filter alone keeps this bounded; submittedCounts below only
+  // ever gets read for this class's own question ids anyway.
   const studentIds = students?.map(s => s.id) ?? []
-  const { data: submissions } = studentIds.length > 0 && questionIds.length > 0
-    ? await supabase.from('submissions').select('question_id, student_id').in('student_id', studentIds).in('question_id', questionIds)
+  const { data: submissions } = studentIds.length > 0
+    ? await supabase.from('submissions').select('question_id, student_id').in('student_id', studentIds)
     : { data: [] as { question_id: string; student_id: string }[] }
 
   const submittedCounts: Record<string, number> = {}
