@@ -71,26 +71,39 @@ ${questions.map(q => `id: ${q.id}\ntitle: ${q.title}\ncontent: ${q.content || '(
     required: ['results'],
   }
 
+  // NOTE: combining thinkingConfig with responseSchema on this model made the
+  // request hang indefinitely (confirmed via a 300s HTTP/2 stream timeout,
+  // no response at all) — omitting thinkingConfig here is what makes this
+  // actually return (in ~50s per batch of 20, structured JSON output alone
+  // is slow but reliable).
   const body = {
     contents: [{ parts: [{ text: prompt }] }],
-    generationConfig: { responseMimeType: 'application/json', responseSchema: schema, thinkingConfig: { thinkingBudget: 256 } },
+    generationConfig: { responseMimeType: 'application/json', responseSchema: schema },
   }
 
   const delays = [0, 1000, 2500]
   let lastErr
   for (const d of delays) {
     if (d) await new Promise(r => setTimeout(r, d))
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${GEMINI_API_KEY}`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
-    })
-    if (res.ok) {
-      const data = await res.json()
-      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text
-      if (!text) throw new Error('Gemini returned no content')
-      return JSON.parse(text).results
+    try {
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 90000)
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${GEMINI_API_KEY}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: controller.signal,
+      }).finally(() => clearTimeout(timeout))
+      if (res.ok) {
+        const data = await res.json()
+        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text
+        if (!text) throw new Error('Gemini returned no content')
+        return JSON.parse(text).results
+      }
+      lastErr = new Error(`Gemini error ${res.status}: ${await res.text()}`)
+      if (res.status !== 503 && res.status !== 429) throw lastErr
+    } catch (err) {
+      // Network error or abort (timeout) — retry like a 503 rather than
+      // failing the batch on the first transient hiccup.
+      lastErr = err instanceof Error ? err : new Error(String(err))
     }
-    lastErr = new Error(`Gemini error ${res.status}: ${await res.text()}`)
-    if (res.status !== 503 && res.status !== 429) throw lastErr
   }
   throw lastErr
 }

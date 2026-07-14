@@ -61,7 +61,15 @@ export default async function ClassPage({ params }: { params: Promise<{ classId:
 
   return (
     <div className="max-w-3xl mx-auto">
-      <h1 className="text-2xl font-bold text-purple-900 mb-6">{cls.title}</h1>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-bold text-purple-900">{cls.title}</h1>
+        <Link
+          href={`/student/${classId}/practice`}
+          className="text-sm font-semibold bg-purple-100 hover:bg-purple-200 text-purple-700 px-4 py-2 rounded-xl transition-colors flex-shrink-0"
+        >
+          📝 Self Study
+        </Link>
+      </div>
       <StudentGradeNotifications studentId={studentId} />
 
       {/* Overall progress */}
