@@ -38,6 +38,8 @@ export default async function StudentProfilePage({
     .eq('id', studentId)
     .maybeSingle()
   const parentEmail = (extProfile as { parent_email?: string } | null)?.parent_email ?? ''
+  const onlyMissingParentEmail = required === '1' && !!profile.grade_level && !!profile.phone
+    && !!profile.parent_name && !!profile.parent_phone && !parentEmail
 
   // Stats
   const admin = adminDb()
@@ -70,7 +72,9 @@ export default async function StudentProfilePage({
     <div className="max-w-lg mx-auto">
       {required === '1' && (
         <div className="mb-5 bg-amber-50 border border-amber-300 rounded-xl px-4 py-3 text-amber-800 text-sm font-medium">
-          📋 Please complete your profile before continuing. All fields below are required.
+          {onlyMissingParentEmail
+            ? "📋 Please add your parent's email before continuing. It's required to keep using the app."
+            : '📋 Please complete your profile before continuing. All fields below are required.'}
         </div>
       )}
       <h1 className="text-2xl font-bold text-purple-900 mb-6">My Profile</h1>

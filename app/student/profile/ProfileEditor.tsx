@@ -17,18 +17,20 @@ interface Props {
   initialParentEmail: string
 }
 
-function Field({ label, value, onChange, type = 'text', placeholder }: {
-  label: string; value: string; onChange: (v: string) => void; type?: string; placeholder?: string
+function Field({ label, value, onChange, type = 'text', placeholder, missing = false }: {
+  label: string; value: string; onChange: (v: string) => void; type?: string; placeholder?: string; missing?: boolean
 }) {
   return (
     <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+      <label className={`block text-sm font-medium mb-1 ${missing ? 'text-red-600' : 'text-gray-700'}`}>{label}</label>
       <input
         type={type}
         value={value}
         onChange={e => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400 placeholder-gray-400"
+        className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 placeholder-gray-400 ${
+          missing ? 'border-red-400 bg-red-50 focus:ring-red-400' : 'border-gray-300 focus:ring-purple-400'
+        }`}
       />
     </div>
   )
@@ -138,16 +140,16 @@ export default function ProfileEditor({
         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Your Info</p>
         <Field label="Full Name" value={fullName} onChange={setFullName} placeholder="Your full name" />
         <Field label="Nickname" value={nickname} onChange={setNickname} placeholder="What should we call you?" />
-        <Field label={`Grade Level${required ? ' *' : ''}`} value={gradeLevel} onChange={setGradeLevel} placeholder="e.g. 10th grade, Junior…" />
-        <Field label={`Phone Number${required ? ' *' : ''}`} value={phone} onChange={setPhone} type="tel" placeholder="Your phone number" />
+        <Field label={`Grade Level${required ? ' *' : ''}`} value={gradeLevel} onChange={setGradeLevel} placeholder="e.g. 10th grade, Junior…" missing={required && !gradeLevel} />
+        <Field label={`Phone Number${required ? ' *' : ''}`} value={phone} onChange={setPhone} type="tel" placeholder="Your phone number" missing={required && !phone} />
       </div>
 
       {/* Section: Parent/Guardian */}
       <div className="space-y-4">
         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Parent / Guardian</p>
-        <Field label={`Parent / Guardian Name${required ? ' *' : ''}`} value={parentName} onChange={setParentName} placeholder="Full name" />
-        <Field label={`Parent / Guardian Phone${required ? ' *' : ''}`} value={parentPhone} onChange={setParentPhone} type="tel" placeholder="Phone number" />
-        <Field label={`Parent / Guardian Email${required ? ' *' : ''}`} value={parentEmail} onChange={setParentEmail} type="email" placeholder="parent@example.com" />
+        <Field label={`Parent / Guardian Name${required ? ' *' : ''}`} value={parentName} onChange={setParentName} placeholder="Full name" missing={required && !parentName} />
+        <Field label={`Parent / Guardian Phone${required ? ' *' : ''}`} value={parentPhone} onChange={setParentPhone} type="tel" placeholder="Phone number" missing={required && !parentPhone} />
+        <Field label={`Parent / Guardian Email${required ? ' *' : ''}`} value={parentEmail} onChange={setParentEmail} type="email" placeholder="parent@example.com" missing={required && !parentEmail} />
       </div>
 
       <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
