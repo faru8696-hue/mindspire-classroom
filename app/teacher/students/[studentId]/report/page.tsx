@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import PrintButton from './PrintButton'
 import DeepReviewPanel from './DeepReviewPanel'
+import StudentNotes from '../StudentNotes'
 import { computeStudentReport, computeClassComparison } from '@/lib/studentReport'
 
 const GRADE_BADGE: Record<string, { label: string; cls: string }> = {
@@ -88,6 +89,12 @@ export default async function StudentReportPage({ params }: { params: Promise<{ 
             Covering {new Date(firstDate).toLocaleDateString()} – {new Date(lastDate).toLocaleDateString()} · {totalEvents} graded checkpoints
           </p>
         )}
+      </div>
+
+      {/* Private teacher notes — also fed into the Deep Review AI prompt below
+          as context, so anything written here can shape the generated report. */}
+      <div className="print:hidden">
+        <StudentNotes studentId={studentId} />
       </div>
 
       {/* Deep AI review of actual struggling work + email-to-parent */}

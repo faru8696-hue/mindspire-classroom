@@ -45,7 +45,7 @@ export default function StudentNotes({ studentId }: { studentId: string }) {
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
       <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100 bg-gray-50">
-        <h2 className="font-bold text-gray-800 text-sm">📝 Private Notes</h2>
+        <h2 className="font-bold text-gray-800 text-sm">📝 Private Notes <span className="font-normal text-gray-400">(also used as context for the AI Deep Review)</span></h2>
         <span className={`text-xs transition-colors ${saved ? 'text-gray-300' : 'text-amber-500'}`}>
           {saved ? 'Saved' : 'Saving...'}
         </span>

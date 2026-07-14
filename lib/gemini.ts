@@ -224,6 +224,7 @@ export interface DeepReportContext {
   classComparisonSummary: string | null
   classBreakdownSummary: string | null
   isFoundationalAdvancedPairing: boolean
+  teacherNotes: string | null
 }
 
 // Looks at a student's ACTUAL submitted work (not just grade percentages)
@@ -235,14 +236,14 @@ export async function generateDeepStudentReport(
   ctx: DeepReportContext,
   items: DeepReportStruggleItem[],
 ): Promise<string> {
-  const { studentFirstName, parentName, masterySummary, trendSummary, engagementSummary, classComparisonSummary, classBreakdownSummary, isFoundationalAdvancedPairing } = ctx
+  const { studentFirstName, parentName, masterySummary, trendSummary, engagementSummary, classComparisonSummary, classBreakdownSummary, isFoundationalAdvancedPairing, teacherNotes } = ctx
 
   const parts: GeminiPart[] = [{
     text: `You are an experienced AP/Honors Chemistry teacher writing a genuinely useful, specific progress narrative about ${studentFirstName} for ${parentName ? `${parentName}, ${studentFirstName}'s parent/guardian` : "their parent/guardian"}. This is NOT a generic "did X questions, got Y correct" summary — the reader already sees those numbers separately in a table above this report. Your job is to look at the student's ACTUAL submitted work below (images of their handwritten whiteboard work, or typed answers) on the questions they struggled with, and diagnose what is REALLY going on.
 
 CRITICAL STYLE RULE: Refer to the student by their first name, "${studentFirstName}", throughout the report — every time you would otherwise write "the student," "your child," or "they" as the primary subject of a sentence, use "${studentFirstName}" instead. A pronoun is fine occasionally for flow within a sentence that already named them, but never let "the student" appear anywhere in your output.
 
-Topic mastery summary (for context only, don't just restate this as a list):
+${teacherNotes ? `TEACHER'S OWN PERSPECTIVE ON ${studentFirstName.toUpperCase()} (private notes from the classroom teacher who knows them directly — weigh this heavily, it often explains things the raw data alone can't, e.g. context about learning style, personal circumstances, effort level, or classroom behavior). Use this to shape your interpretation and tone, and reference it naturally where relevant, but don't just quote it verbatim:\n"""\n${teacherNotes}\n"""\n\n` : ''}Topic mastery summary (for context only, don't just restate this as a list):
 ${masterySummary}
 
 ${classBreakdownSummary ? `Per-class breakdown:\n${classBreakdownSummary}\n${isFoundationalAdvancedPairing ? `\nIMPORTANT CONTEXT: ${studentFirstName} is enrolled in BOTH an Honors Chemistry class (foundational chemistry) AND an AP Chemistry class (college-level, advanced) AT THE SAME TIME. This means ${studentFirstName} is learning AP-level material without having already completed a full year of foundational chemistry first — that is a genuinely harder path than a typical AP student takes. Because of this:\n- Compare ${studentFirstName}'s performance in the two classes explicitly (e.g. "doing well in the foundational Honors material, and the AP class is understandably more challenging while that foundation is still being built" or "strong in both, which is impressive given the concurrent course load").\n- DO NOT be harsh or alarming about lower scores in the AP class specifically. Frame AP struggles as an expected, normal part of tackling college-level content concurrently with the foundational course, not as a red flag or a sign ${studentFirstName} is "behind." If AP scores are meaningfully lower than Honors scores, say so plainly but with encouraging, realistic framing (e.g. "this gap is expected and should narrow as the Honors foundation solidifies," not "struggling significantly").\n- If Honors Chem performance is solid, explicitly point out that this is a good sign for how ${studentFirstName} will handle the AP material once the foundational gap closes.\n` : ''}\n` : ''}Progress trend (accuracy over time, oldest to newest — use this to say whether ${studentFirstName} is trending up, down, or flat, don't just repeat the raw numbers):

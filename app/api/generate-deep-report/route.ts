@@ -41,6 +41,14 @@ export async function POST(req: NextRequest) {
   const { data: extProfile } = await admin.from('profiles').select('parent_name').eq('id', studentId).maybeSingle()
   const parentName = (extProfile as { parent_name?: string } | null)?.parent_name || null
 
+  const { data: teacherNoteRow } = await admin
+    .from('teacher_notes')
+    .select('content')
+    .eq('teacher_id', caller.profile.id)
+    .eq('student_id', studentId)
+    .maybeSingle()
+  const teacherNotes = teacherNoteRow?.content?.trim() || null
+
   const masterySummary = report.masteryRows.length > 0
     ? report.masteryRows.map(t => `${t.title}: ${t.pct}%`).join('; ')
     : 'No graded work yet.'
@@ -73,7 +81,7 @@ export async function POST(req: NextRequest) {
     const reportText = await generateDeepStudentReport(
       {
         studentFirstName, parentName, masterySummary, trendSummary, engagementSummary, classComparisonSummary,
-        classBreakdownSummary, isFoundationalAdvancedPairing: report.isFoundationalAdvancedPairing,
+        classBreakdownSummary, isFoundationalAdvancedPairing: report.isFoundationalAdvancedPairing, teacherNotes,
       },
       items,
     )

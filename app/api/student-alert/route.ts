@@ -30,6 +30,34 @@ export async function POST(req: NextRequest) {
 
   const now = new Date().toISOString()
 
+  // A "submitted" alert on a question that was ALREADY graded means the
+  // student corrected their work and is resubmitting it — the old grade no
+  // longer reflects the current work, so clear it back to ungraded. This is
+  // what makes the teacher's "needs review" flag (which only looks at
+  // unread submitted/help alerts with no grade) pick this back up
+  // automatically, instead of a corrected answer silently sitting under a
+  // stale "correct"/"incorrect" badge that no longer matches the board.
+  let wasRegraded = false
+  if (type === 'submitted') {
+    const { data: submission } = await admin
+      .from('submissions')
+      .select('id')
+      .eq('student_id', studentId)
+      .eq('question_id', questionId)
+      .maybeSingle()
+    if (submission?.id) {
+      const { data: existingFeedback } = await admin
+        .from('feedback')
+        .select('id, grade')
+        .eq('submission_id', submission.id)
+        .maybeSingle()
+      if (existingFeedback?.id && existingFeedback.grade) {
+        await admin.from('feedback').update({ grade: null }).eq('id', existingFeedback.id)
+        wasRegraded = true
+      }
+    }
+  }
+
   const { data: existing } = await admin
     .from('notifications')
     .select('id')
@@ -40,8 +68,8 @@ export async function POST(req: NextRequest) {
     .maybeSingle()
 
   if (existing?.id) {
-    await admin.from('notifications').update({ created_at: now }).eq('id', existing.id)
-    return NextResponse.json({ id: existing.id, created: false })
+    await admin.from('notifications').update({ created_at: now, read: false }).eq('id', existing.id)
+    return NextResponse.json({ id: existing.id, created: false, wasRegraded })
   }
 
   const { data: inserted, error } = await admin
@@ -58,12 +86,12 @@ export async function POST(req: NextRequest) {
       .select('id')
       .eq('student_id', studentId).eq('question_id', questionId).eq('type', type).eq('read', false)
       .maybeSingle()
-    return NextResponse.json({ id: race?.id ?? null, created: false })
+    return NextResponse.json({ id: race?.id ?? null, created: false, wasRegraded })
   }
   if (error) {
     console.error('student-alert insert error:', error)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  return NextResponse.json({ id: inserted.id, created: true })
+  return NextResponse.json({ id: inserted.id, created: true, wasRegraded })
 }
