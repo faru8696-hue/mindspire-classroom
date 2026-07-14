@@ -22,6 +22,10 @@ export interface StruggleItem {
   updatedAt: string
 }
 
+export interface TrendPoint { date: string; pct: number; cumulativeGraded: number }
+export interface TopicComparison { topicId: string; title: string; studentPct: number; classAvgPct: number; classSize: number }
+export interface ClassComparison { classAvgOverallPct: number; classSize: number; perTopic: TopicComparison[] }
+
 export interface StudentReportData {
   student: { id: string; full_name: string; nickname: string | null; grade_level: string | null }
   enrolledClasses: { id: string; title: string }[]
@@ -36,6 +40,14 @@ export interface StudentReportData {
   firstDate: string | null
   lastDate: string | null
   struggleItems: StruggleItem[]
+  trend: TrendPoint[]
+  daysActive: number
+  submissionsLast14Days: number
+  // Internal fields carried through so computeClassComparison doesn't have to
+  // re-derive them from scratch (avoids re-running the same heavy queries).
+  _assignedQs: { id: string; topic_id: string }[]
+  _topicMeta: Map<string, { id: string; title: string }>
+  _enrolledClassIds: string[]
 }
 
 // Shared by the teacher-facing report page and the parent-email route, so
@@ -157,6 +169,36 @@ export async function computeStudentReport(supabase: SupabaseClient, studentId: 
   const firstDate = history && history.length > 0 ? history[0].created_at : null
   const lastDate = history && history.length > 0 ? history[history.length - 1].created_at : null
 
+  // ── Trend: rolling accuracy over time ────────────────────────────
+  // Replay grade_history in order, tracking the LATEST grade per question at
+  // each point, and sample the running accuracy once per calendar day so a
+  // student with many same-day regrades doesn't produce a noisy trend line.
+  const trend: TrendPoint[] = []
+  if (history && history.length > 0) {
+    const runningGrade = new Map<string, string>()
+    let lastSampledDay = ''
+    for (const h of history) {
+      runningGrade.set(h.question_id, h.grade)
+      const day = h.created_at.slice(0, 10)
+      const isLastEvent = h === history[history.length - 1]
+      if (day !== lastSampledDay || isLastEvent) {
+        let score = 0, gradedCount = 0
+        for (const g of runningGrade.values()) {
+          if (g in WEIGHT) { score += WEIGHT[g]; gradedCount++ }
+        }
+        const pct = gradedCount > 0 ? Math.round((score / gradedCount) * 100) : 0
+        trend.push({ date: day, pct, cumulativeGraded: gradedCount })
+        lastSampledDay = day
+      }
+    }
+  }
+
+  // ── Engagement: simple activity signals ──────────────────────────
+  const activeDays = new Set((history ?? []).map((h: { created_at: string }) => h.created_at.slice(0, 10)))
+  const daysActive = activeDays.size
+  const fourteenDaysAgo = Date.now() - 14 * 24 * 60 * 60 * 1000
+  const submissionsLast14Days = (submissions ?? []).filter((s: { updated_at: string }) => +new Date(s.updated_at) >= fourteenDaysAgo).length
+
   // Struggle items: latest submission per question where the grade shows
   // difficulty (incorrect/needsmore/partial), or the question was submitted
   // but never graded — these are exactly the cases worth a deep AI look at
@@ -197,5 +239,101 @@ export async function computeStudentReport(supabase: SupabaseClient, studentId: 
     improvements,
     totalEvents, firstDate, lastDate,
     struggleItems,
+    trend,
+    daysActive,
+    submissionsLast14Days,
+    _assignedQs: assignedQs.map((q: { id: string; topic_id: string }) => ({ id: q.id, topic_id: q.topic_id })),
+    _topicMeta: topicMeta as Map<string, { id: string; title: string }>,
+    _enrolledClassIds: enrolledClassIds,
   }
+}
+
+// Computes how the rest of the class is doing on the SAME assigned questions
+// this student has (from computeStudentReport's _assignedQs/_topicMeta), so
+// the deep report can say "ahead of classmates here" / "this topic is hard
+// for everyone, not just you" instead of only reporting the student in
+// isolation. Deliberately excludes the student themselves from the average.
+export async function computeClassComparison(
+  supabase: SupabaseClient,
+  report: StudentReportData,
+): Promise<ClassComparison | null> {
+  const { _assignedQs: assignedQs, _topicMeta: topicMeta, _enrolledClassIds: enrolledClassIds, student } = report
+  if (enrolledClassIds.length === 0 || assignedQs.length === 0) return null
+
+  const { data: enrollments } = await supabase
+    .from('class_enrollments')
+    .select('student_id')
+    .in('class_id', enrolledClassIds)
+  const classmateIds = [...new Set((enrollments ?? []).map((e: { student_id: string }) => e.student_id))]
+    .filter(id => id !== student.id)
+  if (classmateIds.length === 0) return null
+
+  // No .in('question_id', ...) filter — same reasoning as computeStudentReport:
+  // combined with a potentially large classmateIds list this can build a URL
+  // PostgREST rejects. student_id (via .in on a bounded classmate list) alone
+  // keeps this safe; matching to assignedQs happens downstream via Set/Map.
+  const { data: submissions } = await supabase
+    .from('submissions')
+    .select('id, student_id, question_id')
+    .in('student_id', classmateIds)
+  const submissionIds = (submissions ?? []).map((s: { id: string }) => s.id)
+
+  // Chunk the feedback lookup defensively — a large class with lots of
+  // history could still push submissionIds itself past a safe URL length.
+  const CHUNK = 200
+  const feedbackBySubmission = new Map<string, string | null>()
+  for (let i = 0; i < submissionIds.length; i += CHUNK) {
+    const chunk = submissionIds.slice(i, i + CHUNK)
+    if (chunk.length === 0) continue
+    const { data: fbChunk } = await supabase.from('feedback').select('submission_id, grade').in('submission_id', chunk)
+    for (const f of fbChunk ?? []) feedbackBySubmission.set(f.submission_id, f.grade)
+  }
+
+  const assignedQIds = new Set(assignedQs.map(q => q.id))
+  const topicByQuestion = new Map(assignedQs.map(q => [q.id, q.topic_id]))
+
+  // studentId -> topicId -> { score, graded }
+  const perStudentTopic = new Map<string, Map<string, { score: number; graded: number }>>()
+  // studentId -> { score, graded } overall
+  const perStudentOverall = new Map<string, { score: number; graded: number }>()
+
+  for (const s of submissions ?? []) {
+    if (!assignedQIds.has(s.question_id)) continue
+    const grade = feedbackBySubmission.get(s.id)
+    if (!grade || !(grade in WEIGHT)) continue
+    const topicId = topicByQuestion.get(s.question_id)
+    if (!topicId) continue
+
+    if (!perStudentOverall.has(s.student_id)) perStudentOverall.set(s.student_id, { score: 0, graded: 0 })
+    const overall = perStudentOverall.get(s.student_id)!
+    overall.score += WEIGHT[grade]; overall.graded++
+
+    if (!perStudentTopic.has(s.student_id)) perStudentTopic.set(s.student_id, new Map())
+    const byTopic = perStudentTopic.get(s.student_id)!
+    if (!byTopic.has(topicId)) byTopic.set(topicId, { score: 0, graded: 0 })
+    const t = byTopic.get(topicId)!
+    t.score += WEIGHT[grade]; t.graded++
+  }
+
+  const overallPcts = [...perStudentOverall.values()].filter(v => v.graded > 0).map(v => (v.score / v.graded) * 100)
+  const classAvgOverallPct = overallPcts.length > 0 ? Math.round(overallPcts.reduce((a, b) => a + b, 0) / overallPcts.length) : 0
+
+  const perTopic: TopicComparison[] = []
+  for (const t of report.masteryRows) {
+    const classPctsForTopic: number[] = []
+    for (const byTopic of perStudentTopic.values()) {
+      const ts = byTopic.get(t.id)
+      if (ts && ts.graded > 0) classPctsForTopic.push((ts.score / ts.graded) * 100)
+    }
+    if (classPctsForTopic.length === 0) continue
+    perTopic.push({
+      topicId: t.id,
+      title: t.title,
+      studentPct: t.pct,
+      classAvgPct: Math.round(classPctsForTopic.reduce((a, b) => a + b, 0) / classPctsForTopic.length),
+      classSize: classPctsForTopic.length,
+    })
+  }
+
+  return { classAvgOverallPct, classSize: overallPcts.length, perTopic }
 }

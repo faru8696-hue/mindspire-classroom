@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import PrintButton from './PrintButton'
 import DeepReviewPanel from './DeepReviewPanel'
-import { computeStudentReport } from '@/lib/studentReport'
+import { computeStudentReport, computeClassComparison } from '@/lib/studentReport'
 
 const GRADE_BADGE: Record<string, { label: string; cls: string }> = {
   correct:   { label: '✓ Correct',   cls: 'bg-green-100 text-green-700' },
@@ -28,10 +28,14 @@ export default async function StudentReportPage({ params }: { params: Promise<{ 
 
   const {
     student, enrolledClasses, overallPct, correct, partial, incorrect, graded,
-    masteryRows, improvements, totalEvents, firstDate, lastDate, struggleItems,
+    masteryRows, improvements, totalEvents, firstDate, lastDate, struggleItems, trend,
   } = report
 
   const displayName = student.nickname || student.full_name
+
+  // Best-effort — a student with no classmates or an error here shouldn't
+  // break the rest of the report, just fall back to no comparison shown.
+  const classComparison = await computeClassComparison(supabase, report).catch(() => null)
 
   // Parent email + any cached deep report (separate queries — parent_email
   // and student_deep_reports both require a migration that may lag a fresh
@@ -48,10 +52,6 @@ export default async function StudentReportPage({ params }: { params: Promise<{ 
     .select('report_text, generated_at')
     .eq('student_id', studentId)
     .maybeSingle()
-
-  const masterySummary = masteryRows.length > 0
-    ? masteryRows.map(t => `${t.title}: ${t.pct}%`).join('; ')
-    : 'No graded work yet.'
 
   return (
     <div className="max-w-3xl mx-auto space-y-6 print:max-w-none">
@@ -93,7 +93,9 @@ export default async function StudentReportPage({ params }: { params: Promise<{ 
       <DeepReviewPanel
         studentId={studentId}
         displayName={displayName}
-        masterySummary={masterySummary}
+        overallPct={overallPct}
+        trend={trend}
+        classComparison={classComparison}
         struggleItems={struggleItems.map(s => ({
           questionTitle: s.questionTitle,
           questionContent: s.questionContent,
