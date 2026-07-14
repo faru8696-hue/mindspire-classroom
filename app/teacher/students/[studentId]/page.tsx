@@ -27,11 +27,12 @@ export default async function StudentDetailPage({ params }: { params: Promise<{ 
   // Fetch extended fields separately so a missing column never causes a 404
   const { data: extProfile } = await supabase
     .from('profiles')
-    .select('parent_name, parent_phone')
+    .select('parent_name, parent_phone, parent_email')
     .eq('id', studentId)
     .single()
   const parentName = (extProfile as { parent_name?: string } | null)?.parent_name ?? null
   const parentPhone = (extProfile as { parent_phone?: string } | null)?.parent_phone ?? null
+  const parentEmail = (extProfile as { parent_email?: string } | null)?.parent_email ?? null
 
   // Load all enrolled classes for this student
   const { data: studentEnrollments } = await supabase
@@ -164,6 +165,12 @@ export default async function StudentDetailPage({ params }: { params: Promise<{ 
             <div>
               <p className="text-xs text-gray-400 uppercase tracking-wide">Parent Phone</p>
               <p className="text-sm text-gray-700">{parentPhone}</p>
+            </div>
+          )}
+          {parentEmail && (
+            <div>
+              <p className="text-xs text-gray-400 uppercase tracking-wide">Parent Email</p>
+              <p className="text-sm text-gray-700">{parentEmail}</p>
             </div>
           )}
           {enrolledClasses.length > 0 && (

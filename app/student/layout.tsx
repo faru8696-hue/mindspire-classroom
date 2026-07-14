@@ -24,14 +24,14 @@ export default async function StudentLayout({ children }: { children: React.Reac
   // Fetch extended fields separately — these columns require a migration and may not exist yet
   const { data: extProfile } = await supabase
     .from('profiles')
-    .select('parent_name, parent_phone')
+    .select('parent_name, parent_phone, parent_email')
     .eq('id', session.user.id)
     .maybeSingle()
 
   const p = { ...profile, ...(extProfile ?? {}) } as Record<string, string | null | undefined>
   // Only enforce gate if ALL extended columns exist (i.e. migration has been run)
   const extColumnsExist = extProfile !== null && 'parent_name' in (extProfile ?? {})
-  const profileComplete = !extColumnsExist || !!(p.grade_level && p.phone && p.parent_name && p.parent_phone)
+  const profileComplete = !extColumnsExist || !!(p.grade_level && p.phone && p.parent_name && p.parent_phone && p.parent_email)
 
   // Enrolled class IDs for notification bell
   const admin = createSupabaseAdmin(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)

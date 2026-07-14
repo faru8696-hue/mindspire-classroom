@@ -14,6 +14,7 @@ interface Props {
   initialPhone: string
   initialParentName: string
   initialParentPhone: string
+  initialParentEmail: string
 }
 
 function Field({ label, value, onChange, type = 'text', placeholder }: {
@@ -36,7 +37,7 @@ function Field({ label, value, onChange, type = 'text', placeholder }: {
 export default function ProfileEditor({
   userId, email,
   initialFullName, initialNickname, initialAvatarUrl,
-  initialGradeLevel, initialPhone, initialParentName, initialParentPhone,
+  initialGradeLevel, initialPhone, initialParentName, initialParentPhone, initialParentEmail,
 }: Props) {
   const supabase = createClient()
   const router = useRouter()
@@ -48,6 +49,7 @@ export default function ProfileEditor({
   const [phone, setPhone] = useState(initialPhone)
   const [parentName, setParentName] = useState(initialParentName)
   const [parentPhone, setParentPhone] = useState(initialParentPhone)
+  const [parentEmail, setParentEmail] = useState(initialParentEmail)
   const [avatarUrl, setAvatarUrl] = useState<string | null>(initialAvatarUrl)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -68,8 +70,12 @@ export default function ProfileEditor({
   }
 
   async function handleSave() {
-    if (required && (!gradeLevel || !phone || !parentName || !parentPhone)) {
-      setError('Please fill in all required fields: grade level, phone, parent name, and parent phone.')
+    if (required && (!gradeLevel || !phone || !parentName || !parentPhone || !parentEmail)) {
+      setError('Please fill in all required fields: grade level, phone, parent name, parent phone, and parent email.')
+      return
+    }
+    if (parentEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(parentEmail)) {
+      setError('Please enter a valid parent/guardian email address.')
       return
     }
     setSaving(true)
@@ -81,6 +87,7 @@ export default function ProfileEditor({
       phone: phone || null,
       parent_name: parentName || null,
       parent_phone: parentPhone || null,
+      parent_email: parentEmail || null,
     }).eq('id', userId)
     setSaving(false)
     if (err) { setError(err.message); return }
@@ -140,6 +147,7 @@ export default function ProfileEditor({
         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Parent / Guardian</p>
         <Field label={`Parent / Guardian Name${required ? ' *' : ''}`} value={parentName} onChange={setParentName} placeholder="Full name" />
         <Field label={`Parent / Guardian Phone${required ? ' *' : ''}`} value={parentPhone} onChange={setParentPhone} type="tel" placeholder="Phone number" />
+        <Field label={`Parent / Guardian Email${required ? ' *' : ''}`} value={parentEmail} onChange={setParentEmail} type="email" placeholder="parent@example.com" />
       </div>
 
       <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">

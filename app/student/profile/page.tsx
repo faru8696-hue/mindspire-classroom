@@ -29,6 +29,16 @@ export default async function StudentProfilePage({
 
   if (!profile) redirect('/login')
 
+  // Separate query for parent_email — it may not exist yet if the migration
+  // (add-parent-email.sql) hasn't been run, and a missing column would make
+  // the whole combined select above error out and redirect everyone to login.
+  const { data: extProfile } = await supabase
+    .from('profiles')
+    .select('parent_email')
+    .eq('id', studentId)
+    .maybeSingle()
+  const parentEmail = (extProfile as { parent_email?: string } | null)?.parent_email ?? ''
+
   // Stats
   const admin = adminDb()
   const { data: enrollments } = await admin.from('class_enrollments').select('class_id, classes(id, title)').eq('student_id', studentId)
@@ -109,6 +119,7 @@ export default async function StudentProfilePage({
         initialPhone={(profile as { phone?: string }).phone ?? ''}
         initialParentName={(profile as { parent_name?: string }).parent_name ?? ''}
         initialParentPhone={(profile as { parent_phone?: string }).parent_phone ?? ''}
+        initialParentEmail={parentEmail}
       />
     </div>
   )
