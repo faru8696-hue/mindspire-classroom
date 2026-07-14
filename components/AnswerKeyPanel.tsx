@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import AnswerKeyText from './AnswerKeyText'
 
 // Shows a question's AI-drafted answer key so a teacher can compare it
@@ -17,6 +17,22 @@ export default function AnswerKeyPanel({
   const [generating, setGenerating] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Several callers reuse this same component instance while paging through
+  // questions (e.g. a teacher clicking "next question" while grading) rather
+  // than remounting it, so useState's one-time initial value alone would
+  // leave the PREVIOUS question's answer key showing. Re-sync whenever the
+  // question actually changes.
+  const prevQuestionId = useRef(questionId)
+  useEffect(() => {
+    if (prevQuestionId.current === questionId) return
+    prevQuestionId.current = questionId
+    setOpen(false)
+    setAnswerKey(initialAnswerKey)
+    setDraft(initialAnswerKey ?? '')
+    setEditing(false)
+    setError(null)
+  }, [questionId, initialAnswerKey])
 
   async function generate() {
     setGenerating(true)
