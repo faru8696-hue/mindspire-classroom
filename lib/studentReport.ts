@@ -77,9 +77,18 @@ export async function computeStudentReport(supabase: SupabaseClient, studentId: 
     ? new Set(assignments.map((a: { question_id: string }) => a.question_id))
     : null
 
-  const { data: submissions } = questionIds.length > 0
-    ? await supabase.from('submissions').select('id, question_id, canvas_data, text_answer, updated_at').eq('student_id', studentId).in('question_id', questionIds)
-    : { data: [] }
+  // No .in('question_id', questionIds) filter here — a student enrolled in
+  // multiple classes can have a combined question bank well past the point
+  // where PostgREST rejects the request URL as too long (this exact bug hit
+  // the Progress/Dashboard/Class pages once the DB crossed ~600 questions;
+  // see the fix there). The student_id filter alone keeps this bounded, and
+  // matching against a specific question still happens downstream via the
+  // qMeta/latestGradeByQuestion lookups, so the extra rows for questions
+  // outside this student's enrolled classes are simply never read.
+  const { data: submissions } = await supabase
+    .from('submissions')
+    .select('id, question_id, canvas_data, text_answer, updated_at')
+    .eq('student_id', studentId)
   const submissionIds = submissions?.map((s: { id: string }) => s.id) ?? []
   const { data: feedbacks } = submissionIds.length > 0
     ? await supabase.from('feedback').select('submission_id, grade, canvas_data, text_feedback').in('submission_id', submissionIds)

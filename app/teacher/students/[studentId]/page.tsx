@@ -74,10 +74,16 @@ export default async function StudentDetailPage({ params }: { params: Promise<{ 
     : null
   const dueDateMap = new Map(assignments?.map((a: { question_id: string; due_date: string | null }) => [a.question_id, a.due_date]) ?? [])
 
-  // Student's submissions + feedback
-  const { data: submissions } = questionIds.length > 0
-    ? await supabase.from('submissions').select('id, question_id, created_at, canvas_data').eq('student_id', studentId).in('question_id', questionIds)
-    : { data: [] }
+  // Student's submissions + feedback. No .in('question_id', questionIds)
+  // filter here — a student enrolled in multiple classes can push this past
+  // the point where PostgREST rejects the combined request URL as too long
+  // (see the fix in lib/studentReport.ts for the same bug). student_id alone
+  // keeps this bounded; matching a specific question still happens via the
+  // Map/Set lookups below.
+  const { data: submissions } = await supabase
+    .from('submissions')
+    .select('id, question_id, created_at, canvas_data')
+    .eq('student_id', studentId)
 
   const submissionIds = submissions?.map((s: { id: string }) => s.id) ?? []
   const { data: feedbacks } = submissionIds.length > 0
