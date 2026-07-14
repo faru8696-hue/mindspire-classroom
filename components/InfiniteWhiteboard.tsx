@@ -1256,6 +1256,14 @@ function InfiniteWhiteboardInner({
     <div className="w-full h-full flex flex-col overflow-hidden bg-white">
       {/* Toolbar */}
       <div className="border-b border-gray-200 p-2 flex gap-1.5 items-center overflow-x-auto flex-shrink-0 bg-white">
+        <button onClick={() => { const v = viewRef.current; const nv = { ...v, zoom: Math.max(MIN_ZOOM, v.zoom - 0.1) }; viewRef.current = nv; _setView(nv) }}
+          className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-sm flex-shrink-0">−</button>
+        <span className="px-2 py-1 bg-gray-100 rounded text-sm font-medium min-w-[52px] text-center flex-shrink-0">{Math.round(view.zoom * 100)}%</span>
+        <button onClick={() => { const v = viewRef.current; const nv = { ...v, zoom: Math.min(MAX_ZOOM, v.zoom + 0.1) }; viewRef.current = nv; _setView(nv) }}
+          className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-sm flex-shrink-0">+</button>
+        <button onClick={() => fitToContent()} title="Fit work to screen"
+          className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-sm flex-shrink-0">🎯 Fit</button>
+        <div className="w-px h-6 bg-gray-200 flex-shrink-0" />
         {tb('pointer', '➤ Select')}
         {tb('pan', '✋ Pan')}
         {tb('pen', '✏️ Pen')}
@@ -1296,13 +1304,6 @@ function InfiniteWhiteboardInner({
           <button onClick={doUndo} title="Undo (Ctrl+Z)" className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-sm">↩ Undo</button>
           <button onClick={doRedo} title="Redo (Ctrl+Shift+Z)" className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-sm">↪ Redo</button>
           <div className="w-px h-5 bg-gray-200" />
-          <button onClick={() => { const v = viewRef.current; const nv = { ...v, zoom: Math.max(MIN_ZOOM, v.zoom - 0.1) }; viewRef.current = nv; _setView(nv) }}
-            className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-sm">−</button>
-          <span className="px-2 py-1 bg-gray-100 rounded text-sm font-medium min-w-[52px] text-center">{Math.round(view.zoom * 100)}%</span>
-          <button onClick={() => { const v = viewRef.current; const nv = { ...v, zoom: Math.min(MAX_ZOOM, v.zoom + 0.1) }; viewRef.current = nv; _setView(nv) }}
-            className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-sm">+</button>
-          <button onClick={() => fitToContent()} title="Fit work to screen"
-            className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-sm">🎯 Fit</button>
           <button onClick={() => { viewRef.current = { panX: 0, panY: 0, zoom: 1 }; _setView({ panX: 0, panY: 0, zoom: 1 }) }}
             className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-sm">Reset</button>
           {(onSaveStudent || onSaveTeacher) && (
