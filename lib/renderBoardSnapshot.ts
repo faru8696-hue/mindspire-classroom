@@ -9,8 +9,8 @@ import { DrawObj, parseObjs, contentBounds } from './boardObjects'
 export async function renderBoardSnapshot(
   canvasData: string | null,
   teacherCanvasData: string | null,
-  width = 900,
-  height = 700,
+  width = 640,
+  height = 500,
 ): Promise<string | null> {
   const objs = [...parseObjs(canvasData), ...parseObjs(teacherCanvasData)]
   const bounds = contentBounds(objs)

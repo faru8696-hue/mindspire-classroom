@@ -213,6 +213,10 @@ export default function SubmissionsPage() {
         setClassAiResults(prev => new Map(prev).set(sub.id, { loading: false, error: err instanceof Error ? err.message : 'AI check failed' }))
       }
       setClassAiProgress({ done: i + 1, total: pending.length })
+      // Small gap between calls — spreads the requests-per-minute load
+      // instead of firing them back to back, which is what tends to trip
+      // the shared Gemini rate limit during a big bulk run.
+      if (i < pending.length - 1) await new Promise(r => setTimeout(r, 600))
     }
     setClassAiRunning(false)
   }

@@ -48,17 +48,18 @@ async function postToGemini(body: Record<string, unknown>, thinkingBudget: numbe
   throw lastError
 }
 
-async function callGemini(parts: GeminiPart[], responseSchema?: object): Promise<string> {
+// thinkingBudget: -1 = dynamic/unbounded, which Google bills as output
+// tokens and can run away in cost on grading calls fired in a bulk loop (one
+// call per ungraded submission). A bounded budget still gets "thinking" mode
+// for reading handwriting accurately, just with a cost ceiling per call.
+async function callGemini(parts: GeminiPart[], responseSchema?: object, thinkingBudget = 1024): Promise<string> {
   const body: Record<string, unknown> = {
     contents: [{ parts }],
   }
   if (responseSchema) {
     body.generationConfig = { responseMimeType: 'application/json', responseSchema }
   }
-  // Reading handwriting/diagrams accurately and judging correctness
-  // benefits from the model's "thinking" mode (dynamic budget) — worth
-  // the extra cost/latency for grading specifically.
-  return postToGemini(body, -1)
+  return postToGemini(body, thinkingBudget)
 }
 
 function imagePart(dataUrl: string): GeminiPart {
@@ -108,7 +109,10 @@ Decide whether the student's answer is fundamentally correct (the right final an
     required: ['grade', 'feedback'],
   }
 
-  const text = await callGemini([{ text: prompt }, imagePart(boardImageDataUrl)], schema)
+  // 512 is enough thinking budget for a single-image correct/incorrect call
+  // — this is the path that runs in a tight bulk loop (once per ungraded
+  // submission), so keeping its budget small matters most for cost.
+  const text = await callGemini([{ text: prompt }, imagePart(boardImageDataUrl)], schema, 512)
   const parsed = JSON.parse(text) as AiGradeResult
   if (parsed.grade !== 'correct' && parsed.grade !== 'incorrect') {
     throw new Error(`Unexpected grade value from Gemini: ${parsed.grade}`)
