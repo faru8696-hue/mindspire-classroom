@@ -8,8 +8,20 @@ const GRADE_BADGE: Record<string, { label: string; cls: string; dot: string }> =
   incorrect: { label: '✗ Incorrect', cls: 'bg-red-100 text-red-600',      dot: 'bg-red-500' },
 }
 
-export default async function TopicPage({ params }: { params: Promise<{ classId: string; unitId: string; topicId: string }> }) {
+const DIFFICULTY_BADGE: Record<string, { label: string; cls: string }> = {
+  easy:   { label: 'Easy',   cls: 'bg-sky-100 text-sky-700' },
+  medium: { label: 'Medium', cls: 'bg-orange-100 text-orange-700' },
+  hard:   { label: 'Hard',   cls: 'bg-rose-100 text-rose-700' },
+}
+
+export default async function TopicPage({
+  params, searchParams,
+}: {
+  params: Promise<{ classId: string; unitId: string; topicId: string }>
+  searchParams: Promise<{ difficulty?: string }>
+}) {
   const { classId, unitId, topicId } = await params
+  const { difficulty: difficultyFilter } = await searchParams
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
@@ -34,6 +46,18 @@ export default async function TopicPage({ params }: { params: Promise<{ classId:
   const questions = allQuestions?.filter(q => assignedIds.has(q.id)) ?? []
 
   if (!topic) notFound()
+
+  // Difficulty filter — lets a student jump straight to Hard questions
+  // instead of always working through Easy/Medium first. Query-param based
+  // so it works without any client-side JS.
+  const difficultyCounts = { easy: 0, medium: 0, hard: 0 }
+  for (const q of questions) {
+    if (q.difficulty && q.difficulty in difficultyCounts) difficultyCounts[q.difficulty as 'easy' | 'medium' | 'hard']++
+  }
+  const hasDifficultyData = questions.some(q => q.difficulty)
+  const visibleQuestions = difficultyFilter && difficultyFilter in difficultyCounts
+    ? questions.filter(q => q.difficulty === difficultyFilter)
+    : questions
 
   const questionIds = questions?.map(q => q.id) ?? []
   const { data: submissions } = questionIds.length > 0
@@ -71,8 +95,30 @@ export default async function TopicPage({ params }: { params: Promise<{ classId:
         </div>
       )}
 
+      {hasDifficultyData && (
+        <div className="flex gap-2 mb-4 flex-wrap">
+          <Link
+            href={`/student/${classId}/${unitId}/${topicId}`}
+            className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${!difficultyFilter ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-gray-600 border-gray-200 hover:border-purple-300'}`}
+          >
+            All ({questions.length})
+          </Link>
+          {(['easy', 'medium', 'hard'] as const).map(d => (
+            difficultyCounts[d] > 0 && (
+              <Link
+                key={d}
+                href={`/student/${classId}/${unitId}/${topicId}?difficulty=${d}`}
+                className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${difficultyFilter === d ? `${DIFFICULTY_BADGE[d].cls} border-transparent` : 'bg-white text-gray-600 border-gray-200 hover:border-purple-300'}`}
+              >
+                {DIFFICULTY_BADGE[d].label} ({difficultyCounts[d]})
+              </Link>
+            )
+          ))}
+        </div>
+      )}
+
       <div className="space-y-3">
-        {questions?.map((q, i) => {
+        {visibleQuestions?.map((q, i) => {
           const subId = submissionByQuestion.get(q.id)
           const done = !!subId
           const grade = subId ? gradeBySubmission.get(subId) ?? null : null
@@ -95,7 +141,14 @@ export default async function TopicPage({ params }: { params: Promise<{ classId:
                   {grade === 'correct' ? '✓' : grade === 'incorrect' ? '✗' : grade === 'partial' ? '~' : done ? '●' : i + 1}
                 </div>
                 <div className="flex-1">
-                  <h2 className="font-semibold text-gray-800 group-hover:text-purple-800 transition-colors">{q.title}</h2>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h2 className="font-semibold text-gray-800 group-hover:text-purple-800 transition-colors">{q.title}</h2>
+                    {q.difficulty && DIFFICULTY_BADGE[q.difficulty] && (
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold flex-shrink-0 ${DIFFICULTY_BADGE[q.difficulty].cls}`}>
+                        {DIFFICULTY_BADGE[q.difficulty].label} · {q.points}pt{q.points === 1 ? '' : 's'}
+                      </span>
+                    )}
+                  </div>
                   {q.content && <p className="text-sm text-gray-500 mt-0.5">{q.content}</p>}
                 </div>
                 {gradeBadge ? (
@@ -109,7 +162,7 @@ export default async function TopicPage({ params }: { params: Promise<{ classId:
             </Link>
           )
         })}
-        {!questions?.length && <p className="text-gray-500">No questions yet.</p>}
+        {!visibleQuestions?.length && <p className="text-gray-500">{difficultyFilter ? 'No questions at this difficulty.' : 'No questions yet.'}</p>}
       </div>
     </div>
   )
