@@ -203,3 +203,63 @@ Write the complete, correct solution:
 
   return (await callGemini(parts)).trim()
 }
+
+export interface DeepReportStruggleItem {
+  questionTitle: string
+  questionContent: string | null
+  answerKey: string | null
+  topicTitle: string
+  grade: string | null
+  boardImageDataUrl: string | null
+  textAnswer: string | null
+  teacherComment: string | null
+}
+
+// Looks at a student's ACTUAL submitted work (not just grade percentages)
+// across their recent struggling questions and writes a genuine diagnostic
+// narrative — what specific misconception or skill gap shows up, whether it
+// repeats across topics, and what to do about it. This is what makes the
+// parent report "deep" instead of a bare pass/fail tally.
+export async function generateDeepStudentReport(
+  studentDisplayName: string,
+  masterySummary: string,
+  items: DeepReportStruggleItem[],
+): Promise<string> {
+  const parts: GeminiPart[] = [{
+    text: `You are an experienced AP/Honors Chemistry teacher writing a genuinely useful, specific progress narrative about ${studentDisplayName} for their parent/guardian. This is NOT a generic "did X questions, got Y correct" summary — the parent already sees those numbers separately. Your job is to look at the student's ACTUAL submitted work below (images of their handwritten whiteboard work, or typed answers) on the questions they struggled with, and diagnose what is REALLY going on.
+
+Topic mastery summary (for context only, don't just restate this):
+${masterySummary}
+
+Below are up to ${items.length} of the student's recent struggling submissions (incorrect, partial, needs-more-work, or ungraded), each with the question, the correct answer key, and their actual work. Study the actual work carefully — read handwriting, look at where their reasoning diverges from the correct answer key, and identify the SPECIFIC error pattern (e.g. "consistently drops a sign when balancing charges," "confuses molarity with molality," "can set up the formula but makes arithmetic errors under time pressure," "understands the concept but skips units/sig figs," etc.) rather than vague statements like "needs to review stoichiometry."
+
+Write a report with these sections, in plain text (no markdown symbols, use line breaks and short section headers in Title Case followed by a colon):
+
+Overall Pattern: 2-4 sentences on the single biggest recurring issue you see across their work, stated specifically and concretely.
+
+Specific Struggles: for each distinct misconception or error pattern you find (usually 2-4), a short paragraph naming the pattern, citing 1-2 concrete examples from their actual submitted work (reference the question by name), and explaining what's actually going wrong in their reasoning — not just that they got it wrong.
+
+What's Going Well: 1-2 sentences on a genuine strength visible in their work (skip generic praise — cite something specific you actually observed).
+
+Recommended Next Steps: 2-3 concrete, actionable suggestions for the student/parent (e.g. specific topic to re-practice, a specific habit to build like "double-check units before finalizing an answer").
+
+Be honest and specific — this needs to be genuinely useful for a parent to understand where their child actually struggles, not a diplomatically vague summary. If the work shown doesn't support a strong claim about a pattern, say so rather than inventing one.`,
+  }]
+
+  for (const item of items) {
+    let detail = `\n---\nTopic: ${item.topicTitle}\nQuestion: ${item.questionTitle}\n${item.questionContent ? `Details: ${item.questionContent}\n` : ''}Correct answer key: ${item.answerKey ?? '(not available)'}\nGrade given: ${item.grade ?? 'not yet graded'}`
+    if (item.teacherComment) detail += `\nTeacher's comment: ${item.teacherComment}`
+    if (item.textAnswer) detail += `\nStudent's typed answer: ${item.textAnswer}`
+    if (item.boardImageDataUrl) detail += `\nStudent's handwritten work is in the attached image.`
+    parts.push({ text: detail })
+    if (item.boardImageDataUrl) {
+      try {
+        parts.push(imagePart(item.boardImageDataUrl))
+      } catch {
+        // skip a malformed image rather than failing the whole report
+      }
+    }
+  }
+
+  return (await callGemini(parts)).trim()
+}

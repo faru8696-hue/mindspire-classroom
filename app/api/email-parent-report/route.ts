@@ -1,0 +1,123 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { getCaller, createAdminClient } from '@/lib/supabase/server'
+import { computeStudentReport } from '@/lib/studentReport'
+import { sendEmail } from '@/lib/email'
+
+function masteryBarColor(pct: number): string {
+  if (pct >= 80) return '#16a34a'
+  if (pct >= 50) return '#d97706'
+  return '#dc2626'
+}
+
+// Turns the AI-generated deep report's plain-text section headers ("Overall
+// Pattern:", "Specific Struggles:", etc.) into simple HTML paragraphs so the
+// email doesn't just dump one giant text blob.
+function deepReportToHtml(reportText: string): string {
+  const paragraphs = reportText.split(/\n{2,}/).map(p => p.trim()).filter(Boolean)
+  return paragraphs.map(p => {
+    const headingMatch = p.match(/^([A-Za-z][A-Za-z /]{2,40}):\s*([\s\S]*)$/)
+    if (headingMatch) {
+      const [, heading, rest] = headingMatch
+      return `<p style="margin:16px 0 4px;"><strong style="color:#5b21b6;">${heading}:</strong></p><p style="margin:0 0 8px; white-space:pre-wrap;">${rest.replace(/\n/g, '<br/>')}</p>`
+    }
+    return `<p style="margin:0 0 8px; white-space:pre-wrap;">${p.replace(/\n/g, '<br/>')}</p>`
+  }).join('')
+}
+
+export async function POST(req: NextRequest) {
+  const caller = await getCaller()
+  if (caller?.profile?.role !== 'teacher') {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+  }
+
+  const { studentId } = await req.json()
+  if (!studentId) return NextResponse.json({ error: 'Missing studentId' }, { status: 400 })
+
+  const admin = await createAdminClient()
+
+  const { data: teacherProfile } = await admin
+    .from('profiles')
+    .select('full_name')
+    .eq('id', caller.profile.id)
+    .maybeSingle()
+  const teacherName = teacherProfile?.full_name ?? 'your teacher'
+
+  const { data: studentProfile } = await admin
+    .from('profiles')
+    .select('parent_email, parent_name, full_name, nickname')
+    .eq('id', studentId)
+    .single()
+  if (!studentProfile) return NextResponse.json({ error: 'Student not found' }, { status: 404 })
+  if (!studentProfile.parent_email) {
+    return NextResponse.json({ error: 'This student has no parent email on file yet.' }, { status: 400 })
+  }
+
+  const { data: deepReportRow } = await admin
+    .from('student_deep_reports')
+    .select('report_text, generated_at')
+    .eq('student_id', studentId)
+    .maybeSingle()
+
+  const report = await computeStudentReport(admin, studentId)
+  if (!report) return NextResponse.json({ error: 'Could not compute report' }, { status: 404 })
+
+  const displayName = report.student.nickname || report.student.full_name
+  const className = report.enrolledClasses.map(c => c.title).join(', ')
+
+  const masteryRowsHtml = report.masteryRows.map(t => `
+    <tr>
+      <td style="padding:6px 8px; font-size:13px; color:#374151;">${t.title}</td>
+      <td style="padding:6px 8px; width:120px;">
+        <div style="background:#f3f4f6; border-radius:6px; height:10px; overflow:hidden;">
+          <div style="background:${masteryBarColor(t.pct)}; height:10px; width:${t.pct}%;"></div>
+        </div>
+      </td>
+      <td style="padding:6px 8px; font-size:13px; font-weight:600; color:${masteryBarColor(t.pct)}; text-align:right;">${t.pct}%</td>
+    </tr>
+  `).join('')
+
+  const deepSectionHtml = deepReportRow?.report_text
+    ? `<div style="margin-top:24px; padding:16px; background:#faf5ff; border:1px solid #e9d5ff; border-radius:12px;">
+         <p style="margin:0 0 8px; font-size:12px; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; color:#7c3aed;">Deep Review — What ${displayName} Is Actually Struggling With</p>
+         ${deepReportToHtml(deepReportRow.report_text)}
+       </div>`
+    : ''
+
+  const html = `
+    <div style="font-family: -apple-system, sans-serif; max-width: 560px; color:#111827;">
+      <p>Hi${studentProfile.parent_name ? ` ${studentProfile.parent_name}` : ''},</p>
+      <p>Here is ${displayName}'s chemistry progress report${className ? ` for ${className}` : ''}, prepared by their teacher.</p>
+
+      <div style="display:flex; gap:12px; margin:16px 0;">
+        <div style="background:#f5f3ff; border-radius:12px; padding:12px 16px; text-align:center;">
+          <div style="font-size:24px; font-weight:700; color:#6d28d9;">${report.overallPct}%</div>
+          <div style="font-size:11px; color:#6b7280;">Overall mastery</div>
+        </div>
+      </div>
+
+      <p style="font-size:13px; color:#6b7280;">✓ ${report.correct} correct &nbsp;·&nbsp; ~ ${report.partial} partial &nbsp;·&nbsp; ✗ ${report.incorrect} need work &nbsp;·&nbsp; ${report.graded} questions graded</p>
+
+      ${report.masteryRows.length > 0 ? `
+        <p style="font-weight:600; margin-top:20px; margin-bottom:4px;">Mastery by topic</p>
+        <table style="width:100%; border-collapse:collapse;">${masteryRowsHtml}</table>
+      ` : ''}
+
+      ${deepSectionHtml}
+
+      <p style="color:#9ca3af; font-size:12px; margin-top:24px;">This report was generated by Mindspire Lab Classroom on behalf of ${teacherName}. Reply to this email or contact the teacher directly with any questions.</p>
+    </div>
+  `
+
+  try {
+    await sendEmail({
+      to: studentProfile.parent_email,
+      subject: `${displayName}'s Chemistry Progress Report`,
+      html,
+    })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    return NextResponse.json({ error: `Failed to send email: ${message}` }, { status: 502 })
+  }
+
+  return NextResponse.json({ ok: true, sentTo: studentProfile.parent_email })
+}
