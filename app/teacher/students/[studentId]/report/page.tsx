@@ -29,6 +29,7 @@ export default async function StudentReportPage({ params }: { params: Promise<{ 
   const {
     student, enrolledClasses, overallPct, correct, partial, incorrect, graded,
     masteryRows, improvements, totalEvents, firstDate, lastDate, struggleItems, trend,
+    classBreakdown, isFoundationalAdvancedPairing,
   } = report
 
   const displayName = student.nickname || student.full_name
@@ -96,6 +97,8 @@ export default async function StudentReportPage({ params }: { params: Promise<{ 
         overallPct={overallPct}
         trend={trend}
         classComparison={classComparison}
+        classBreakdown={classBreakdown}
+        isFoundationalAdvancedPairing={isFoundationalAdvancedPairing}
         struggleItems={struggleItems.map(s => ({
           questionTitle: s.questionTitle,
           questionContent: s.questionContent,

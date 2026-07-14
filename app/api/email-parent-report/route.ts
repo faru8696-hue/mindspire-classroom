@@ -120,17 +120,35 @@ export async function POST(req: NextRequest) {
     ? `<p style="font-weight:600; margin-top:20px; margin-bottom:2px;">Accuracy Trend</p>${trendSparklineHtml(report.trend)}`
     : ''
 
+  const ROLE_ICON: Record<string, string> = { foundational: '📘', advanced: '🎓' }
+  const ROLE_LABEL: Record<string, string> = { foundational: 'Foundational', advanced: 'Advanced (AP)' }
+
+  // Table-based stat cards (one per class, or just one overall card) — using
+  // a <table> instead of flexbox for reliable rendering across email clients.
+  const statCardsHtml = report.classBreakdown.length > 1
+    ? `<table style="border-collapse:separate; border-spacing:10px 0; margin:16px 0;"><tr>
+        ${report.classBreakdown.map(c => `
+          <td style="background:#f5f3ff; border-radius:12px; padding:12px 16px; text-align:center;">
+            <div style="font-size:22px; font-weight:700; color:${masteryBarColor(c.overallPct)};">${c.overallPct}%</div>
+            <div style="font-size:11px; color:#6b7280; white-space:nowrap;">${c.role ? `${ROLE_ICON[c.role]} ` : ''}${c.className}</div>
+            ${c.role ? `<div style="font-size:9px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.03em;">${ROLE_LABEL[c.role]}</div>` : ''}
+          </td>
+        `).join('')}
+      </tr></table>
+      ${report.isFoundationalAdvancedPairing ? `<p style="font-size:12px; color:#9ca3af; margin:-8px 0 16px;">${firstName} is taking AP Chemistry while concurrently building the foundation in Honors Chemistry — a gap between the two is expected, not a red flag.</p>` : ''}`
+    : `<div style="margin:16px 0;">
+        <div style="background:#f5f3ff; border-radius:12px; padding:12px 16px; text-align:center; display:inline-block;">
+          <div style="font-size:24px; font-weight:700; color:#6d28d9;">${report.overallPct}%</div>
+          <div style="font-size:11px; color:#6b7280;">Overall mastery</div>
+        </div>
+      </div>`
+
   const html = `
     <div style="font-family: -apple-system, sans-serif; max-width: 560px; color:#111827;">
       <p>Hi${studentProfile.parent_name ? ` ${studentProfile.parent_name}` : ''},</p>
       <p>Here is ${firstName}'s chemistry progress report${className ? ` for ${className}` : ''}, prepared by their teacher.</p>
 
-      <div style="display:flex; gap:12px; margin:16px 0;">
-        <div style="background:#f5f3ff; border-radius:12px; padding:12px 16px; text-align:center;">
-          <div style="font-size:24px; font-weight:700; color:#6d28d9;">${report.overallPct}%</div>
-          <div style="font-size:11px; color:#6b7280;">Overall mastery</div>
-        </div>
-      </div>
+      ${statCardsHtml}
 
       <p style="font-size:13px; color:#6b7280;">✓ ${report.correct} correct &nbsp;·&nbsp; ~ ${report.partial} partial &nbsp;·&nbsp; ✗ ${report.incorrect} need work &nbsp;·&nbsp; ${report.graded} questions graded</p>
       <p style="font-size:12px; color:#9ca3af;">Active on ${report.daysActive} day${report.daysActive === 1 ? '' : 's'}, ${report.submissionsLast14Days} submission${report.submissionsLast14Days === 1 ? '' : 's'} in the last 2 weeks.</p>

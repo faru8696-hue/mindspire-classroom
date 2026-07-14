@@ -17,6 +17,7 @@ interface StruggleItemProp {
 
 interface TrendPointProp { date: string; pct: number; cumulativeGraded: number }
 interface TopicComparisonProp { topicId: string; title: string; studentPct: number; classAvgPct: number; classSize: number }
+interface ClassBreakdownProp { classId: string; className: string; overallPct: number; correct: number; partial: number; incorrect: number; graded: number; role: 'foundational' | 'advanced' | null }
 
 interface Props {
   studentId: string
@@ -28,6 +29,8 @@ interface Props {
   trend: TrendPointProp[]
   classComparison: { classAvgOverallPct: number; classSize: number; perTopic: TopicComparisonProp[] } | null
   overallPct: number
+  classBreakdown: ClassBreakdownProp[]
+  isFoundationalAdvancedPairing: boolean
 }
 
 function formatReportText(text: string) {
@@ -83,6 +86,84 @@ function TrendChart({ trend }: { trend: TrendPointProp[] }) {
   )
 }
 
+function gaugeColor(pct: number): string {
+  if (pct >= 80) return '#16a34a'
+  if (pct >= 50) return '#d97706'
+  return '#dc2626'
+}
+
+// Radial "gauge" — an infographic-style alternative to the line/bar charts,
+// good for an at-a-glance per-class stat card.
+function DonutGauge({ pct, size = 96 }: { pct: number; size?: number }) {
+  const stroke = 9
+  const r = (size - stroke) / 2
+  const c = 2 * Math.PI * r
+  const color = gaugeColor(pct)
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#f3f4f6" strokeWidth={stroke} />
+      <circle
+        cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={stroke}
+        strokeDasharray={c} strokeDashoffset={c - (pct / 100) * c} strokeLinecap="round"
+        transform={`rotate(-90 ${size / 2} ${size / 2})`}
+      />
+      <text x="50%" y="50%" textAnchor="middle" dominantBaseline="central" fontSize={size * 0.24} fontWeight={700} fill={color}>
+        {pct}%
+      </text>
+    </svg>
+  )
+}
+
+const ROLE_ICON: Record<string, string> = { foundational: '📘', advanced: '🎓' }
+const ROLE_LABEL: Record<string, string> = { foundational: 'Foundational', advanced: 'Advanced (AP)' }
+
+// Infographic-style class-breakdown cards: one donut gauge per enrolled
+// class, with a "foundational → advanced" callout when the student is
+// taking Honors Chem alongside AP Chem without the usual prerequisite —
+// this is the whole point of the comparison the teacher asked for.
+function ClassBreakdownInfographic({ classBreakdown, isFoundationalAdvancedPairing, displayName }: {
+  classBreakdown: ClassBreakdownProp[]; isFoundationalAdvancedPairing: boolean; displayName: string
+}) {
+  if (classBreakdown.length < 2) return null
+  const sorted = [...classBreakdown].sort((a, b) => {
+    if (a.role === 'foundational') return -1
+    if (b.role === 'foundational') return 1
+    return 0
+  })
+
+  return (
+    <div className="mt-5">
+      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+        {isFoundationalAdvancedPairing ? 'Foundational vs. Advanced' : 'Class Breakdown'}
+      </p>
+      {isFoundationalAdvancedPairing && (
+        <p className="text-xs text-gray-400 mt-1 mb-3 max-w-xl">
+          {displayName} is taking AP Chemistry while concurrently building the foundation in Honors Chemistry — a harder path than the usual sequence. A gap between the two is expected, not a red flag.
+        </p>
+      )}
+      <div className="flex flex-wrap gap-4 mt-3">
+        {sorted.map((c, i) => (
+          <div key={c.classId} className="flex items-center gap-4">
+            <div className="flex flex-col items-center bg-gradient-to-b from-gray-50 to-white border border-gray-100 rounded-2xl p-4 min-w-[150px]">
+              <DonutGauge pct={c.overallPct} />
+              <div className="mt-2 text-center">
+                <p className="text-sm font-semibold text-gray-800 truncate max-w-[140px]" title={c.className}>
+                  {c.role && <span className="mr-1">{ROLE_ICON[c.role]}</span>}{c.className}
+                </p>
+                {c.role && <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">{ROLE_LABEL[c.role]}</p>}
+                <p className="text-[11px] text-gray-400 mt-0.5">{c.graded} graded</p>
+              </div>
+            </div>
+            {isFoundationalAdvancedPairing && i === 0 && sorted.length > 1 && (
+              <span className="text-2xl text-gray-300">→</span>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function ClassComparisonBars({ comparison, displayName }: { comparison: NonNullable<Props['classComparison']>; displayName: string }) {
   return (
     <div className="mt-4 space-y-3">
@@ -104,7 +185,7 @@ function ClassComparisonBars({ comparison, displayName }: { comparison: NonNulla
 
 export default function DeepReviewPanel({
   studentId, displayName, struggleItems, initialReportText, initialGeneratedAt, hasParentEmail,
-  trend, classComparison, overallPct,
+  trend, classComparison, overallPct, classBreakdown, isFoundationalAdvancedPairing,
 }: Props) {
   const [reportText, setReportText] = useState(initialReportText)
   const [generatedAt, setGeneratedAt] = useState(initialGeneratedAt)
@@ -187,6 +268,12 @@ export default function DeepReviewPanel({
           </p>
         </div>
       </div>
+
+      <ClassBreakdownInfographic
+        classBreakdown={classBreakdown}
+        isFoundationalAdvancedPairing={isFoundationalAdvancedPairing}
+        displayName={displayName}
+      />
 
       {trend.length >= 2 && (
         <div>

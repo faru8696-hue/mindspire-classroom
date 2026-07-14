@@ -51,6 +51,10 @@ export async function POST(req: NextRequest) {
 
   const engagementSummary = `Active on ${report.daysActive} distinct day${report.daysActive === 1 ? '' : 's'}; ${report.submissionsLast14Days} submission${report.submissionsLast14Days === 1 ? '' : 's'} in the last 14 days.`
 
+  const classBreakdownSummary = report.classBreakdown.length > 1
+    ? report.classBreakdown.map(c => `${c.className}${c.role ? ` (${c.role})` : ''}: ${c.overallPct}% overall (${c.graded} questions graded)`).join('\n')
+    : null
+
   let classComparisonSummary: string | null = null
   try {
     const comparison = await computeClassComparison(admin, report)
@@ -67,7 +71,10 @@ export async function POST(req: NextRequest) {
 
   try {
     const reportText = await generateDeepStudentReport(
-      { studentFirstName, parentName, masterySummary, trendSummary, engagementSummary, classComparisonSummary },
+      {
+        studentFirstName, parentName, masterySummary, trendSummary, engagementSummary, classComparisonSummary,
+        classBreakdownSummary, isFoundationalAdvancedPairing: report.isFoundationalAdvancedPairing,
+      },
       items,
     )
 

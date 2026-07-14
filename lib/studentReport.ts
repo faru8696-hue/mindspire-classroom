@@ -25,6 +25,16 @@ export interface StruggleItem {
 export interface TrendPoint { date: string; pct: number; cumulativeGraded: number }
 export interface TopicComparison { topicId: string; title: string; studentPct: number; classAvgPct: number; classSize: number }
 export interface ClassComparison { classAvgOverallPct: number; classSize: number; perTopic: TopicComparison[] }
+export interface ClassBreakdown {
+  classId: string
+  className: string
+  overallPct: number
+  correct: number
+  partial: number
+  incorrect: number
+  graded: number
+  role: 'foundational' | 'advanced' | null // set when dual-enrolled in a Honors + AP pairing
+}
 
 export interface StudentReportData {
   student: { id: string; full_name: string; nickname: string | null; grade_level: string | null }
@@ -43,6 +53,8 @@ export interface StudentReportData {
   trend: TrendPoint[]
   daysActive: number
   submissionsLast14Days: number
+  classBreakdown: ClassBreakdown[]
+  isFoundationalAdvancedPairing: boolean // true when enrolled in both an Honors/foundational class and an AP/advanced class
   // Internal fields carried through so computeClassComparison doesn't have to
   // re-derive them from scratch (avoids re-running the same heavy queries).
   _assignedQs: { id: string; topic_id: string }[]
@@ -118,6 +130,13 @@ export async function computeStudentReport(supabase: SupabaseClient, studentId: 
   const qMeta = new Map((questions ?? []).map((q: { id: string; title: string; content: string | null; answer_key: string | null; topic_id: string }) => [q.id, q]))
   const topicMeta = new Map((topics ?? []).map((t: { id: string; title: string }) => [t.id, t]))
 
+  // topic -> unit -> class, so per-question mastery can be attributed to a
+  // specific enrolled class (needed for the class breakdown below).
+  const unitClassById = new Map((units ?? []).map((u: { id: string; class_id: string }) => [u.id, u.class_id]))
+  const classIdByTopicId = new Map(
+    (topics ?? []).map((t: { id: string; unit_id: string }) => [t.id, unitClassById.get(t.unit_id) as string | undefined])
+  )
+
   const assignedQs = assignedSet ? (questions ?? []).filter((q: { id: string }) => assignedSet.has(q.id)) : (questions ?? [])
   const topicStats = new Map<string, { id: string; title: string; graded: number; score: number; total: number }>()
   for (const q of assignedQs) {
@@ -143,6 +162,45 @@ export async function computeStudentReport(supabase: SupabaseClient, studentId: 
     else if (g === 'incorrect' || g === 'needsmore') { incorrect++; graded++ }
   }
   const overallPct = graded > 0 ? Math.round(((correct + partial * 0.5) / graded) * 100) : 0
+
+  // ── Per-class breakdown ───────────────────────────────────────────
+  // A student can be enrolled in more than one class (most commonly: Honors
+  // Chemistry as a foundational class alongside AP Chemistry, when they're
+  // taking AP without the usual prior-chemistry prerequisite). Splitting
+  // mastery by class lets the report compare "how are they doing building
+  // the foundation" vs. "how are they doing in the advanced class" instead
+  // of blending both into one misleading combined percentage.
+  const classStatAccum = new Map<string, { correct: number; partial: number; incorrect: number; graded: number }>()
+  for (const q of assignedQs) {
+    const classId = classIdByTopicId.get(q.topic_id)
+    if (!classId) continue
+    if (!classStatAccum.has(classId)) classStatAccum.set(classId, { correct: 0, partial: 0, incorrect: 0, graded: 0 })
+    const acc = classStatAccum.get(classId)!
+    const g = latestGradeByQuestion.get(q.id)
+    if (!g) continue
+    if (g === 'correct') { acc.correct++; acc.graded++ }
+    else if (g === 'partial') { acc.partial++; acc.graded++ }
+    else if (g === 'incorrect' || g === 'needsmore') { acc.incorrect++; acc.graded++ }
+  }
+
+  const isHonorsLike = (title: string) => /honors/i.test(title)
+  const isApLike = (title: string) => /\bap\b/i.test(title)
+  const hasFoundational = enrolledClasses.some(c => isHonorsLike(c.title))
+  const hasAdvanced = enrolledClasses.some(c => isApLike(c.title))
+  const isFoundationalAdvancedPairing = hasFoundational && hasAdvanced
+
+  const classBreakdown: ClassBreakdown[] = enrolledClasses.map(c => {
+    const acc = classStatAccum.get(c.id) ?? { correct: 0, partial: 0, incorrect: 0, graded: 0 }
+    const pct = acc.graded > 0 ? Math.round(((acc.correct + acc.partial * 0.5) / acc.graded) * 100) : 0
+    const role: ClassBreakdown['role'] = isFoundationalAdvancedPairing
+      ? (isHonorsLike(c.title) ? 'foundational' : isApLike(c.title) ? 'advanced' : null)
+      : null
+    return {
+      classId: c.id, className: c.title, overallPct: pct,
+      correct: acc.correct, partial: acc.partial, incorrect: acc.incorrect, graded: acc.graded,
+      role,
+    }
+  })
 
   const byQuestion = new Map<string, { grade: string; created_at: string }[]>()
   for (const h of history ?? []) {
@@ -242,6 +300,8 @@ export async function computeStudentReport(supabase: SupabaseClient, studentId: 
     trend,
     daysActive,
     submissionsLast14Days,
+    classBreakdown,
+    isFoundationalAdvancedPairing,
     _assignedQs: assignedQs.map((q: { id: string; topic_id: string }) => ({ id: q.id, topic_id: q.topic_id })),
     _topicMeta: topicMeta as Map<string, { id: string; title: string }>,
     _enrolledClassIds: enrolledClassIds,

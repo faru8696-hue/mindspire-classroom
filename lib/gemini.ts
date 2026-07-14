@@ -222,6 +222,8 @@ export interface DeepReportContext {
   trendSummary: string
   engagementSummary: string
   classComparisonSummary: string | null
+  classBreakdownSummary: string | null
+  isFoundationalAdvancedPairing: boolean
 }
 
 // Looks at a student's ACTUAL submitted work (not just grade percentages)
@@ -233,7 +235,7 @@ export async function generateDeepStudentReport(
   ctx: DeepReportContext,
   items: DeepReportStruggleItem[],
 ): Promise<string> {
-  const { studentFirstName, parentName, masterySummary, trendSummary, engagementSummary, classComparisonSummary } = ctx
+  const { studentFirstName, parentName, masterySummary, trendSummary, engagementSummary, classComparisonSummary, classBreakdownSummary, isFoundationalAdvancedPairing } = ctx
 
   const parts: GeminiPart[] = [{
     text: `You are an experienced AP/Honors Chemistry teacher writing a genuinely useful, specific progress narrative about ${studentFirstName} for ${parentName ? `${parentName}, ${studentFirstName}'s parent/guardian` : "their parent/guardian"}. This is NOT a generic "did X questions, got Y correct" summary — the reader already sees those numbers separately in a table above this report. Your job is to look at the student's ACTUAL submitted work below (images of their handwritten whiteboard work, or typed answers) on the questions they struggled with, and diagnose what is REALLY going on.
@@ -243,7 +245,7 @@ CRITICAL STYLE RULE: Refer to the student by their first name, "${studentFirstNa
 Topic mastery summary (for context only, don't just restate this as a list):
 ${masterySummary}
 
-Progress trend (accuracy over time, oldest to newest — use this to say whether ${studentFirstName} is trending up, down, or flat, don't just repeat the raw numbers):
+${classBreakdownSummary ? `Per-class breakdown:\n${classBreakdownSummary}\n${isFoundationalAdvancedPairing ? `\nIMPORTANT CONTEXT: ${studentFirstName} is enrolled in BOTH an Honors Chemistry class (foundational chemistry) AND an AP Chemistry class (college-level, advanced) AT THE SAME TIME. This means ${studentFirstName} is learning AP-level material without having already completed a full year of foundational chemistry first — that is a genuinely harder path than a typical AP student takes. Because of this:\n- Compare ${studentFirstName}'s performance in the two classes explicitly (e.g. "doing well in the foundational Honors material, and the AP class is understandably more challenging while that foundation is still being built" or "strong in both, which is impressive given the concurrent course load").\n- DO NOT be harsh or alarming about lower scores in the AP class specifically. Frame AP struggles as an expected, normal part of tackling college-level content concurrently with the foundational course, not as a red flag or a sign ${studentFirstName} is "behind." If AP scores are meaningfully lower than Honors scores, say so plainly but with encouraging, realistic framing (e.g. "this gap is expected and should narrow as the Honors foundation solidifies," not "struggling significantly").\n- If Honors Chem performance is solid, explicitly point out that this is a good sign for how ${studentFirstName} will handle the AP material once the foundational gap closes.\n` : ''}\n` : ''}Progress trend (accuracy over time, oldest to newest — use this to say whether ${studentFirstName} is trending up, down, or flat, don't just repeat the raw numbers):
 ${trendSummary}
 
 Engagement: ${engagementSummary}
@@ -259,7 +261,7 @@ Specific Struggles: for each distinct misconception or error pattern you find (u
 
 Progress and Trend: 2-3 sentences using the trend data above — is ${studentFirstName} improving, plateauing, or slipping recently? Be specific about the direction and, if there's a turning point, when it happened.
 
-${classComparisonSummary ? `How ${studentFirstName} Compares: 2-3 sentences using the class comparison data — name specific topics where ${studentFirstName} is ahead of or behind classmates, and call out clearly if a struggling topic is actually a class-wide difficulty rather than something specific to ${studentFirstName}.\n\n` : ''}What's Going Well: 1-2 sentences on a genuine strength visible in ${studentFirstName}'s work (skip generic praise — cite something specific you actually observed).
+${isFoundationalAdvancedPairing ? `Foundational vs. Advanced: 2-3 sentences comparing ${studentFirstName}'s Honors Chemistry (foundational) performance to their AP Chemistry (advanced) performance, using the encouraging, non-alarming framing described above — this is a normal, expected gap given the concurrent course load, not a deficiency.\n\n` : ''}${classComparisonSummary ? `How ${studentFirstName} Compares: 2-3 sentences using the class comparison data — name specific topics where ${studentFirstName} is ahead of or behind classmates, and call out clearly if a struggling topic is actually a class-wide difficulty rather than something specific to ${studentFirstName}.\n\n` : ''}What's Going Well: 1-2 sentences on a genuine strength visible in ${studentFirstName}'s work (skip generic praise — cite something specific you actually observed).
 
 Recommended Next Steps: 2-3 concrete, actionable suggestions${parentName ? ` for ${parentName} and ${studentFirstName}` : ''} (e.g. specific topic to re-practice, a specific habit to build like "double-check units before finalizing an answer").
 
