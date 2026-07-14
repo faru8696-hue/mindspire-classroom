@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCaller, createAdminClient } from '@/lib/supabase/server'
-import { computeStudentReport, computeClassComparison } from '@/lib/studentReport'
+import { computeStudentReport, computeClassComparison, computeMonthlyStats } from '@/lib/studentReport'
 import { sendEmail } from '@/lib/email'
 
 function masteryBarColor(pct: number): string {
@@ -41,6 +41,63 @@ function deepReportToHtml(reportText: string): string {
     }
     return `<p style="margin:0 0 8px; white-space:pre-wrap;">${p.replace(/\n/g, '<br/>')}</p>`
   }).join('')
+}
+
+function pctDeltaHtml(current: number, prev: number | null, unit: string): string {
+  if (prev === null) return ''
+  const diff = current - prev
+  if (diff === 0) return `<div style="font-size:11px;color:#9ca3af;margin-top:2px;">Same as last month</div>`
+  const up = diff > 0
+  return `<div style="font-size:11px;color:${up ? '#16a34a' : '#dc2626'};margin-top:2px;">${up ? '▲' : '▼'} ${Math.abs(diff)}${unit} ${up ? 'more' : 'less'} than last month</div>`
+}
+
+// Screenshot-style "Weekly Update"-esque monthly block: big stat cards for
+// questions completed + accuracy, plus callout boxes comparing against
+// classmates for the same month. No per-question TIME metric is shown here —
+// this schema doesn't track time-on-task (see computeMonthlyStats), only
+// counts/accuracy/active-days, so the callouts are scoped to what's real.
+function monthlyStatsHtml(stats: Awaited<ReturnType<typeof computeMonthlyStats>>, firstName: string): string {
+  const accColor = masteryBarColor(stats.accuracyPct)
+  const callouts: string[] = []
+
+  if (stats.classAvgQuestionsAttempted !== null && stats.questionsPercentile !== null) {
+    const behind = stats.questionsAttempted < stats.classAvgQuestionsAttempted
+    callouts.push(`
+      <div style="display:flex; gap:10px; align-items:flex-start; background:${behind ? '#fef2f2' : '#f0fdf4'}; border-radius:10px; padding:10px 12px; margin-top:8px;">
+        <span style="font-size:16px;">${behind ? '⚠️' : '✅'}</span>
+        <span style="font-size:12.5px; color:#374151;">${firstName} completed <strong>${stats.questionsAttempted} question${stats.questionsAttempted === 1 ? '' : 's'}</strong> this month — ${behind ? 'below' : 'at or above'} the class average of <strong>${stats.classAvgQuestionsAttempted}</strong> (${stats.classSize} classmates compared).</span>
+      </div>`)
+  }
+
+  if (stats.classAvgAccuracyPct !== null && stats.questionsGraded > 0) {
+    const behind = stats.accuracyPct < stats.classAvgAccuracyPct
+    callouts.push(`
+      <div style="display:flex; gap:10px; align-items:flex-start; background:${behind ? '#fffbeb' : '#f0fdf4'}; border-radius:10px; padding:10px 12px; margin-top:8px;">
+        <span style="font-size:16px;">${behind ? '⚠️' : '✅'}</span>
+        <span style="font-size:12.5px; color:#374151;">${firstName}'s accuracy this month was <strong>${stats.accuracyPct}%</strong> — ${behind ? 'below' : 'at or above'} the class average of <strong>${stats.classAvgAccuracyPct}%</strong>.</span>
+      </div>`)
+  }
+
+  return `
+    <div style="margin-top:24px; padding:16px; background:#f5f3ff; border:1px solid #ddd6fe; border-radius:12px;">
+      <p style="margin:0; font-size:11px; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; color:#6d28d9;">Monthly Report</p>
+      <p style="margin:1px 0 14px; font-size:12px; color:#9ca3af;">For ${stats.monthLabel}</p>
+      <table style="width:100%; border-collapse:collapse;"><tr>
+        <td style="width:50%; vertical-align:top;">
+          <div style="font-size:11px; color:#6b7280;">Questions completed</div>
+          <div style="font-size:26px; font-weight:700; color:#5b21b6;">${stats.questionsAttempted}</div>
+          ${pctDeltaHtml(stats.questionsAttempted, stats.prevQuestionsAttempted, '')}
+        </td>
+        <td style="width:50%; vertical-align:top;">
+          <div style="font-size:11px; color:#6b7280;">Accuracy</div>
+          <div style="font-size:26px; font-weight:700; color:${accColor};">${stats.questionsGraded > 0 ? `${stats.accuracyPct}%` : '—'}</div>
+          ${stats.questionsGraded > 0 ? pctDeltaHtml(stats.accuracyPct, stats.prevAccuracyPct, '%') : ''}
+        </td>
+      </tr></table>
+      <p style="font-size:11px; color:#9ca3af; margin:10px 0 0;">Active on ${stats.activeDays} day${stats.activeDays === 1 ? '' : 's'} this month.</p>
+      ${callouts.join('')}
+    </div>
+  `
 }
 
 export async function POST(req: NextRequest) {
@@ -84,6 +141,15 @@ export async function POST(req: NextRequest) {
   const firstName = displayName.split(' ')[0]
   const className = report.enrolledClasses.map(c => c.title).join(', ')
   const classComparison = await computeClassComparison(admin, report).catch(() => null)
+
+  // Most recently completed calendar month (e.g. sent in early August covers
+  // July) — this is what makes it read as a "monthly report" rather than a
+  // rolling/partial window.
+  const now = new Date()
+  const monthEnd = new Date(now.getFullYear(), now.getMonth(), 1)
+  const monthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+  const monthlyStats = await computeMonthlyStats(admin, report, monthStart, monthEnd).catch(() => null)
+  const monthlyStatsHtmlBlock = monthlyStats ? monthlyStatsHtml(monthlyStats, firstName) : ''
 
   const masteryRowsHtml = report.masteryRows.map(t => `
     <tr>
@@ -149,6 +215,8 @@ export async function POST(req: NextRequest) {
       <p>Here is ${firstName}'s chemistry progress report${className ? ` for ${className}` : ''}, prepared by their teacher.</p>
 
       ${statCardsHtml}
+
+      ${monthlyStatsHtmlBlock}
 
       <p style="font-size:13px; color:#6b7280;">✓ ${report.correct} correct &nbsp;·&nbsp; ~ ${report.partial} partial &nbsp;·&nbsp; ✗ ${report.incorrect} need work &nbsp;·&nbsp; ${report.graded} questions graded</p>
       <p style="font-size:12px; color:#9ca3af;">Active on ${report.daysActive} day${report.daysActive === 1 ? '' : 's'}, ${report.submissionsLast14Days} submission${report.submissionsLast14Days === 1 ? '' : 's'} in the last 2 weeks.</p>

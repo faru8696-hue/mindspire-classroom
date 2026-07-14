@@ -308,6 +308,149 @@ export async function computeStudentReport(supabase: SupabaseClient, studentId: 
   }
 }
 
+export interface MonthlyStats {
+  monthLabel: string
+  questionsAttempted: number
+  questionsGraded: number
+  accuracyPct: number
+  activeDays: number
+  prevAccuracyPct: number | null
+  prevQuestionsAttempted: number | null
+  classAvgAccuracyPct: number | null
+  classAvgQuestionsAttempted: number | null
+  classSize: number
+  questionsPercentile: number | null // % of classmates who did FEWER questions this month than this student
+}
+
+// Month-scoped stats for the parent email — reuses grade_history (has
+// per-event created_at) for accuracy-in-month, and submissions.updated_at
+// for "questions attempted in month" (a submission can be reworked without a
+// new grade event, so attempted-count shouldn't depend on grading). No
+// per-question TIME tracking exists in this schema (no started_at/duration
+// column anywhere), so this reports counts/accuracy/active-days only.
+export async function computeMonthlyStats(
+  supabase: SupabaseClient,
+  report: StudentReportData,
+  monthStart: Date,
+  monthEnd: Date, // exclusive
+): Promise<MonthlyStats> {
+  const { student, _enrolledClassIds: enrolledClassIds } = report
+  const monthLabel = monthStart.toLocaleString('en-US', { month: 'long', year: 'numeric' })
+  const startIso = monthStart.toISOString()
+  const endIso = monthEnd.toISOString()
+
+  const { data: subs } = await supabase
+    .from('submissions')
+    .select('question_id, updated_at')
+    .eq('student_id', student.id)
+    .gte('updated_at', startIso)
+    .lt('updated_at', endIso)
+  const questionsAttempted = new Set((subs ?? []).map((s: { question_id: string }) => s.question_id)).size
+
+  const { data: hist } = await supabase
+    .from('grade_history')
+    .select('question_id, grade, created_at')
+    .eq('student_id', student.id)
+    .gte('created_at', startIso)
+    .lt('created_at', endIso)
+    .order('created_at', { ascending: true })
+
+  const latestInMonth = new Map<string, string>()
+  const activeDaySet = new Set<string>()
+  for (const h of hist ?? []) {
+    latestInMonth.set(h.question_id, h.grade)
+    activeDaySet.add(h.created_at.slice(0, 10))
+  }
+  let score = 0, gradedCount = 0
+  for (const g of latestInMonth.values()) {
+    if (g in WEIGHT) { score += WEIGHT[g]; gradedCount++ }
+  }
+  const accuracyPct = gradedCount > 0 ? Math.round((score / gradedCount) * 100) : 0
+
+  // Previous month, for the up/down arrows.
+  const prevStart = new Date(monthStart)
+  prevStart.setMonth(prevStart.getMonth() - 1)
+  const prevEnd = monthStart
+
+  const { data: prevSubs } = await supabase
+    .from('submissions').select('question_id')
+    .eq('student_id', student.id)
+    .gte('updated_at', prevStart.toISOString()).lt('updated_at', prevEnd.toISOString())
+  const prevQuestionsAttempted = prevSubs ? new Set(prevSubs.map((s: { question_id: string }) => s.question_id)).size : null
+
+  const { data: prevHist } = await supabase
+    .from('grade_history').select('question_id, grade')
+    .eq('student_id', student.id)
+    .gte('created_at', prevStart.toISOString()).lt('created_at', prevEnd.toISOString())
+  let prevAccuracyPct: number | null = null
+  if (prevHist && prevHist.length > 0) {
+    const latestPrev = new Map<string, string>()
+    for (const h of prevHist) latestPrev.set(h.question_id, h.grade)
+    let ps = 0, pg = 0
+    for (const g of latestPrev.values()) if (g in WEIGHT) { ps += WEIGHT[g]; pg++ }
+    prevAccuracyPct = pg > 0 ? Math.round((ps / pg) * 100) : null
+  }
+
+  // Classmates, same month — mirrors computeClassComparison's approach but
+  // scoped to a date range instead of all-time.
+  let classAvgAccuracyPct: number | null = null
+  let classAvgQuestionsAttempted: number | null = null
+  let classSize = 0
+  let questionsPercentile: number | null = null
+  if (enrolledClassIds.length > 0) {
+    const { data: enrollments } = await supabase
+      .from('class_enrollments').select('student_id').in('class_id', enrolledClassIds)
+    const classmateIds = [...new Set((enrollments ?? []).map((e: { student_id: string }) => e.student_id))]
+      .filter((id: string) => id !== student.id)
+
+    if (classmateIds.length > 0) {
+      const { data: cmSubs } = await supabase
+        .from('submissions').select('student_id, question_id')
+        .in('student_id', classmateIds)
+        .gte('updated_at', startIso).lt('updated_at', endIso)
+      const questionsByStudent = new Map<string, Set<string>>()
+      for (const s of cmSubs ?? []) {
+        if (!questionsByStudent.has(s.student_id)) questionsByStudent.set(s.student_id, new Set())
+        questionsByStudent.get(s.student_id)!.add(s.question_id)
+      }
+
+      const { data: cmHist } = await supabase
+        .from('grade_history').select('student_id, question_id, grade, created_at')
+        .in('student_id', classmateIds)
+        .gte('created_at', startIso).lt('created_at', endIso)
+        .order('created_at', { ascending: true })
+      const latestByStudent = new Map<string, Map<string, string>>()
+      for (const h of cmHist ?? []) {
+        if (!latestByStudent.has(h.student_id)) latestByStudent.set(h.student_id, new Map())
+        latestByStudent.get(h.student_id)!.set(h.question_id, h.grade)
+      }
+      const accByStudent: number[] = []
+      for (const m of latestByStudent.values()) {
+        let s = 0, g = 0
+        for (const gr of m.values()) if (gr in WEIGHT) { s += WEIGHT[gr]; g++ }
+        if (g > 0) accByStudent.push((s / g) * 100)
+      }
+      classAvgAccuracyPct = accByStudent.length > 0 ? Math.round(accByStudent.reduce((a, b) => a + b, 0) / accByStudent.length) : null
+
+      const qCounts = [...questionsByStudent.values()].map(s => s.size)
+      classAvgQuestionsAttempted = qCounts.length > 0 ? Math.round(qCounts.reduce((a, b) => a + b, 0) / qCounts.length) : null
+      classSize = classmateIds.length
+
+      if (qCounts.length > 0) {
+        const below = qCounts.filter(c => c < questionsAttempted).length
+        questionsPercentile = Math.round((below / qCounts.length) * 100)
+      }
+    }
+  }
+
+  return {
+    monthLabel, questionsAttempted, questionsGraded: gradedCount, accuracyPct,
+    activeDays: activeDaySet.size,
+    prevAccuracyPct, prevQuestionsAttempted,
+    classAvgAccuracyPct, classAvgQuestionsAttempted, classSize, questionsPercentile,
+  }
+}
+
 // Computes how the rest of the class is doing on the SAME assigned questions
 // this student has (from computeStudentReport's _assignedQs/_topicMeta), so
 // the deep report can say "ahead of classmates here" / "this topic is hard
