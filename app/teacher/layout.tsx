@@ -28,6 +28,25 @@ export default async function TeacherLayout({ children }: { children: React.Reac
     .from('practice_test_notifications')
     .select('id', { count: 'exact', head: true })
     .eq('read', false)
+
+  // "New since last visit" badges for Submissions/Students/Activity — same
+  // click-to-clear behavior as the Self Study badge, driven by a per-section
+  // last-seen timestamp instead of a live backlog count.
+  const { data: seenRows } = await admin.from('teacher_nav_seen').select('nav_key, seen_at')
+  const seenAt = new Map((seenRows ?? []).map(r => [r.nav_key, r.seen_at]))
+  const submissionsSeenAt = seenAt.get('submissions') ?? '1970-01-01'
+  const studentsSeenAt = seenAt.get('students') ?? '1970-01-01'
+  const activitySeenAt = seenAt.get('activity') ?? '1970-01-01'
+
+  const [{ data: newSubmissions }, { count: newStudents }, { count: newActivity }] = await Promise.all([
+    admin.from('submissions').select('id, feedback(grade)').gt('created_at', submissionsSeenAt),
+    admin.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'student').eq('approved', false).gt('created_at', studentsSeenAt),
+    admin.from('notifications').select('id', { count: 'exact', head: true }).in('type', ['help', 'submitted', 'comment']).gt('created_at', activitySeenAt),
+  ])
+  const newUngradedSubmissions = (newSubmissions ?? []).filter((s: { feedback: { grade: string | null }[] | { grade: string | null } | null }) => {
+    const fb = Array.isArray(s.feedback) ? s.feedback[0] : s.feedback
+    return !fb?.grade
+  }).length
   const { data: notifs } = await admin
     .from('notifications')
     .select('id, type, student_id, question_id, class_id, created_at, read, message, profiles:profiles!notifications_student_id_fkey(full_name), questions:questions!notifications_question_id_fkey(title)')
@@ -59,11 +78,26 @@ export default async function TeacherLayout({ children }: { children: React.Reac
           <Link href="/teacher" className="font-bold text-lg hover:text-purple-200 transition-colors">⚛️ Mindspire Lab</Link>
           <Link href="/teacher" className="text-purple-200 hover:text-white text-sm transition-colors">Dashboard</Link>
           <TeacherClassNav classes={classList ?? []} />
-          <Link href="/teacher/students" className="text-purple-200 hover:text-white text-sm transition-colors">Students</Link>
+          <Link href="/teacher/students" className="text-purple-200 hover:text-white text-sm transition-colors flex items-center gap-1.5">
+            Students
+            {!!newStudents && (
+              <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">{newStudents}</span>
+            )}
+          </Link>
           <Link href="/teacher/content" className="text-purple-200 hover:text-white text-sm transition-colors">Content</Link>
-          <Link href="/teacher/submissions" className="text-purple-200 hover:text-white text-sm transition-colors">Submissions</Link>
+          <Link href="/teacher/submissions" className="text-purple-200 hover:text-white text-sm transition-colors flex items-center gap-1.5">
+            Submissions
+            {!!newUngradedSubmissions && (
+              <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">{newUngradedSubmissions}</span>
+            )}
+          </Link>
           <Link href="/teacher/progress" className="text-purple-200 hover:text-white text-sm transition-colors">Progress</Link>
-          <Link href="/teacher/activity" className="text-purple-200 hover:text-white text-sm transition-colors">Activity</Link>
+          <Link href="/teacher/activity" className="text-purple-200 hover:text-white text-sm transition-colors flex items-center gap-1.5">
+            Activity
+            {!!newActivity && (
+              <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">{newActivity}</span>
+            )}
+          </Link>
           <Link href="/teacher/practice-tests" className="text-purple-200 hover:text-white text-sm transition-colors flex items-center gap-1.5">
             Self Study
             {!!unreadPracticeTests && (

@@ -62,6 +62,11 @@ export default function SubmissionsPage() {
   useEffect(() => {
     load()
     loadKeyReleases()
+    // Visiting this page clears the "new ungraded work" badge in the nav.
+    fetch('/api/teacher-nav-seen', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ navKey: 'submissions' }),
+    }).catch(() => {})
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return
       supabase.from('profiles').select('full_name').eq('id', user.id).single()
