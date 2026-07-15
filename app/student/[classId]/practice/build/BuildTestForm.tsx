@@ -8,8 +8,7 @@ interface Unit { id: string; title: string; topics: Topic[] }
 
 export default function BuildTestForm({ classId, unitsWithTopics, hasDifficulty }: { classId: string; unitsWithTopics: Unit[]; hasDifficulty: boolean }) {
   const router = useRouter()
-  const allTopicIds = unitsWithTopics.flatMap(u => u.topics.map(t => t.id))
-  const [selectedTopics, setSelectedTopics] = useState<Set<string>>(new Set(allTopicIds))
+  const [selectedTopics, setSelectedTopics] = useState<Set<string>>(new Set())
   const [easy, setEasy] = useState(5)
   const [medium, setMedium] = useState(5)
   const [hard, setHard] = useState(3)
