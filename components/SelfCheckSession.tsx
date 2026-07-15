@@ -51,7 +51,7 @@ export default function SelfCheckSession({
   const [mcqSelections, setMcqSelections] = useState<Map<string, number>>(new Map())
   const [frqCanvas, setFrqCanvas] = useState<Map<string, string | null>>(new Map())
   const [mcqResults, setMcqResults] = useState<Map<string, { correct: boolean; correctIndex: number | null }>>(new Map())
-  const [reviewResults, setReviewResults] = useState<Map<string, 'correct' | 'partial' | 'incorrect'>>(new Map())
+  const [reviewResults, setReviewResults] = useState<Map<string, 'correct' | 'incorrect'>>(new Map())
   const [finishing, setFinishing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [secondsLeft, setSecondsLeft] = useState(durationMinutes ? durationMinutes * 60 : null)
@@ -83,16 +83,24 @@ export default function SelfCheckSession({
   async function finishAttempt() {
     if (finishing) return
     setFinishing(true)
-    // Capture whatever's currently on the scratch board before leaving the attempt phase.
+    // Capture whatever's currently on the scratch board before leaving the
+    // attempt phase — computed locally rather than via setFrqCanvas because
+    // that state update wouldn't be visible in this same function call.
+    const finalFrqCanvas = new Map(frqCanvas)
     if (q?.question_type === 'frq') {
-      const snap = boardRef.current?.getSnapshot() ?? null
-      setFrqCanvas(prev => new Map(prev).set(q.id, snap))
+      finalFrqCanvas.set(q.id, boardRef.current?.getSnapshot() ?? null)
+      setFrqCanvas(finalFrqCanvas)
     }
     const mcqAnswers = [...mcqSelections.entries()].map(([questionId, selectedIndex]) => ({ questionId, selectedIndex }))
+    // FRQ work is sent now, not deferred to self-grading, so a teacher can
+    // see what was written even if the student never finishes self-review.
+    const frqWork = questions
+      .filter(qq => qq.question_type === 'frq')
+      .map(qq => ({ questionId: qq.id, canvasData: finalFrqCanvas.get(qq.id) ?? null }))
     try {
       const res = await fetch('/api/practice/finish-test', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ testId, mcqAnswers }),
+        body: JSON.stringify({ testId, mcqAnswers, frqWork }),
       })
       const data = await res.json()
       if (res.ok) {
@@ -121,7 +129,7 @@ export default function SelfCheckSession({
     }
   }
 
-  async function selfGradeAndAdvance(grade: 'correct' | 'partial' | 'incorrect') {
+  async function selfGradeAndAdvance(grade: 'correct' | 'incorrect') {
     setSaving(true)
     setReviewResults(prev => new Map(prev).set(q.id, grade))
     try {
@@ -148,11 +156,10 @@ export default function SelfCheckSession({
 
   if (phase === 'summary') {
     const correct = [...reviewResults.values()].filter(g => g === 'correct').length
-    const partial = [...reviewResults.values()].filter(g => g === 'partial').length
     const incorrect = [...reviewResults.values()].filter(g => g === 'incorrect').length
     const pointsEarned = questions.reduce((sum, qq) => {
       const g = reviewResults.get(qq.id)
-      return sum + (g === 'correct' ? qq.points : g === 'partial' ? qq.points * 0.5 : 0)
+      return sum + (g === 'correct' ? qq.points : 0)
     }, 0)
     const totalPoints = questions.reduce((sum, qq) => sum + qq.points, 0)
 
@@ -163,7 +170,6 @@ export default function SelfCheckSession({
         <p className="text-sm text-gray-500 mb-4">{pointsEarned} / {totalPoints} points</p>
         <div className="flex justify-center gap-3 mb-6 flex-wrap">
           <span className="px-3 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-700">✓ {correct} correct</span>
-          <span className="px-3 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-700">~ {partial} partial</span>
           <span className="px-3 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-600">✗ {incorrect} missed</span>
         </div>
         <Link href={doneHref} className="inline-block bg-purple-600 hover:bg-purple-500 text-white font-semibold px-5 py-2.5 rounded-xl">
@@ -315,9 +321,8 @@ export default function SelfCheckSession({
               {q.answer_key ? <AnswerKeyText text={q.answer_key} className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed" /> : <p className="text-sm text-gray-400">No answer key available.</p>}
             </div>
             <p className="text-sm text-gray-500 mb-2 text-center">How did you do?</p>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2">
               <button disabled={saving} onClick={() => selfGradeAndAdvance('correct')} className="bg-green-100 hover:bg-green-200 text-green-700 font-semibold py-2.5 rounded-xl disabled:opacity-50">✓ Got it</button>
-              <button disabled={saving} onClick={() => selfGradeAndAdvance('partial')} className="bg-amber-100 hover:bg-amber-200 text-amber-700 font-semibold py-2.5 rounded-xl disabled:opacity-50">~ Partial</button>
               <button disabled={saving} onClick={() => selfGradeAndAdvance('incorrect')} className="bg-red-100 hover:bg-red-200 text-red-600 font-semibold py-2.5 rounded-xl disabled:opacity-50">✗ Missed it</button>
             </div>
           </div>

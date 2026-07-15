@@ -21,14 +21,17 @@ export default async function PracticeHomePage({ params }: { params: Promise<{ c
   ])
 
   // Score per test — most recent self-grade/MCQ result per question, scored
-  // against that question's point value, same weighting as the in-session
-  // summary screen (correct = full points, partial = half, incorrect = 0).
+  // against that question's point value (correct = full points, incorrect =
+  // 0). FRQ work is captured as soon as the test is finished but self_grade
+  // stays null until the student actually self-grades it in review, so only
+  // graded (non-null) rows count toward "answered" — otherwise a test with
+  // captured-but-ungraded FRQ work would misleadingly show as complete.
   const testIds = (recentTests ?? []).map(t => t.id)
   const allQuestionIds = [...new Set((recentTests ?? []).flatMap(t => t.question_ids as string[]))]
   const [{ data: attempts }, { data: questionPoints }] = await Promise.all([
     testIds.length > 0
       ? supabase.from('practice_attempts').select('test_id, question_id, self_grade, created_at').in('test_id', testIds).order('created_at', { ascending: false })
-      : Promise.resolve({ data: [] as { test_id: string; question_id: string; self_grade: string; created_at: string }[] }),
+      : Promise.resolve({ data: [] as { test_id: string; question_id: string; self_grade: string | null; created_at: string }[] }),
     allQuestionIds.length > 0
       ? supabase.from('questions').select('id, points').in('id', allQuestionIds)
       : Promise.resolve({ data: [] as { id: string; points: number }[] }),
@@ -40,10 +43,10 @@ export default async function PracticeHomePage({ params }: { params: Promise<{ c
     let earned = 0, total = 0
     for (const qid of t.question_ids as string[]) total += pointsByQuestion.get(qid) ?? 1
     for (const a of attempts ?? []) {
-      if (a.test_id !== t.id || seen.has(a.question_id)) continue
+      if (a.test_id !== t.id || a.self_grade === null || seen.has(a.question_id)) continue
       seen.add(a.question_id)
       const pts = pointsByQuestion.get(a.question_id) ?? 1
-      earned += a.self_grade === 'correct' ? pts : a.self_grade === 'partial' ? pts * 0.5 : 0
+      earned += a.self_grade === 'correct' ? pts : 0
     }
     scoreByTest.set(t.id, { earned, total, answered: seen.size, totalQuestions: (t.question_ids as string[]).length })
   }

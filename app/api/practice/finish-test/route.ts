@@ -23,9 +23,10 @@ export async function POST(req: NextRequest) {
   const caller = await getCaller()
   if (!caller?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { testId, mcqAnswers } = await req.json() as {
+  const { testId, mcqAnswers, frqWork } = await req.json() as {
     testId: string
     mcqAnswers: { questionId: string; selectedIndex: number }[]
+    frqWork?: { questionId: string; canvasData: string | null }[]
   }
   if (!testId) return NextResponse.json({ error: 'Missing testId' }, { status: 400 })
 
@@ -61,6 +62,21 @@ export async function POST(req: NextRequest) {
       await admin.from('review_flags')
         .upsert({ student_id: caller.user.id, question_id: a.questionId, source: 'auto' }, { onConflict: 'student_id,question_id', ignoreDuplicates: true })
     }
+  }
+
+  // Save FRQ work as soon as the test is finished — not deferred until the
+  // student actually self-grades in the review phase — so a teacher can see
+  // what was written even if the student abandons the test before finishing
+  // review. self_grade stays null here; self-grade route below fills it in.
+  for (const w of frqWork ?? []) {
+    if (!w.canvasData) continue
+    await admin.from('practice_attempts').insert({
+      student_id: caller.user.id,
+      question_id: w.questionId,
+      test_id: testId,
+      self_grade: null,
+      canvas_data: w.canvasData,
+    })
   }
 
   await admin.from('practice_test_notifications').insert({

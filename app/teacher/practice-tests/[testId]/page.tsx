@@ -6,7 +6,6 @@ import AnswerKeyText from '@/components/AnswerKeyText'
 
 const GRADE_BADGE: Record<string, { label: string; cls: string }> = {
   correct:   { label: '✓ Correct',   cls: 'bg-green-100 text-green-700' },
-  partial:   { label: '~ Partial',   cls: 'bg-amber-100 text-amber-700' },
   incorrect: { label: '✗ Incorrect', cls: 'bg-red-100 text-red-600' },
 }
 
@@ -33,7 +32,7 @@ export default async function PracticeTestDetailPage({ params }: { params: Promi
 
   const questionById = new Map((questions ?? []).map(q => [q.id, q]))
   // Most recent attempt per question (a student could theoretically retry a review step).
-  const attemptByQuestion = new Map<string, { self_grade: string; canvas_data: string | null; mcq_selected_index: number | null }>()
+  const attemptByQuestion = new Map<string, { self_grade: string | null; canvas_data: string | null; mcq_selected_index: number | null }>()
   for (const a of attempts ?? []) {
     if (!attemptByQuestion.has(a.question_id)) attemptByQuestion.set(a.question_id, a)
   }
@@ -61,6 +60,8 @@ export default async function PracticeTestDetailPage({ params }: { params: Promi
               <p className="font-semibold text-gray-800">Q{i + 1}. {q.title}</p>
               {gradeBadge ? (
                 <span className={`text-xs px-2.5 py-1 rounded-full font-semibold flex-shrink-0 ${gradeBadge.cls}`}>{gradeBadge.label}</span>
+              ) : attempt ? (
+                <span className="text-xs px-2.5 py-1 rounded-full font-semibold bg-amber-100 text-amber-700 flex-shrink-0">Awaiting self-grade</span>
               ) : (
                 <span className="text-xs px-2.5 py-1 rounded-full font-semibold bg-gray-100 text-gray-400 flex-shrink-0">Not reached</span>
               )}
