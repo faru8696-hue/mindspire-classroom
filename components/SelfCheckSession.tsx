@@ -232,7 +232,7 @@ export default function SelfCheckSession({
           <div className="mt-2">
             <div className="bg-purple-50 border border-purple-100 rounded-xl p-4 mb-4">
               <p className="text-xs font-bold uppercase tracking-wide text-purple-600 mb-2">Answer Key</p>
-              {q.answer_key ? <AnswerKeyText text={q.answer_key} className="text-sm text-gray-700" /> : <p className="text-sm text-gray-400">No answer key available.</p>}
+              {q.answer_key ? <AnswerKeyText text={q.answer_key} className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed" /> : <p className="text-sm text-gray-400">No answer key available.</p>}
             </div>
             <p className="text-sm text-gray-500 mb-2 text-center">How did you do?</p>
             <div className="grid grid-cols-3 gap-2">

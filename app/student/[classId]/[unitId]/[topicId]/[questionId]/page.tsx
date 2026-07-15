@@ -136,7 +136,7 @@ export default async function QuestionPage({ params }: { params: Promise<{ class
       {answerKeyReleased && question.answer_key && (
         <div className="bg-purple-50 border-2 border-purple-200 rounded-xl px-4 py-3">
           <p className="text-xs font-bold uppercase tracking-wide text-purple-600 mb-2">🔓 Answer Key (released by your teacher)</p>
-          <AnswerKeyText text={question.answer_key} className="text-sm text-gray-700" />
+          <AnswerKeyText text={question.answer_key} className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed" />
         </div>
       )}
 
