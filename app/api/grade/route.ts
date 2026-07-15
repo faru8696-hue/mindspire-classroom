@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { getCaller } from '@/lib/supabase/server'
 import { sendEmail } from '@/lib/email'
 
@@ -116,25 +116,29 @@ export async function POST(req: NextRequest) {
   // grade, AND whenever the teacher leaves a text comment even without a
   // grade change (e.g. annotating work without flipping correct/incorrect)
   // — the in-app notification alone is easy to miss, so a comment should
-  // always reach them by email too. Best-effort: never fail the grading
-  // request over an email hiccup.
+  // always reach them by email too. Scheduled via after() so the grade save
+  // responds immediately instead of the teacher's UI waiting on Resend —
+  // sending was previously awaited inline here, which made every grade save
+  // feel slow (or time out) whenever Resend was slow/rate-limited.
   if (notify && (grade || textFeedback)) {
-    try {
-      const [{ data: student }, { data: question }] = await Promise.all([
-        admin.from('profiles').select('full_name, nickname, email').eq('id', studentId).maybeSingle(),
-        admin.from('questions').select('title').eq('id', questionId).maybeSingle(),
-      ])
-      if (student?.email) {
-        const firstName = (student.nickname || student.full_name || 'there').split(' ')[0]
-        await sendEmail({
-          to: student.email,
-          subject: `New feedback on ${question?.title ?? 'your work'}`,
-          html: feedbackEmailHtml(firstName, question?.title ?? 'your question', grade ?? null, textFeedback || null),
-        })
+    after(async () => {
+      try {
+        const [{ data: student }, { data: question }] = await Promise.all([
+          admin.from('profiles').select('full_name, nickname, email').eq('id', studentId).maybeSingle(),
+          admin.from('questions').select('title').eq('id', questionId).maybeSingle(),
+        ])
+        if (student?.email) {
+          const firstName = (student.nickname || student.full_name || 'there').split(' ')[0]
+          await sendEmail({
+            to: student.email,
+            subject: `New feedback on ${question?.title ?? 'your work'}`,
+            html: feedbackEmailHtml(firstName, question?.title ?? 'your question', grade ?? null, textFeedback || null),
+          })
+        }
+      } catch (err) {
+        console.error('grade: student feedback email failed:', err)
       }
-    } catch (err) {
-      console.error('grade: student feedback email failed:', err)
-    }
+    })
   }
 
   return NextResponse.json({ ok: true, submissionId })

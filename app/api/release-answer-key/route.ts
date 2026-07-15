@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { getCaller, createAdminClient } from '@/lib/supabase/server'
 import { sendEmail } from '@/lib/email'
 
@@ -53,15 +53,17 @@ export async function POST(req: NextRequest) {
 
     if (student?.email) {
       const firstName = (student.nickname || student.full_name || 'there').split(' ')[0]
-      try {
-        await sendEmail({
-          to: student.email,
-          subject: `Answer key released: ${question?.title ?? 'your question'}`,
-          html: releaseEmailHtml(firstName, question?.title ?? 'your question'),
-        })
-      } catch (err) {
-        console.error('release-answer-key: email failed:', err)
-      }
+      after(async () => {
+        try {
+          await sendEmail({
+            to: student.email!,
+            subject: `Answer key released: ${question?.title ?? 'your question'}`,
+            html: releaseEmailHtml(firstName, question?.title ?? 'your question'),
+          })
+        } catch (err) {
+          console.error('release-answer-key: email failed:', err)
+        }
+      })
     }
   } else {
     const { error } = await admin.from('answer_key_releases')

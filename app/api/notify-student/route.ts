@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { getCaller } from '@/lib/supabase/server'
 import { sendEmail } from '@/lib/email'
 
@@ -43,24 +43,27 @@ export async function POST(req: NextRequest) {
   // Best-effort email alongside the in-app notification — the comment
   // thread's toast/badge is easy to miss between sessions, so a teacher
   // comment (type 'comment', from the per-question Comments thread) should
-  // also reach the student's inbox. Never fails the notification itself.
+  // also reach the student's inbox. Scheduled via after() so this endpoint
+  // responds immediately instead of the caller waiting on Resend.
   if ((type || 'grade') === 'comment' && feedback) {
-    try {
-      const [{ data: student }, { data: question }] = await Promise.all([
-        admin.from('profiles').select('full_name, nickname, email').eq('id', studentId).maybeSingle(),
-        admin.from('questions').select('title').eq('id', questionId).maybeSingle(),
-      ])
-      if (student?.email) {
-        const firstName = (student.nickname || student.full_name || 'there').split(' ')[0]
-        await sendEmail({
-          to: student.email,
-          subject: `New comment on ${question?.title ?? 'your work'}`,
-          html: commentEmailHtml(firstName, question?.title ?? 'your question', feedback),
-        })
+    after(async () => {
+      try {
+        const [{ data: student }, { data: question }] = await Promise.all([
+          admin.from('profiles').select('full_name, nickname, email').eq('id', studentId).maybeSingle(),
+          admin.from('questions').select('title').eq('id', questionId).maybeSingle(),
+        ])
+        if (student?.email) {
+          const firstName = (student.nickname || student.full_name || 'there').split(' ')[0]
+          await sendEmail({
+            to: student.email,
+            subject: `New comment on ${question?.title ?? 'your work'}`,
+            html: commentEmailHtml(firstName, question?.title ?? 'your question', feedback),
+          })
+        }
+      } catch (err) {
+        console.error('notify-student: comment email failed:', err)
       }
-    } catch (err) {
-      console.error('notify-student: comment email failed:', err)
-    }
+    })
   }
 
   return NextResponse.json({ ok: true, data })
