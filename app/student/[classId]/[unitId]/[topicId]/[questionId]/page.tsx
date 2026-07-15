@@ -3,6 +3,7 @@ import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import Comments from '@/components/Comments'
 import StudentBoardPage from './StudentBoardPage'
+import AnswerKeyText from '@/components/AnswerKeyText'
 
 export default async function QuestionPage({ params }: { params: Promise<{ classId: string; unitId: string; topicId: string; questionId: string }> }) {
   const { classId, unitId, topicId, questionId } = await params
@@ -51,6 +52,16 @@ export default async function QuestionPage({ params }: { params: Promise<{ class
     const { data: fb } = await admin.from('feedback').select('*').eq('submission_id', submission.id).maybeSingle()
     feedback = fb
   }
+
+  // Answer key is hidden by default — only shown if the teacher has
+  // specifically released it to THIS student for THIS question.
+  const { data: keyRelease } = await admin
+    .from('answer_key_releases')
+    .select('id')
+    .eq('student_id', studentId)
+    .eq('question_id', questionId)
+    .maybeSingle()
+  const answerKeyReleased = !!keyRelease
 
   const gradeInfo = feedback?.grade ? ({
     correct:   { label: 'Correct', icon: '✅', cls: 'bg-green-100 text-green-800 border-green-300' },
@@ -118,6 +129,14 @@ export default async function QuestionPage({ params }: { params: Promise<{ class
         <div className="flex items-center gap-3 rounded-xl border-2 border-gray-200 bg-gray-50 px-4 py-3 text-gray-500">
           <span className="text-2xl">⏳</span>
           <p className="text-sm font-medium">Not graded yet — your teacher will review your work.</p>
+        </div>
+      )}
+
+      {/* Answer key — only appears once the teacher releases it for this student */}
+      {answerKeyReleased && question.answer_key && (
+        <div className="bg-purple-50 border-2 border-purple-200 rounded-xl px-4 py-3">
+          <p className="text-xs font-bold uppercase tracking-wide text-purple-600 mb-2">🔓 Answer Key (released by your teacher)</p>
+          <AnswerKeyText text={question.answer_key} className="text-sm text-gray-700" />
         </div>
       )}
 

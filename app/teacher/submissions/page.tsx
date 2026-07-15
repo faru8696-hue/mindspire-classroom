@@ -53,8 +53,15 @@ export default function SubmissionsPage() {
   const [classAiRunning, setClassAiRunning] = useState(false)
   const [classAiProgress, setClassAiProgress] = useState<{ done: number; total: number } | null>(null)
 
+  // Per-student answer key releases — "studentId:questionId" -> released.
+  const [keyReleases, setKeyReleases] = useState<Set<string>>(new Set())
+  const [releasingKey, setReleasingKey] = useState(false)
+  const releaseKeyFor = (studentId: string, questionId: string) => `${studentId}:${questionId}`
+  const isKeyReleased = (studentId: string, questionId: string) => keyReleases.has(releaseKeyFor(studentId, questionId))
+
   useEffect(() => {
     load()
+    loadKeyReleases()
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return
       supabase.from('profiles').select('full_name').eq('id', user.id).single()
@@ -68,6 +75,31 @@ export default function SubmissionsPage() {
       .select(`*, profiles(full_name, email), questions(title, content, image_url, answer_key, topics(title, units(title, classes(id, title)))), feedback(id, text_feedback, canvas_data, grade)`)
       .order('updated_at', { ascending: false })
     setSubmissions((data as unknown as Submission[]) ?? [])
+  }
+
+  async function loadKeyReleases() {
+    const { data } = await supabase.from('answer_key_releases').select('student_id, question_id')
+    setKeyReleases(new Set((data ?? []).map(r => releaseKeyFor(r.student_id, r.question_id))))
+  }
+
+  async function toggleAnswerKeyRelease(studentId: string, questionId: string) {
+    const key = releaseKeyFor(studentId, questionId)
+    const nextReleased = !keyReleases.has(key)
+    setReleasingKey(true)
+    setKeyReleases(prev => {
+      const next = new Set(prev)
+      if (nextReleased) next.add(key); else next.delete(key)
+      return next
+    })
+    try {
+      await fetch('/api/release-answer-key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ studentId, questionId, released: nextReleased }),
+      })
+    } finally {
+      setReleasingKey(false)
+    }
   }
 
   // ── Grouping for the drill-down ──────────────────────────────────
@@ -483,6 +515,18 @@ export default function SubmissionsPage() {
             </div>
 
             <AnswerKeyPanel questionId={selected.question_id} initialAnswerKey={selected.questions?.answer_key ?? null} />
+
+            <button
+              onClick={() => toggleAnswerKeyRelease(selected.student_id, selected.question_id)}
+              disabled={releasingKey}
+              className={`text-sm font-semibold px-4 py-2 rounded-xl flex-shrink-0 self-start transition-colors disabled:opacity-50 ${
+                isKeyReleased(selected.student_id, selected.question_id)
+                  ? 'bg-purple-600 hover:bg-purple-500 text-white'
+                  : 'bg-white border border-gray-200 text-gray-600 hover:border-purple-300'
+              }`}
+            >
+              {isKeyReleased(selected.student_id, selected.question_id) ? '🔓 Answer key released to this student — click to revoke' : '🔒 Release answer key to this student'}
+            </button>
 
             <div className="flex-1 overflow-hidden">
               <InfiniteWhiteboard
