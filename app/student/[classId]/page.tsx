@@ -61,15 +61,34 @@ export default async function ClassPage({ params }: { params: Promise<{ classId:
 
   return (
     <div className="max-w-3xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-purple-900">{cls.title}</h1>
-        <Link
-          href={`/student/${classId}/practice`}
-          className="text-sm font-semibold bg-purple-100 hover:bg-purple-200 text-purple-700 px-4 py-2 rounded-xl transition-colors flex-shrink-0"
-        >
-          📝 Self Study
-        </Link>
+      <h1 className="text-2xl font-bold text-purple-900 mb-4">{cls.title}</h1>
+
+      {/* Big, hard-to-miss Self Study banner — this is the entry point for
+          the whole custom-test/review-folder feature, so it shouldn't read
+          as a small secondary link buried next to the title. */}
+      <div className="bg-gradient-to-r from-purple-600 to-indigo-600 rounded-2xl p-5 mb-6 text-white">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <p className="text-lg font-bold">📝 Self Study</p>
+            <p className="text-sm text-purple-100 mt-0.5">Build your own practice test, or review questions you've flagged.</p>
+          </div>
+          <div className="flex gap-2 flex-shrink-0">
+            <Link
+              href={`/student/${classId}/practice/build`}
+              className="bg-white text-purple-700 font-semibold text-sm px-4 py-2.5 rounded-xl hover:bg-purple-50 transition-colors"
+            >
+              ✏️ Create a Test
+            </Link>
+            <Link
+              href={`/student/${classId}/practice/review`}
+              className="bg-purple-500/40 hover:bg-purple-500/60 text-white font-semibold text-sm px-4 py-2.5 rounded-xl border border-white/30 transition-colors"
+            >
+              🚩 Review
+            </Link>
+          </div>
+        </div>
       </div>
+
       <StudentGradeNotifications studentId={studentId} />
 
       {/* Overall progress */}
