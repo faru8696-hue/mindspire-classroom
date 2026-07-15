@@ -120,6 +120,42 @@ Decide whether the student's answer is fundamentally correct (the right final an
   return parsed
 }
 
+export interface DifficultyResult {
+  difficulty: 'easy' | 'medium' | 'hard'
+  points: number
+}
+
+// Same rubric used for the one-off bulk audit (scripts/classify-ap-difficulty.js),
+// but for a single newly-added question so it gets labeled immediately instead
+// of sitting unclassified until the next manual bulk run.
+export async function classifyQuestionDifficulty(
+  title: string, content: string | null, answerKey: string | null
+): Promise<DifficultyResult> {
+  const prompt = `You are an experienced AP Chemistry teacher assigning a DIFFICULTY level and POINT VALUE to a new question, so students can choose to work on harder questions instead of easier ones within the same topic.
+
+Rubric (apply consistently, matching the standard used across this whole question bank):
+- "easy" (1 point): single-step recall, a direct definition, or a one-line plug-into-a-formula calculation.
+- "medium" (2 points): a multi-step calculation, or applying a single concept correctly but requiring some setup/reasoning.
+- "hard" (3 points): synthesizes multiple concepts, requires deeper reasoning or an edge case, or is AP free-response-level.
+
+Question:
+title: ${title}
+content: ${content || '(none)'}
+answer key: ${answerKey ? answerKey.slice(0, 800) : '(none yet)'}`
+
+  const schema = {
+    type: 'object',
+    properties: {
+      difficulty: { type: 'string', enum: ['easy', 'medium', 'hard'] },
+      points: { type: 'integer' },
+    },
+    required: ['difficulty', 'points'],
+  }
+
+  const text = await callGemini([{ text: prompt }], schema, 512)
+  return JSON.parse(text) as DifficultyResult
+}
+
 export interface ChatTurn {
   role: 'user' | 'model'
   text: string

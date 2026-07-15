@@ -8,7 +8,7 @@ import AnswerKeyPanel from '@/components/AnswerKeyPanel'
 interface Class { id: string; title: string; order_index: number }
 interface Unit { id: string; title: string; class_id: string }
 interface Topic { id: string; title: string; unit_id: string }
-interface Question { id: string; title: string; content: string | null; image_url: string | null; answer_key: string | null; topic_id: string }
+interface Question { id: string; title: string; content: string | null; image_url: string | null; answer_key: string | null; topic_id: string; difficulty: string | null; points: number }
 
 export default function ContentPage() {
   const supabase = createClient()
@@ -90,8 +90,20 @@ export default function ContentPage() {
 
   async function addQuestion() {
     if (!newQuestion.title.trim() || !selectedTopic) return
-    await supabase.from('questions').insert({ title: newQuestion.title.trim(), content: newQuestion.content || null, image_url: newQuestion.image_url, topic_id: selectedTopic, order_index: questions.length })
+    const { data: inserted } = await supabase.from('questions')
+      .insert({ title: newQuestion.title.trim(), content: newQuestion.content || null, image_url: newQuestion.image_url, topic_id: selectedTopic, order_index: questions.length })
+      .select('id').single()
     setNewQuestion({ title: '', content: '', image_url: null }); loadQuestions(selectedTopic)
+    // Best-effort — labels the new question with a difficulty/points
+    // rubric right away instead of leaving it null until the next manual
+    // bulk classification run. Not awaited so "Add Question" stays snappy;
+    // reloads the list once done so the badge appears without a manual refresh.
+    if (inserted?.id) {
+      fetch('/api/classify-question', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ questionId: inserted.id }),
+      }).then(() => loadQuestions(selectedTopic)).catch(() => {})
+    }
   }
 
   async function del(table: string, id: string, cb: () => void) {
@@ -195,7 +207,16 @@ export default function ContentPage() {
                   <div key={q.id} className="p-2 rounded-lg hover:bg-purple-50 group space-y-1.5">
                     <div className="flex items-start justify-between">
                       <div className="flex-1 min-w-0">
-                        <Link href={`/teacher/questions/${q.id}`} className="text-sm font-medium text-gray-800 hover:text-purple-700 truncate block">{q.title}</Link>
+                        <div className="flex items-center gap-1.5">
+                          <Link href={`/teacher/questions/${q.id}`} className="text-sm font-medium text-gray-800 hover:text-purple-700 truncate block">{q.title}</Link>
+                          {q.difficulty && (
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold flex-shrink-0 ${
+                              q.difficulty === 'easy' ? 'bg-sky-100 text-sky-700' : q.difficulty === 'medium' ? 'bg-orange-100 text-orange-700' : 'bg-rose-100 text-rose-700'
+                            }`}>
+                              {q.difficulty} · {q.points}pt{q.points === 1 ? '' : 's'}
+                            </span>
+                          )}
+                        </div>
                         {q.content && <p className="text-xs text-gray-400 truncate">{q.content}</p>}
                       </div>
                       <button onClick={() => del('questions', q.id, () => loadQuestions(selectedTopic!))} className="text-gray-400 hover:text-red-500 text-xs ml-2 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">✕</button>
