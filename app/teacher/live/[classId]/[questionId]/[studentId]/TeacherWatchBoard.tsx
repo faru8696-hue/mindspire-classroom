@@ -49,6 +49,29 @@ export default function TeacherWatchBoard({
   const [aiChecking, setAiChecking] = useState(false)
   const [aiSuggestion, setAiSuggestion] = useState<{ grade: string; feedback: string } | null>(null)
   const [aiError, setAiError] = useState<string | null>(null)
+  const [keyReleased, setKeyReleased] = useState(false)
+  const [releasingKey, setReleasingKey] = useState(false)
+
+  useEffect(() => {
+    supabase.from('answer_key_releases').select('id')
+      .eq('student_id', studentId).eq('question_id', questionId).maybeSingle()
+      .then(({ data }) => setKeyReleased(!!data))
+  }, [studentId, questionId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function toggleAnswerKeyRelease() {
+    const next = !keyReleased
+    setReleasingKey(true)
+    setKeyReleased(next)
+    try {
+      await fetch('/api/release-answer-key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ studentId, questionId, released: next }),
+      })
+    } finally {
+      setReleasingKey(false)
+    }
+  }
 
   // Extract image URLs from canvas JSON — updates whenever studentData changes
   const uploadedImages = useMemo(() => extractImages(studentData), [studentData])
@@ -253,8 +276,19 @@ export default function TeacherWatchBoard({
       )}
 
       {/* Answer key — compare against student work while grading */}
-      <div className="px-4 pt-2 flex-shrink-0 bg-gray-900">
-        <AnswerKeyPanel questionId={questionId} initialAnswerKey={answerKey ?? null} dark />
+      <div className="px-4 pt-2 flex-shrink-0 bg-gray-900 flex items-start gap-2">
+        <div className="flex-1 min-w-0">
+          <AnswerKeyPanel questionId={questionId} initialAnswerKey={answerKey ?? null} dark />
+        </div>
+        <button
+          onClick={toggleAnswerKeyRelease}
+          disabled={releasingKey}
+          className={`text-xs font-semibold px-3 py-1.5 rounded-lg whitespace-nowrap flex-shrink-0 transition-colors disabled:opacity-50 ${
+            keyReleased ? 'bg-purple-600 hover:bg-purple-500 text-white' : 'bg-gray-800 border border-gray-600 text-gray-300 hover:border-purple-400'
+          }`}
+        >
+          {keyReleased ? '🔓 Released — click to revoke' : '🔒 Release key to student'}
+        </button>
       </div>
 
       {/* Grading bar */}
