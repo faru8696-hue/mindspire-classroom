@@ -5,7 +5,6 @@ import { createClient } from '@/lib/supabase/client'
 import InfiniteWhiteboard, { InfiniteWhiteboardHandle } from '@/components/InfiniteWhiteboard'
 import ZoomableImage from '@/components/ZoomableImage'
 import { GRADE_MAP } from '@/lib/grades'
-import { DAILY_STUDENT_MESSAGE_LIMIT, windowStart } from '@/lib/chatLimit'
 
 interface Props {
   questionId: string
@@ -49,23 +48,6 @@ export default function StudentBoardPage({
   const channelRef = useRef(supabase.channel('teacher-alerts'))
   const audioRef = useRef<AudioContext | null>(null)
   const boardRef = useRef<InfiniteWhiteboardHandle>(null)
-  const [chatOpen, setChatOpen] = useState(false)
-  const [chatMessages, setChatMessages] = useState<{ role: 'user' | 'model'; text: string }[]>([])
-  const [chatInput, setChatInput] = useState('')
-  const [chatLoading, setChatLoading] = useState(false)
-  const [chatError, setChatError] = useState<string | null>(null)
-  const chatEndRef = useRef<HTMLDivElement>(null)
-  const [chatUsedToday, setChatUsedToday] = useState(0)
-
-  // Counts across ALL questions (the daily cap is global per student, not
-  // per-question — see app/api/ai-chat/route.ts), so the student sees the
-  // limit coming before they hit it instead of just getting blocked.
-  async function refreshChatUsage() {
-    const { count } = await supabase.from('ai_chat_messages')
-      .select('id', { count: 'exact', head: true })
-      .eq('student_id', studentId).eq('role', 'user').gte('created_at', windowStart(new Date()))
-    setChatUsedToday(count ?? 0)
-  }
 
   function playTone(freq: number, duration = 0.4) {
     try {
@@ -202,50 +184,6 @@ export default function StudentBoardPage({
     setTimeout(() => setDoneSent(false), 5000)
   }
 
-  // Socratic AI Faridah chat — never gives the final answer, only asks
-  // guiding questions toward the next step (see lib/gemini.ts for the rules).
-  // The transcript IS visible to the teacher (ai_chat_messages), so reload
-  // whatever's already there instead of starting blank every visit.
-  useEffect(() => {
-    supabase.from('ai_chat_messages').select('role, message')
-      .eq('question_id', questionId).eq('student_id', studentId).order('created_at')
-      .then(({ data }) => {
-        if (data) setChatMessages(data.map(d => ({ role: d.role as 'user' | 'model', text: d.message })))
-      })
-    refreshChatUsage()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [questionId, studentId])
-
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [chatMessages, chatLoading])
-
-  async function sendChatMessage(presetText?: string) {
-    const text = (presetText ?? chatInput).trim()
-    if (!text || chatLoading) return
-    const snapshot = boardRef.current?.getSnapshot() ?? null
-    const newHistory = [...chatMessages, { role: 'user' as const, text }]
-    setChatMessages(newHistory)
-    setChatInput('')
-    setChatLoading(true)
-    setChatError(null)
-    try {
-      const res = await fetch('/api/ai-chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ questionId, studentId, questionTitle, questionContent, boardImageDataUrl: snapshot, history: newHistory }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'AI Faridah failed to respond')
-      setChatMessages(h => [...h, { role: 'model', text: data.reply }])
-    } catch (err) {
-      setChatError(err instanceof Error ? err.message : 'AI Faridah failed to respond')
-    } finally {
-      setChatLoading(false)
-      refreshChatUsage()
-    }
-  }
-
   return (
     <div className="flex flex-col h-full gap-2 relative">
       {/* Question — AP exam paper style */}
@@ -322,81 +260,7 @@ export default function StudentBoardPage({
         />
       </div>
 
-      {/* AI Faridah chat — dismissible, never auto-shown. Purely a "help me
-          think it through" tool; it never grades anything or reaches the
-          teacher, and only ever asks guiding questions (see lib/gemini.ts). */}
-      {chatOpen && (
-        <div className="flex-shrink-0 bg-indigo-50 border border-indigo-200 rounded-xl flex flex-col max-h-72">
-          <div className="flex items-center justify-between px-4 py-2 border-b border-indigo-200">
-            <span className="text-sm font-semibold text-indigo-900">🤖 AI Faridah</span>
-            <div className="flex items-center gap-2">
-              <span className={`text-xs font-medium ${chatUsedToday >= DAILY_STUDENT_MESSAGE_LIMIT ? 'text-red-500' : 'text-indigo-400'}`}>
-                {chatUsedToday}/{DAILY_STUDENT_MESSAGE_LIMIT} today
-              </span>
-              <button onClick={() => setChatOpen(false)} className="text-indigo-400 hover:text-indigo-700 text-lg leading-none">×</button>
-            </div>
-          </div>
-          <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3 space-y-2">
-            {chatMessages.length === 0 && !chatLoading && (
-              <p className="text-sm text-indigo-500 italic">Ask me anything about this question — I'll help you think it through step by step, without just giving you the answer.</p>
-            )}
-            {chatMessages.map((m, i) => (
-              <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm whitespace-pre-wrap ${
-                  m.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-white text-indigo-900 border border-indigo-200'
-                }`}>
-                  {m.text}
-                </div>
-              </div>
-            ))}
-            {chatLoading && <p className="text-sm text-indigo-500 italic">Thinking…</p>}
-            {chatError && <p className="text-sm text-red-600">{chatError}</p>}
-            <div ref={chatEndRef} />
-          </div>
-          <div className="px-3 pt-2 border-t border-indigo-200">
-            <button
-              onClick={() => sendChatMessage('Can you recheck my board and tell me if I\'m on the right track?')}
-              disabled={chatLoading || chatUsedToday >= DAILY_STUDENT_MESSAGE_LIMIT}
-              className="text-xs font-semibold px-3 py-1.5 rounded-full bg-white border border-indigo-300 text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
-            >
-              🔄 Recheck my board
-            </button>
-          </div>
-          {chatUsedToday >= DAILY_STUDENT_MESSAGE_LIMIT ? (
-            <p className="px-4 py-3 text-xs text-red-600">
-              You've reached today's limit of {DAILY_STUDENT_MESSAGE_LIMIT} messages with AI Faridah. Ask your teacher for help, or come back tomorrow.
-            </p>
-          ) : (
-            <div className="flex gap-2 px-3 py-2">
-              <input
-                value={chatInput}
-                onChange={e => setChatInput(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChatMessage() } }}
-                placeholder="Type your question or answer…"
-                disabled={chatLoading}
-                className="flex-1 rounded-lg border border-indigo-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 disabled:opacity-50"
-              />
-              <button
-                onClick={() => sendChatMessage()}
-                disabled={chatLoading || !chatInput.trim()}
-                className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold disabled:opacity-50"
-              >
-                Send
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-
       <div className="flex gap-2 flex-shrink-0">
-        <button
-          onClick={() => setChatOpen(o => !o)}
-          className={`flex-1 py-3 rounded-xl font-semibold text-sm transition-all border ${
-            chatOpen ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-300'
-          }`}
-        >
-          🤖 Ask AI Faridah
-        </button>
         <button
           onClick={handleHelp}
           className={`flex-1 py-3 rounded-xl font-semibold text-sm transition-all border ${
