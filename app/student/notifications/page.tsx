@@ -78,10 +78,13 @@ export default async function StudentNotificationsPage() {
             const cls = Array.isArray(unit?.classes) ? unit.classes[0] : unit?.classes
             const isAssignment = n.type === 'assignment'
             const isComment = n.type === 'comment'
+            const isKeyReleased = n.type === 'answer_key_released'
             const style = isAssignment
               ? { icon: '📋', bg: 'border-purple-400 bg-purple-50', label: n.count && n.count > 1 ? `${n.count} new questions assigned` : 'New question assigned' }
               : isComment
               ? { icon: '💬', bg: 'border-blue-400 bg-blue-50', label: 'Teacher left a comment' }
+              : isKeyReleased
+              ? { icon: '🔓', bg: 'border-purple-400 bg-purple-50', label: 'Answer key released' }
               : GRADE_STYLE[n.grade] ?? { icon: '📝', bg: 'border-gray-300 bg-gray-50', label: 'Update' }
             const href = cls?.id && unit?.id && topic?.id && q?.id
               ? `/student/${cls.id}/${unit.id}/${topic.id}/${q.id}`

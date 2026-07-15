@@ -23,11 +23,13 @@ const GRADE_STYLE: Record<string, { icon: string; cls: string; label: string }> 
   needsmore:  { icon: '🔄', cls: 'border-purple-400 bg-purple-50', label: 'Needs more work' },
   comment:    { icon: '💬', cls: 'border-blue-300 bg-blue-50',     label: 'Teacher comment' },
   assignment: { icon: '📋', cls: 'border-purple-300 bg-purple-50', label: 'New assignment' },
+  answer_key_released: { icon: '🔓', cls: 'border-purple-400 bg-purple-50', label: 'Answer key released' },
 }
 
 function styleKey(n: Notif): string {
   if (n.type === 'assignment') return 'assignment'
   if (n.type === 'comment') return 'comment'
+  if (n.type === 'answer_key_released') return 'answer_key_released'
   return n.grade ?? 'comment'
 }
 

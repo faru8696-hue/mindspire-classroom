@@ -18,18 +18,20 @@ interface Notif {
 
 const ICON: Record<string, string> = {
   correct: '✅', partial: '🟡', discussed: '💬', incorrect: '❌', needsmore: '🔄',
-  comment: '💬', assignment: '📋',
+  comment: '💬', assignment: '📋', answer_key_released: '🔓',
 }
 
 function iconFor(n: Notif): string {
   if (n.type === 'assignment') return ICON.assignment
   if (n.type === 'comment') return ICON.comment
+  if (n.type === 'answer_key_released') return ICON.answer_key_released
   return ICON[n.grade ?? ''] ?? '📝'
 }
 
 function titleFor(n: Notif): string {
   if (n.type === 'assignment') return n.count && n.count > 1 ? `${n.count} new questions assigned` : 'New question assigned'
   if (n.type === 'comment') return 'Teacher left a comment'
+  if (n.type === 'answer_key_released') return 'Answer key released'
   return 'Teacher graded your work'
 }
 
