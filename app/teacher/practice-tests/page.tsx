@@ -1,5 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/server'
 import Link from 'next/link'
+import RefreshLayout from '@/components/RefreshLayout'
 
 export default async function PracticeTestsPage() {
   const admin = await createAdminClient()
@@ -51,6 +52,7 @@ export default async function PracticeTestsPage() {
 
   return (
     <div className="max-w-3xl mx-auto">
+      <RefreshLayout />
       <h1 className="text-2xl font-bold text-purple-900 mb-1">Self Study Activity</h1>
       <p className="text-sm text-gray-500 mb-6">Practice tests students have built and completed on their own — questions, their answers, and self-grades.</p>
 

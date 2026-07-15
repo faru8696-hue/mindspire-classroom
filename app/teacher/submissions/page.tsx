@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Comments from '@/components/Comments'
 import AiChatHistory from '@/components/AiChatHistory'
@@ -28,6 +29,7 @@ function classOf(s: Submission) {
 
 export default function SubmissionsPage() {
   const supabase = createClient()
+  const router = useRouter()
   const [submissions, setSubmissions] = useState<Submission[]>([])
   // Drill-down state: class → student → work (submission)
   const [classId, setClassId] = useState<string | null>(null)
@@ -62,11 +64,14 @@ export default function SubmissionsPage() {
   useEffect(() => {
     load()
     loadKeyReleases()
-    // Visiting this page clears the "new ungraded work" badge in the nav.
+    // Visiting this page clears the "new ungraded work" badge in the nav —
+    // router.refresh() is what actually busts the client router cache so
+    // the shared layout re-fetches the badge counts right away, instead of
+    // showing the stale pre-visit count until the next hard navigation.
     fetch('/api/teacher-nav-seen', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ navKey: 'submissions' }),
-    }).catch(() => {})
+    }).then(() => router.refresh()).catch(() => {})
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return
       supabase.from('profiles').select('full_name').eq('id', user.id).single()

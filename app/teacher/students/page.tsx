@@ -2,6 +2,7 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import StudentsClient from './StudentsClient'
+import MarkNavSeen from '@/components/MarkNavSeen'
 
 async function approveStudent(formData: FormData) {
   'use server'
@@ -37,11 +38,9 @@ export default async function StudentsPage() {
 
   const classMap = new Map((classes ?? []).map(c => [c.id, c.title]))
 
-  // Visiting this page clears the "new applications" badge in the nav.
-  await admin.from('teacher_nav_seen').upsert({ nav_key: 'students', seen_at: new Date().toISOString() }, { onConflict: 'nav_key' })
-
   return (
     <div className="max-w-4xl mx-auto">
+      <MarkNavSeen navKey="students" />
       <h1 className="text-2xl font-bold text-purple-900 mb-6">Students</h1>
 
       {(pending?.length ?? 0) > 0 && (

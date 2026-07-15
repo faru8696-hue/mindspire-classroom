@@ -1,6 +1,6 @@
 import { getRecentActivity } from '@/lib/activity'
 import ActivityFeed from '@/components/ActivityFeed'
-import { createAdminClient } from '@/lib/supabase/server'
+import MarkNavSeen from '@/components/MarkNavSeen'
 
 export const dynamic = 'force-dynamic'
 
@@ -11,12 +11,9 @@ export const dynamic = 'force-dynamic'
 export default async function ActivityPage() {
   const events = await getRecentActivity({ limit: 200 })
 
-  // Visiting this page clears the "new activity" badge in the nav.
-  const admin = await createAdminClient()
-  await admin.from('teacher_nav_seen').upsert({ nav_key: 'activity', seen_at: new Date().toISOString() }, { onConflict: 'nav_key' })
-
   return (
     <div className="max-w-3xl mx-auto">
+      <MarkNavSeen navKey="activity" />
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-bold text-purple-900">Recent Activity</h1>
         <p className="text-xs text-gray-400">Last 200 events across all students</p>
