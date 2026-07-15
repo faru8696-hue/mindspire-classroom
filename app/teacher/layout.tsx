@@ -24,6 +24,10 @@ export default async function TeacherLayout({ children }: { children: React.Reac
   // Load recent unread notifications for the bell
   const admin = createSupabaseAdmin(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
   const { data: classList } = await admin.from('classes').select('id, title').order('order_index')
+  const { count: unreadPracticeTests } = await admin
+    .from('practice_test_notifications')
+    .select('id', { count: 'exact', head: true })
+    .eq('read', false)
   const { data: notifs } = await admin
     .from('notifications')
     .select('id, type, student_id, question_id, class_id, created_at, read, message, profiles:profiles!notifications_student_id_fkey(full_name), questions:questions!notifications_question_id_fkey(title)')
@@ -60,6 +64,12 @@ export default async function TeacherLayout({ children }: { children: React.Reac
           <Link href="/teacher/submissions" className="text-purple-200 hover:text-white text-sm transition-colors">Submissions</Link>
           <Link href="/teacher/progress" className="text-purple-200 hover:text-white text-sm transition-colors">Progress</Link>
           <Link href="/teacher/activity" className="text-purple-200 hover:text-white text-sm transition-colors">Activity</Link>
+          <Link href="/teacher/practice-tests" className="text-purple-200 hover:text-white text-sm transition-colors flex items-center gap-1.5">
+            Self Study
+            {!!unreadPracticeTests && (
+              <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">{unreadPracticeTests}</span>
+            )}
+          </Link>
         </div>
         <div className="flex items-center gap-3">
           <TeacherNotificationBell initialNotifications={initialNotifications} classes={classList ?? []} />

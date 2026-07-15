@@ -9,8 +9,8 @@ export async function POST(req: NextRequest) {
   const caller = await getCaller()
   if (!caller?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { questionId, testId, selfGrade } = await req.json() as {
-    questionId: string; testId?: string | null; selfGrade: 'correct' | 'partial' | 'incorrect'
+  const { questionId, testId, selfGrade, canvasData } = await req.json() as {
+    questionId: string; testId?: string | null; selfGrade: 'correct' | 'partial' | 'incorrect'; canvasData?: string | null
   }
   if (!questionId || !selfGrade) return NextResponse.json({ error: 'Missing questionId or selfGrade' }, { status: 400 })
 
@@ -21,6 +21,7 @@ export async function POST(req: NextRequest) {
     question_id: questionId,
     test_id: testId || null,
     self_grade: selfGrade,
+    canvas_data: canvasData || null,
   })
   if (error) {
     console.error('self-grade insert error:', error)

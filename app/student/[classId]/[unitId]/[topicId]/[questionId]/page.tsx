@@ -4,6 +4,7 @@ import Link from 'next/link'
 import Comments from '@/components/Comments'
 import StudentBoardPage from './StudentBoardPage'
 import AnswerKeyText from '@/components/AnswerKeyText'
+import QuestionContent from '@/components/QuestionContent'
 
 export default async function QuestionPage({ params }: { params: Promise<{ classId: string; unitId: string; topicId: string; questionId: string }> }) {
   const { classId, unitId, topicId, questionId } = await params
@@ -86,7 +87,7 @@ export default async function QuestionPage({ params }: { params: Promise<{ class
             <span className="text-gray-700 font-medium">{question.title}</span>
           </div>
           <h1 className="text-xl font-bold text-purple-900">{question.title}</h1>
-          {question.content && <p className="text-gray-600 mt-1">{question.content}</p>}
+          {question.content && <QuestionContent text={question.content} className="text-gray-600 mt-1" />}
         </div>
         <div className="flex items-center gap-3 flex-shrink-0">
           <div className="flex items-center gap-1.5">
