@@ -112,15 +112,11 @@ export async function POST(req: NextRequest) {
     })
   }
 
-  // Email the student whenever they'd get an in-app notification for this
-  // grade, AND whenever the teacher leaves a text comment even without a
-  // grade change (e.g. annotating work without flipping correct/incorrect)
-  // — the in-app notification alone is easy to miss, so a comment should
-  // always reach them by email too. Scheduled via after() so the grade save
-  // responds immediately instead of the teacher's UI waiting on Resend —
-  // sending was previously awaited inline here, which made every grade save
-  // feel slow (or time out) whenever Resend was slow/rate-limited.
-  if (notify && (grade || textFeedback)) {
+  // Email only when the teacher actually wrote a text comment — a plain
+  // grade (correct/incorrect/etc with no note) is in-app notification only,
+  // no email. Scheduled via after() so the grade save responds immediately
+  // instead of the teacher's UI waiting on Resend.
+  if (notify && textFeedback) {
     after(async () => {
       try {
         const [{ data: student }, { data: question }] = await Promise.all([
