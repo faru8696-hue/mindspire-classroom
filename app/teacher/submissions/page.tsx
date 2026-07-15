@@ -64,14 +64,6 @@ export default function SubmissionsPage() {
   useEffect(() => {
     load()
     loadKeyReleases()
-    // Visiting this page clears the "new ungraded work" badge in the nav —
-    // router.refresh() is what actually busts the client router cache so
-    // the shared layout re-fetches the badge counts right away, instead of
-    // showing the stale pre-visit count until the next hard navigation.
-    fetch('/api/teacher-nav-seen', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ navKey: 'submissions' }),
-    }).then(() => router.refresh()).catch(() => {})
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return
       supabase.from('profiles').select('full_name').eq('id', user.id).single()
@@ -279,6 +271,10 @@ export default function SubmissionsPage() {
     })
     setClassAiResults(prev => new Map(prev).set(sub.id, { ...result, approved: true }))
     load()
+    // Submissions' nav badge is a live ungraded count, not click-to-clear —
+    // refresh the shared layout so it decrements right away instead of
+    // waiting for the next hard navigation.
+    router.refresh()
   }
 
   function dismissClassAiResult(subId: string) {
@@ -326,6 +322,9 @@ export default function SubmissionsPage() {
     })
     setGrading(false)
     load()
+    // Submissions' nav badge is a live ungraded count, not click-to-clear —
+    // refresh the shared layout so it decrements right away.
+    router.refresh()
     // Grading queue: jump to this student's next ungraded work so the teacher
     // can grade straight through without hunting in the list.
     const next = works.find(w => w.id !== cur.id && !w.feedback?.grade)

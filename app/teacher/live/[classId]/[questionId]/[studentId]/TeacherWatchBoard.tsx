@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import InfiniteWhiteboard, { InfiniteWhiteboardHandle } from '@/components/InfiniteWhiteboard'
 import AnswerKeyPanel from '@/components/AnswerKeyPanel'
@@ -37,6 +38,7 @@ export default function TeacherWatchBoard({
   initialGrade, initialFeedbackText,
 }: Props) {
   const supabase = createClient()
+  const router = useRouter()
   const gradeChannel = supabase.channel(`live-grades:${classId}:${questionId}`)
   const gradeNotifChannel = supabase.channel(`grade-notif:${questionId}:${studentId}`)
   const [grade, setGrade] = useState<string | null>(initialGrade)
@@ -142,6 +144,9 @@ export default function TeacherWatchBoard({
     if (newGrade) {
       await gradeNotifChannel.send({ type: 'broadcast', event: 'grade-update', payload: { grade: newGrade, feedback } })
     }
+    // Submissions' nav badge is a live ungraded count — refresh the shared
+    // layout so it decrements right away even when grading from here.
+    router.refresh()
     return res.ok
   }
 
