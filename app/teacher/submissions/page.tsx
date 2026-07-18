@@ -430,7 +430,7 @@ export default function SubmissionsPage() {
       {selected ? (
         <div className="flex-1 flex gap-3 overflow-hidden min-w-0">
           {/* Board */}
-          <div className="flex-1 flex flex-col gap-2 overflow-hidden min-w-0">
+          <div className="flex-1 flex flex-col gap-2 overflow-y-auto min-w-0">
             <div className="bg-white rounded-xl border border-gray-200 p-3 flex-shrink-0">
               <div className="flex items-start justify-between gap-3 flex-wrap">
                 <div>
@@ -537,7 +537,7 @@ export default function SubmissionsPage() {
               {isKeyReleased(selected.student_id, selected.question_id) ? '🔓 Answer key released to this student — click to revoke' : '🔒 Release answer key to this student'}
             </button>
 
-            <div className="flex-1 overflow-hidden">
+            <div className="flex-1 min-h-[500px] overflow-hidden">
               <InfiniteWhiteboard
                 key={selected.id}
                 ref={boardRef}
