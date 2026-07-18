@@ -29,36 +29,44 @@ export default function LoginPage() {
     const formData = new FormData(e.currentTarget)
     const supabase = createClient()
 
-    const { data, error: signInError } = await supabase.auth.signInWithPassword({
-      email: formData.get('email') as string,
-      password: formData.get('password') as string,
-    })
+    // Wrapped in try/catch/finally so a thrown error (network blip, a
+    // browser extension blocking the request, etc. — not just a normal
+    // "wrong password" response) can't leave the button stuck on
+    // "Signing in..." forever with no way to retry short of a page reload.
+    try {
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({
+        email: formData.get('email') as string,
+        password: formData.get('password') as string,
+      })
 
-    if (signInError || !data.user) {
-      setError(signInError?.message ?? 'Login failed')
+      if (signInError || !data.user) {
+        setError(signInError?.message ?? 'Login failed')
+        return
+      }
+
+      // Get profile and route to correct dashboard
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role, approved')
+        .eq('id', data.user.id)
+        .single()
+
+      if (!profile) {
+        setError('Account not set up yet. Please try again in a moment.')
+        return
+      }
+
+      if (profile.role === 'teacher') {
+        window.location.href = '/teacher'
+      } else if (!profile.approved) {
+        window.location.href = '/pending'
+      } else {
+        window.location.href = '/student'
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Something went wrong signing in. Please try again.')
+    } finally {
       setLoading(false)
-      return
-    }
-
-    // Get profile and route to correct dashboard
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('role, approved')
-      .eq('id', data.user.id)
-      .single()
-
-    if (!profile) {
-      setError('Account not set up yet. Please try again in a moment.')
-      setLoading(false)
-      return
-    }
-
-    if (profile.role === 'teacher') {
-      window.location.href = '/teacher'
-    } else if (!profile.approved) {
-      window.location.href = '/pending'
-    } else {
-      window.location.href = '/student'
     }
   }
 
