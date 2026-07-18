@@ -19,7 +19,7 @@ interface Submission {
   student_id: string
   question_id: string
   profiles: { full_name: string; email: string } | null
-  questions: { title: string; content: string | null; image_url: string | null; answer_key: string | null; topics: { title: string; units: { title: string; classes: { id: string; title: string } | null } | null } | null } | null
+  questions: { title: string; content: string | null; image_url: string | null; answer_key: string | null; difficulty: string | null; points: number | null; topics: { title: string; units: { title: string; classes: { id: string; title: string } | null } | null } | null } | null
   feedback: { id: string; text_feedback: string | null; canvas_data: string | null; grade: string | null } | null
 }
 
@@ -74,7 +74,7 @@ export default function SubmissionsPage() {
   async function load() {
     const { data } = await supabase
       .from('submissions')
-      .select(`*, profiles(full_name, email), questions(title, content, image_url, answer_key, topics(title, units(title, classes(id, title)))), feedback(id, text_feedback, canvas_data, grade)`)
+      .select(`*, profiles(full_name, email), questions(title, content, image_url, answer_key, difficulty, points, topics(title, units(title, classes(id, title)))), feedback(id, text_feedback, canvas_data, grade)`)
       .order('updated_at', { ascending: false })
     setSubmissions((data as unknown as Submission[]) ?? [])
   }
@@ -435,7 +435,16 @@ export default function SubmissionsPage() {
               <div className="flex items-start justify-between gap-3 flex-wrap">
                 <div>
                   <p className="font-bold text-purple-900">{selected.profiles?.full_name}</p>
-                  <p className="text-xs text-gray-500">{selected.questions?.topics?.units?.title} → {selected.questions?.topics?.title} → {selected.questions?.title}</p>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-xs text-gray-500">{selected.questions?.topics?.units?.title} → {selected.questions?.topics?.title} → {selected.questions?.title}</p>
+                    {selected.questions?.difficulty && (
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold flex-shrink-0 ${
+                        selected.questions.difficulty === 'easy' ? 'bg-sky-100 text-sky-700' : selected.questions.difficulty === 'medium' ? 'bg-orange-100 text-orange-700' : 'bg-rose-100 text-rose-700'
+                      }`}>
+                        {selected.questions.difficulty} · {selected.questions.points}pt{selected.questions.points === 1 ? '' : 's'}
+                      </span>
+                    )}
+                  </div>
                   {selected.text_answer && <p className="text-xs text-gray-600 mt-1 bg-gray-50 px-2 py-1 rounded">📝 {selected.text_answer}</p>}
                 </div>
                 {/* grade buttons + feedback below */}

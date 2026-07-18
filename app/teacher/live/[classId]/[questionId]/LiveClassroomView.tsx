@@ -26,6 +26,8 @@ interface Props {
   questionTitle: string
   questionContent: string | null
   answerKey: string | null
+  questionDifficulty: string | null
+  questionPoints: number | null
   allQuestions: ClassQuestion[]
   questionHelp: Record<string, number>
   students: Student[]
@@ -49,8 +51,15 @@ const GRADE_COLOR: Record<string, string> = {
 
 type Filter = 'all' | 'help' | 'done' | 'submitted' | 'unchecked'
 
+const DIFFICULTY_BADGE: Record<string, string> = {
+  easy: 'bg-sky-100 text-sky-700',
+  medium: 'bg-orange-100 text-orange-700',
+  hard: 'bg-rose-100 text-rose-700',
+}
+
 export default function LiveClassroomView({
   classId, questionId, classTitle, questionTitle, questionContent, answerKey,
+  questionDifficulty, questionPoints,
   allQuestions, questionHelp, students, initialSubmissions, initialFeedbacks, initialNotifications,
   initialComments, teacherId, teacherName, autoOpenCommentsStudentId,
 }: Props) {
@@ -514,6 +523,11 @@ export default function LiveClassroomView({
                   <p className="text-[10px] uppercase tracking-widest text-gray-400 leading-none mb-0.5">{classTitle}</p>
                   <h1 className="font-bold text-gray-900 text-sm flex items-center gap-1.5 truncate">
                     <span className="truncate">{questionTitle}</span>
+                    {questionDifficulty && (
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold flex-shrink-0 ${DIFFICULTY_BADGE[questionDifficulty] ?? 'bg-gray-100 text-gray-500'}`}>
+                        {questionDifficulty} · {questionPoints}pt{questionPoints === 1 ? '' : 's'}
+                      </span>
+                    )}
                     <span className="text-gray-400 flex-shrink-0">▾</span>
                   </h1>
                 </div>

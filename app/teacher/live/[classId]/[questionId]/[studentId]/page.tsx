@@ -18,7 +18,7 @@ export default async function TeacherWatchPage({
   const supabase = await createAdminClient()
 
   const [{ data: question }, { data: student }, { data: cls }, { data: submission }] = await Promise.all([
-    supabase.from('questions').select('id, title, content, image_url, answer_key').eq('id', questionId).single(),
+    supabase.from('questions').select('id, title, content, image_url, answer_key, difficulty, points').eq('id', questionId).single(),
     supabase.from('profiles').select('id, full_name').eq('id', studentId).single(),
     supabase.from('classes').select('title').eq('id', classId).single(),
     supabase.from('submissions')
@@ -88,7 +88,16 @@ export default async function TeacherWatchPage({
             ← Back to class
           </Link>
           <div>
-            <p className="text-xs text-gray-500">{cls?.title} — {question.title}</p>
+            <div className="flex items-center gap-2">
+              <p className="text-xs text-gray-500">{cls?.title} — {question.title}</p>
+              {question.difficulty && (
+                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold flex-shrink-0 ${
+                  question.difficulty === 'easy' ? 'bg-sky-900/60 text-sky-300' : question.difficulty === 'medium' ? 'bg-orange-900/60 text-orange-300' : 'bg-rose-900/60 text-rose-300'
+                }`}>
+                  {question.difficulty} · {question.points}pt{question.points === 1 ? '' : 's'}
+                </span>
+              )}
+            </div>
             <h1 className="font-bold text-white">{student.full_name}</h1>
           </div>
         </div>
