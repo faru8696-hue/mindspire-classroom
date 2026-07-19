@@ -13,14 +13,16 @@ import AnswerKeyPanel from '@/components/AnswerKeyPanel'
 
 interface Submission {
   id: string
-  canvas_data: string | null
+  // Undefined until loadDetail() has fetched it for this specific row — the
+  // list load intentionally omits these (see load()'s comment).
+  canvas_data?: string | null
   text_answer: string | null
   updated_at: string
   student_id: string
   question_id: string
   profiles: { full_name: string; email: string } | null
-  questions: { title: string; content: string | null; image_url: string | null; answer_key: string | null; difficulty: string | null; points: number | null; topics: { title: string; units: { title: string; classes: { id: string; title: string } | null } | null } | null } | null
-  feedback: { id: string; text_feedback: string | null; canvas_data: string | null; grade: string | null } | null
+  questions: { title: string; content?: string | null; image_url?: string | null; answer_key?: string | null; difficulty: string | null; points: number | null; topics: { title: string; units: { title: string; classes: { id: string; title: string } | null } | null } | null } | null
+  feedback: { id: string; text_feedback?: string | null; canvas_data?: string | null; grade: string | null } | null
 }
 
 function classOf(s: Submission) {
@@ -35,6 +37,7 @@ export default function SubmissionsPage() {
   const [classId, setClassId] = useState<string | null>(null)
   const [studentId, setStudentId] = useState<string | null>(null)
   const [selected, setSelected] = useState<Submission | null>(null)
+  const [loadedDetailIds, setLoadedDetailIds] = useState<Set<string>>(new Set())
   const [grade, setGrade] = useState<string | null>(null)
   const [textFeedback, setTextFeedback] = useState('')
   const [grading, setGrading] = useState(false)
@@ -82,10 +85,17 @@ export default function SubmissionsPage() {
     ))
   }
 
+  // Lightweight list load — deliberately excludes canvas_data (the
+  // whiteboard JSON, which can be large, especially with embedded image
+  // uploads), question content/image_url/answer_key, and feedback's
+  // text_feedback/canvas_data. None of those are needed to render the
+  // class → student → work list, only once a specific submission is opened
+  // (see loadDetail below) — pulling them for every row up front was the
+  // actual source of "sometimes takes a long time to show."
   async function load() {
     const { data } = await supabase
       .from('submissions')
-      .select(`*, profiles(full_name, email), questions(title, content, image_url, answer_key, difficulty, points, topics(title, units(title, classes(id, title)))), feedback(id, text_feedback, canvas_data, grade)`)
+      .select(`id, student_id, question_id, text_answer, updated_at, profiles(full_name, email), questions(title, difficulty, points, topics(title, units(title, classes(id, title)))), feedback(id, grade)`)
       .order('updated_at', { ascending: false })
     setSubmissions((data as unknown as Submission[]) ?? [])
   }
@@ -178,12 +188,30 @@ export default function SubmissionsPage() {
 
   function openClass(id: string) { setClassId(id); setStudentId(null); setSelected(null) }
   function openStudent(id: string) { setStudentId(id); setSelected(null) }
-  function openWork(sub: Submission) {
+  async function openWork(sub: Submission) {
     setSelected(sub)
     setGrade(sub.feedback?.grade ?? null)
     setTextFeedback(sub.feedback?.text_feedback ?? '')
     setAiSuggestion(null)
     setAiError(null)
+    if (loadedDetailIds.has(sub.id)) return
+    const { data } = await supabase
+      .from('submissions')
+      .select('id, canvas_data, questions(content, image_url, answer_key), feedback(id, text_feedback, canvas_data)')
+      .eq('id', sub.id)
+      .maybeSingle()
+    if (!data) return
+    const dq = Array.isArray(data.questions) ? data.questions[0] : data.questions
+    const df = Array.isArray(data.feedback) ? data.feedback[0] : data.feedback
+    const detailPatch: Partial<Submission> = {
+      canvas_data: data.canvas_data,
+      questions: sub.questions ? { ...sub.questions, content: dq?.content ?? null, image_url: dq?.image_url ?? null, answer_key: dq?.answer_key ?? null } : sub.questions,
+      feedback: { id: df?.id ?? sub.feedback?.id ?? sub.id, grade: sub.feedback?.grade ?? null, text_feedback: df?.text_feedback ?? null, canvas_data: df?.canvas_data ?? null },
+    }
+    setLoadedDetailIds(prev => new Set(prev).add(sub.id))
+    setSubmissions(prev => prev.map(s => s.id === sub.id ? { ...s, ...detailPatch } : s))
+    setSelected(prev => (prev && prev.id === sub.id ? { ...prev, ...detailPatch } : prev))
+    setTextFeedback(detailPatch.feedback?.text_feedback ?? '')
   }
 
   // AI reads a snapshot of the board and suggests a grade + feedback — a
@@ -237,7 +265,17 @@ export default function SubmissionsPage() {
       const sub = pending[i]
       setClassAiResults(prev => new Map(prev).set(sub.id, { loading: true }))
       try {
-        const snapshot = await renderBoardSnapshot(sub.canvas_data, sub.feedback?.canvas_data ?? null)
+        // The list load omits canvas_data/question content to keep it fast —
+        // fetch this one submission's detail fresh here instead of relying
+        // on stale list data.
+        const { data: detail } = await supabase
+          .from('submissions')
+          .select('canvas_data, questions(content), feedback(canvas_data)')
+          .eq('id', sub.id)
+          .maybeSingle()
+        const detailQuestion = Array.isArray(detail?.questions) ? detail.questions[0] : detail?.questions
+        const detailFeedback = Array.isArray(detail?.feedback) ? detail.feedback[0] : detail?.feedback
+        const snapshot = await renderBoardSnapshot(detail?.canvas_data ?? null, detailFeedback?.canvas_data ?? null)
         if (!snapshot) {
           setClassAiResults(prev => new Map(prev).set(sub.id, { loading: false, error: 'No work on the board to check' }))
         } else {
@@ -246,7 +284,7 @@ export default function SubmissionsPage() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               questionTitle: sub.questions?.title,
-              questionContent: sub.questions?.content ?? null,
+              questionContent: detailQuestion?.content ?? null,
               boardImageDataUrl: snapshot,
             }),
           })
@@ -438,7 +476,11 @@ export default function SubmissionsPage() {
       </div>
 
       {/* Main area */}
-      {selected ? (
+      {selected && !loadedDetailIds.has(selected.id) ? (
+        <div className="flex-1 bg-white rounded-xl border border-gray-200 flex items-center justify-center">
+          <p className="text-gray-400 text-sm">Loading work…</p>
+        </div>
+      ) : selected ? (
         <div className="flex-1 flex gap-3 overflow-hidden min-w-0">
           {/* Board */}
           <div className="flex-1 flex flex-col gap-2 overflow-y-auto min-w-0">
