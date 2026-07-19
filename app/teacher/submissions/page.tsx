@@ -71,6 +71,17 @@ export default function SubmissionsPage() {
     })
   }, [])
 
+  // Patches one submission's feedback in local state instead of refetching
+  // the ENTIRE submissions list (every class, every student, with deep
+  // joins) after every single grade save — that full reload was the actual
+  // source of the lag, not the grade write itself.
+  function patchFeedbackLocal(submissionId: string, patch: Partial<NonNullable<Submission['feedback']>>) {
+    setSubmissions(prev => prev.map(s => s.id === submissionId
+      ? { ...s, feedback: { id: s.feedback?.id ?? submissionId, text_feedback: null, canvas_data: null, grade: null, ...s.feedback, ...patch } }
+      : s
+    ))
+  }
+
   async function load() {
     const { data } = await supabase
       .from('submissions')
@@ -270,7 +281,7 @@ export default function SubmissionsPage() {
       }),
     })
     setClassAiResults(prev => new Map(prev).set(sub.id, { ...result, approved: true }))
-    load()
+    patchFeedbackLocal(sub.id, { grade: result.grade, text_feedback: result.feedback || null })
     // Submissions' nav badge is a live ungraded count, not click-to-clear —
     // refresh the shared layout so it decrements right away instead of
     // waiting for the next hard navigation.
@@ -302,7 +313,7 @@ export default function SubmissionsPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ studentId: sId, questionId: qId, canvasData }),
     })
-    load()
+    if (selected) patchFeedbackLocal(selected.id, { canvas_data: canvasData })
   }
 
   async function saveGrade() {
@@ -321,7 +332,7 @@ export default function SubmissionsPage() {
       }),
     })
     setGrading(false)
-    load()
+    patchFeedbackLocal(cur.id, { grade, text_feedback: textFeedback || null })
     // Submissions' nav badge is a live ungraded count, not click-to-clear —
     // refresh the shared layout so it decrements right away.
     router.refresh()
