@@ -52,12 +52,19 @@ async function postToGemini(body: Record<string, unknown>, thinkingBudget: numbe
 // tokens and can run away in cost on grading calls fired in a bulk loop (one
 // call per ungraded submission). A bounded budget still gets "thinking" mode
 // for reading handwriting accurately, just with a cost ceiling per call.
-async function callGemini(parts: GeminiPart[], responseSchema?: object, thinkingBudget = 1024): Promise<string> {
+// maxOutputTokens caps the actual answer text — separate from thinkingBudget
+// (which caps the model's internal reasoning). Grading replies are always
+// short (a grade enum + 1-3 sentences), so capping this tightly cuts cost
+// with no real risk of truncating a legitimate response.
+async function callGemini(parts: GeminiPart[], responseSchema?: object, thinkingBudget = 1024, maxOutputTokens?: number): Promise<string> {
   const body: Record<string, unknown> = {
     contents: [{ parts }],
   }
-  if (responseSchema) {
-    body.generationConfig = { responseMimeType: 'application/json', responseSchema }
+  if (responseSchema || maxOutputTokens) {
+    body.generationConfig = {
+      ...(responseSchema ? { responseMimeType: 'application/json', responseSchema } : {}),
+      ...(maxOutputTokens ? { maxOutputTokens } : {}),
+    }
   }
   return postToGemini(body, thinkingBudget)
 }
@@ -109,10 +116,12 @@ Decide whether the student's answer is fundamentally correct (the right final an
     required: ['grade', 'feedback'],
   }
 
-  // 512 is enough thinking budget for a single-image correct/incorrect call
-  // — this is the path that runs in a tight bulk loop (once per ungraded
-  // submission), so keeping its budget small matters most for cost.
-  const text = await callGemini([{ text: prompt }, imagePart(boardImageDataUrl)], schema, 512)
+  // This is the path that runs in a tight bulk loop (once per ungraded
+  // submission), so keeping cost per call small matters most here: 256 is
+  // still enough thinking budget to read handwriting accurately, and the
+  // reply itself (a grade enum + 1-3 sentence note) never needs more than
+  // ~200 output tokens, so capping that closes off the other main cost lever.
+  const text = await callGemini([{ text: prompt }, imagePart(boardImageDataUrl)], schema, 256, 200)
   const parsed = JSON.parse(text) as AiGradeResult
   if (parsed.grade !== 'correct' && parsed.grade !== 'incorrect') {
     throw new Error(`Unexpected grade value from Gemini: ${parsed.grade}`)
