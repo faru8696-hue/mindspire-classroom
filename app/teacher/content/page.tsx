@@ -111,6 +111,13 @@ export default function ContentPage() {
     cb()
   }
 
+  async function setDifficulty(id: string, difficulty: string) {
+    const points = difficulty === 'easy' ? 1 : difficulty === 'medium' ? 2 : difficulty === 'hard' ? 3 : 0
+    const value = difficulty || null
+    setQuestions(qs => qs.map(q => q.id === id ? { ...q, difficulty: value, points } : q))
+    await supabase.from('questions').update({ difficulty: value, points }).eq('id', id)
+  }
+
   const col = 'bg-white rounded-xl border border-gray-200 p-4 flex flex-col'
   const input = 'flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400'
   const addBtn = 'bg-purple-600 text-white px-3 py-2 rounded-lg text-sm hover:bg-purple-700'
@@ -209,13 +216,18 @@ export default function ContentPage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5">
                           <Link href={`/teacher/questions/${q.id}`} className="text-sm font-medium text-gray-800 hover:text-purple-700 truncate block">{q.title}</Link>
-                          {q.difficulty && (
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold flex-shrink-0 ${
-                              q.difficulty === 'easy' ? 'bg-sky-100 text-sky-700' : q.difficulty === 'medium' ? 'bg-orange-100 text-orange-700' : 'bg-rose-100 text-rose-700'
-                            }`}>
-                              {q.difficulty} · {q.points}pt{q.points === 1 ? '' : 's'}
-                            </span>
-                          )}
+                          <select
+                            value={q.difficulty ?? ''}
+                            onChange={e => setDifficulty(q.id, e.target.value)}
+                            className={`text-[10px] px-1 py-0.5 rounded-full font-bold flex-shrink-0 border-0 cursor-pointer ${
+                              q.difficulty === 'easy' ? 'bg-sky-100 text-sky-700' : q.difficulty === 'medium' ? 'bg-orange-100 text-orange-700' : q.difficulty === 'hard' ? 'bg-rose-100 text-rose-700' : 'bg-gray-100 text-gray-500'
+                            }`}
+                          >
+                            <option value="">no difficulty</option>
+                            <option value="easy">easy · 1pt</option>
+                            <option value="medium">medium · 2pts</option>
+                            <option value="hard">hard · 3pts</option>
+                          </select>
                         </div>
                         {q.content && <p className="text-xs text-gray-400 truncate">{q.content}</p>}
                       </div>

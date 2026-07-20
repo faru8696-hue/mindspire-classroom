@@ -123,10 +123,12 @@ async function main() {
   const CHUNK = 50
   for (let i = 0; i < topicIds.length; i += CHUNK) {
     const chunk = topicIds.slice(i, i + CHUNK)
-    const qs = await sbGet(`questions?select=id,title,content,answer_key&topic_id=in.(${chunk.join(',')})`)
+    const qs = await sbGet(`questions?select=id,title,content,answer_key,difficulty&topic_id=in.(${chunk.join(',')})`)
     allQuestions = allQuestions.concat(qs)
   }
-  console.log(`Found ${allQuestions.length} AP Chemistry questions.`)
+  console.log(`Found ${allQuestions.length} AP Chemistry questions total.`)
+  allQuestions = allQuestions.filter(q => !q.difficulty)
+  console.log(`${allQuestions.length} still unclassified — resuming just those.`)
 
   let done = 0, failed = 0
   for (let i = 0; i < allQuestions.length; i += BATCH_SIZE) {

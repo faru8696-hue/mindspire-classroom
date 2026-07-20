@@ -10,6 +10,12 @@ export interface InfiniteWhiteboardHandle {
   // features without needing a server-side re-implementation of the same
   // drawing logic.
   getSnapshot: () => string | null
+  // Drops the given image URL onto the board as a movable/resizable image
+  // object, centered in the current viewport — used by the "Copy diagram to
+  // board" button so a student can draw directly on top of a question's
+  // reference diagram (shading a region, labeling a curve, etc.) instead of
+  // only seeing it as a static side-panel image.
+  addImageObject: (url: string) => void
 }
 
 const imageCache = new Map<string, HTMLImageElement>()
@@ -92,10 +98,6 @@ function InfiniteWhiteboardInner({
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-
-  useImperativeHandle(ref, () => ({
-    getSnapshot: () => canvasRef.current?.toDataURL('image/png') ?? null,
-  }), [])
 
   // ── All canvas state lives in refs so render loop always sees latest ──
   // Each user owns their own layer; the other user's layer is read-only
@@ -215,6 +217,34 @@ function InfiniteWhiteboardInner({
     if (history.current.length > 50) history.current.shift()
     redoStack.current = []
   }, [])
+
+  const addImageObject = useCallback((url: string) => {
+    const img = new Image()
+    img.onload = () => {
+      const maxW = 600, maxH = 400
+      const scale = Math.min(maxW / img.width, maxH / img.height, 1)
+      const w = img.width * scale, h = img.height * scale
+      const canvas = canvasRef.current
+      const v = viewRef.current
+      const cx = ((canvas?.width ?? 800) / 2 - v.panX) / v.zoom
+      const cy = ((canvas?.height ?? 600) / 2 - v.panY) / v.zoom
+      const id = `image-${Date.now()}-${Math.random()}`
+
+      imageCache.set(url, img)
+      pushHistory()
+      commitObjects(prev => [...prev, {
+        id, type: 'image',
+        x: cx - w / 2, y: cy - h / 2, width: w, height: h,
+        rotation: 0, data: url, zIndex: Date.now(),
+      }])
+    }
+    img.src = url
+  }, [commitObjects, pushHistory])
+
+  useImperativeHandle(ref, () => ({
+    getSnapshot: () => canvasRef.current?.toDataURL('image/png') ?? null,
+    addImageObject,
+  }), [addImageObject])
 
   const doUndo = useCallback(() => {
     if (!history.current.length) return

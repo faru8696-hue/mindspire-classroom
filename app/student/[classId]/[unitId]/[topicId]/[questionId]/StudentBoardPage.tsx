@@ -214,7 +214,15 @@ export default function StudentBoardPage({
               </p>
             )}
             {questionImageUrl && (
-              <ZoomableImage src={questionImageUrl} alt="Question diagram" className="mt-3 max-w-full max-h-56 rounded-lg border border-gray-200 object-contain" />
+              <div className="mt-3">
+                <ZoomableImage src={questionImageUrl} alt="Question diagram" className="max-w-full max-h-56 rounded-lg border border-gray-200 object-contain" />
+                <button
+                  onClick={() => boardRef.current?.addImageObject(questionImageUrl)}
+                  className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg border border-blue-200"
+                >
+                  📋 Copy diagram to board — draw on it
+                </button>
+              </div>
             )}
           </div>
         )}
