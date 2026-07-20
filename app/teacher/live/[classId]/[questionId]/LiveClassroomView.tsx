@@ -489,13 +489,17 @@ export default function LiveClassroomView({
   const needsReview = (id: string) => (helpIds.has(id) || doneIds.has(id)) && !checkedIds.has(id) && !grades.has(id)
   const uncheckedNeedingReview = students.filter(s => needsReview(s.id)).length
 
-  const filteredStudents = students.filter(s => {
-    if (filter === 'help') return helpIds.has(s.id)
-    if (filter === 'done') return doneIds.has(s.id)
-    if (filter === 'submitted') return submissions.has(s.id)
-    if (filter === 'unchecked') return needsReview(s.id)
-    return true
-  })
+  const filteredStudents = students
+    .filter(s => {
+      if (filter === 'help') return helpIds.has(s.id)
+      if (filter === 'done') return doneIds.has(s.id)
+      if (filter === 'submitted') return submissions.has(s.id)
+      if (filter === 'unchecked') return needsReview(s.id)
+      return true
+    })
+    // Students with no work yet sink to the end — everyone with an actual
+    // board to look at should be reachable without scrolling past blanks.
+    .sort((a, b) => (submissions.has(a.id) ? 0 : 1) - (submissions.has(b.id) ? 0 : 1))
 
   return (
     <div className="h-screen flex flex-col bg-gray-50 overflow-hidden">
