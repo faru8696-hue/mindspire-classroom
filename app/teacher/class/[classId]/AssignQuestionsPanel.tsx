@@ -6,8 +6,37 @@ import { createClient } from '@/lib/supabase/client'
 
 interface Unit { id: string; title: string; order_index: number }
 interface Topic { id: string; title: string; unit_id: string; order_index: number }
-interface Question { id: string; title: string; content: string | null; topic_id: string; order_index: number }
+interface Question { id: string; title: string; content: string | null; topic_id: string; order_index: number; source?: string | null }
 interface Assignment { question_id: string; due_date: string | null }
+
+// Teacher-only provenance grouping — where each question was sourced from
+// (topic worksheet, episode review packet, MCQ practice set, savemyexams
+// export, teacher-written key packet, or a one-off supplemental packet).
+// Students never see this; it only affects how this panel groups/labels
+// questions so a teacher can publish one set at a time instead of an
+// entire topic in one shot.
+const SOURCE_ORDER = ['Topic Worksheet', 'MCQ Practice', 'Episode Review', 'SaveMyExams', 'Teacher Key Packet', 'Supplemental Packet', 'Unsorted']
+const SOURCE_STYLE: Record<string, string> = {
+  'Topic Worksheet': 'bg-blue-100 text-blue-700',
+  'MCQ Practice': 'bg-teal-100 text-teal-700',
+  'Episode Review': 'bg-indigo-100 text-indigo-700',
+  'SaveMyExams': 'bg-amber-100 text-amber-700',
+  'Teacher Key Packet': 'bg-green-100 text-green-700',
+  'Supplemental Packet': 'bg-pink-100 text-pink-700',
+  'Unsorted': 'bg-gray-100 text-gray-600',
+}
+
+function groupBySource(qs: Question[]): [string, Question[]][] {
+  const groups = new Map<string, Question[]>()
+  for (const q of qs) {
+    const key = q.source ?? 'Unsorted'
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key)!.push(q)
+  }
+  return SOURCE_ORDER
+    .filter(key => groups.has(key))
+    .map(key => [key, groups.get(key)!] as [string, Question[]])
+}
 
 interface Props {
   classId: string
@@ -29,6 +58,9 @@ export default function AssignQuestionsPanel({ classId, units, topics, questions
   )
   const [saving, setSaving] = useState<string | null>(null)
   const [savingTopic, setSavingTopic] = useState<string | null>(null)
+  // Keyed by `${topicId}::${source}` — tracks an in-flight "publish this set"
+  // click for a single source group, separately from the whole-topic one above.
+  const [savingGroup, setSavingGroup] = useState<string | null>(null)
   const [openUnit, setOpenUnit] = useState<string | null>(units[0]?.id ?? null)
   // Topics default collapsed — with some topics now holding 30-40 questions,
   // showing every question in every topic at once made the page an endless
@@ -96,6 +128,37 @@ export default function AssignQuestionsPanel({ classId, units, topics, questions
       }
     } finally {
       setSavingTopic(null)
+    }
+  }
+
+  // Same as assignTopic, but scoped to just one source group within a topic —
+  // "publish the SaveMyExams set" without also making the Topic Worksheet or
+  // Episode Review questions in the same topic live.
+  async function assignSourceGroup(topicId: string, source: string, groupQs: Question[]) {
+    const unassigned = groupQs.filter(q => !assignments.has(q.id))
+    if (unassigned.length === 0) return
+    const groupKey = `${topicId}::${source}`
+    setSavingGroup(groupKey)
+    try {
+      const { error } = await supabase.from('assignments').insert(
+        unassigned.map(q => ({ question_id: q.id, class_id: classId, due_date: null }))
+      )
+      if (!error) {
+        setAssignments(prev => {
+          const m = new Map(prev)
+          for (const q of unassigned) m.set(q.id, null)
+          return m
+        })
+        for (const q of unassigned) {
+          fetch('/api/notify-assignment', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ classId, questionId: q.id, questionTitle: q.title }),
+          })
+        }
+      }
+    } finally {
+      setSavingGroup(null)
     }
   }
 
@@ -168,69 +231,98 @@ export default function AssignQuestionsPanel({ classId, units, topics, questions
                           </button>
                         )}
                       </div>
-                      {isTopicOpen && topicQs.map(q => {
-                        const isAssigned = assignments.has(q.id)
-                        const isSaving = saving === q.id
-                        const dueDate = dueDateInputs.get(q.id) ?? ''
+                      {isTopicOpen && groupBySource(topicQs).map(([source, groupQs]) => {
+                        const groupUnassignedCount = groupQs.filter(q => !assignments.has(q.id)).length
+                        const groupAssignedCount = groupQs.length - groupUnassignedCount
+                        const groupKey = `${topic.id}::${source}`
 
                         return (
-                          <div
-                            key={q.id}
-                            className={`flex items-center gap-3 px-5 py-3 border-b border-gray-50 last:border-0 ${isAssigned ? 'bg-purple-50/40' : ''}`}
-                          >
-                            {/* Toggle */}
-                            <button
-                              onClick={() => toggle(q.id)}
-                              disabled={isSaving}
-                              className={`relative w-10 h-5 rounded-full transition-colors flex-shrink-0 ${isAssigned ? 'bg-purple-600' : 'bg-gray-300'} ${isSaving ? 'opacity-50' : ''}`}
-                            >
-                              <span
-                                className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${isAssigned ? 'translate-x-5' : 'translate-x-0.5'}`}
-                              />
-                            </button>
-
-                            {/* Question info — always a link to the review page, so
-                                unassigned ("unlive") questions can be reviewed too,
-                                not just ones currently assigned to students. */}
-                            <Link href={`/teacher/questions/${q.id}`} className="flex-1 min-w-0">
-                              <p className={`text-sm font-medium truncate hover:text-purple-700 hover:underline ${isAssigned ? 'text-gray-800' : 'text-gray-500'}`}>{q.title}</p>
-                              {q.content && <p className="text-xs text-gray-400 truncate">{q.content}</p>}
-                            </Link>
-
-                            {/* Due date + submitted count + jump straight into
-                                watching every student's live board for this
-                                question — the flow the class page is built
-                                around now. */}
-                            {isAssigned && (
-                              <>
-                                <span className="text-xs text-gray-400 flex-shrink-0 whitespace-nowrap">
-                                  {submittedCounts[q.id] ?? 0}/{totalStudents} submitted
-                                </span>
-                                <div className="flex items-center gap-1.5 flex-shrink-0">
-                                  <label className="text-xs text-gray-500">Due:</label>
-                                  <input
-                                    type="date"
-                                    value={dueDate}
-                                    onChange={e => updateDueDate(q.id, e.target.value)}
-                                    className="text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-purple-400 text-gray-700"
-                                  />
-                                </div>
-                                <Link
-                                  href={`/teacher/live/${classId}/${q.id}`}
-                                  className="text-xs font-semibold bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded-lg flex-shrink-0 whitespace-nowrap"
+                          <div key={source}>
+                            {/* Source sub-header — teacher-only grouping so a set
+                                (e.g. just the SaveMyExams questions) can be
+                                published on its own instead of the whole topic. */}
+                            <div className="pl-8 pr-5 py-1.5 bg-white border-b border-gray-50 flex items-center justify-between gap-2">
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 ${SOURCE_STYLE[source] ?? SOURCE_STYLE.Unsorted}`}>
+                                {source}
+                              </span>
+                              <span className="text-[11px] text-gray-400 flex-1">{groupAssignedCount}/{groupQs.length} assigned</span>
+                              {groupUnassignedCount > 0 && (
+                                <button
+                                  onClick={() => assignSourceGroup(topic.id, source, groupQs)}
+                                  disabled={savingGroup === groupKey}
+                                  className="text-[11px] font-semibold bg-purple-100 hover:bg-purple-200 text-purple-700 px-2 py-0.5 rounded-lg flex-shrink-0 disabled:opacity-50"
                                 >
-                                  🔴 Go Live
-                                </Link>
-                              </>
-                            )}
-                            {!isAssigned && (
-                              <Link
-                                href={`/teacher/questions/${q.id}`}
-                                className="text-xs font-medium text-purple-600 hover:text-purple-800 flex-shrink-0 whitespace-nowrap"
-                              >
-                                Review →
-                              </Link>
-                            )}
+                                  {savingGroup === groupKey ? 'Publishing…' : `Publish this set (${groupUnassignedCount})`}
+                                </button>
+                              )}
+                            </div>
+
+                            {groupQs.map(q => {
+                              const isAssigned = assignments.has(q.id)
+                              const isSaving = saving === q.id
+                              const dueDate = dueDateInputs.get(q.id) ?? ''
+
+                              return (
+                                <div
+                                  key={q.id}
+                                  className={`flex items-center gap-3 px-5 py-3 border-b border-gray-50 last:border-0 ${isAssigned ? 'bg-purple-50/40' : ''}`}
+                                >
+                                  {/* Toggle */}
+                                  <button
+                                    onClick={() => toggle(q.id)}
+                                    disabled={isSaving}
+                                    className={`relative w-10 h-5 rounded-full transition-colors flex-shrink-0 ${isAssigned ? 'bg-purple-600' : 'bg-gray-300'} ${isSaving ? 'opacity-50' : ''}`}
+                                  >
+                                    <span
+                                      className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${isAssigned ? 'translate-x-5' : 'translate-x-0.5'}`}
+                                    />
+                                  </button>
+
+                                  {/* Question info — always a link to the review page, so
+                                      unassigned ("unlive") questions can be reviewed too,
+                                      not just ones currently assigned to students. */}
+                                  <Link href={`/teacher/questions/${q.id}`} className="flex-1 min-w-0">
+                                    <p className={`text-sm font-medium truncate hover:text-purple-700 hover:underline ${isAssigned ? 'text-gray-800' : 'text-gray-500'}`}>{q.title}</p>
+                                    {q.content && <p className="text-xs text-gray-400 truncate">{q.content}</p>}
+                                  </Link>
+
+                                  {/* Due date + submitted count + jump straight into
+                                      watching every student's live board for this
+                                      question — the flow the class page is built
+                                      around now. */}
+                                  {isAssigned && (
+                                    <>
+                                      <span className="text-xs text-gray-400 flex-shrink-0 whitespace-nowrap">
+                                        {submittedCounts[q.id] ?? 0}/{totalStudents} submitted
+                                      </span>
+                                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                                        <label className="text-xs text-gray-500">Due:</label>
+                                        <input
+                                          type="date"
+                                          value={dueDate}
+                                          onChange={e => updateDueDate(q.id, e.target.value)}
+                                          className="text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-purple-400 text-gray-700"
+                                        />
+                                      </div>
+                                      <Link
+                                        href={`/teacher/live/${classId}/${q.id}`}
+                                        className="text-xs font-semibold bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded-lg flex-shrink-0 whitespace-nowrap"
+                                      >
+                                        🔴 Go Live
+                                      </Link>
+                                    </>
+                                  )}
+                                  {!isAssigned && (
+                                    <Link
+                                      href={`/teacher/questions/${q.id}`}
+                                      className="text-xs font-medium text-purple-600 hover:text-purple-800 flex-shrink-0 whitespace-nowrap"
+                                    >
+                                      Review →
+                                    </Link>
+                                  )}
+                                </div>
+                              )
+                            })}
                           </div>
                         )
                       })}

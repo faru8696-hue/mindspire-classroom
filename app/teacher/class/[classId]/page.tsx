@@ -28,7 +28,7 @@ export default async function ClassDetailPage({ params }: { params: Promise<{ cl
 
   const topicIds = topics?.map(t => t.id) ?? []
   const { data: questions } = topicIds.length > 0
-    ? await supabase.from('questions').select('id, title, content, topic_id, order_index').in('topic_id', topicIds).order('order_index')
+    ? await supabase.from('questions').select('id, title, content, topic_id, order_index, source').in('topic_id', topicIds).order('order_index')
     : { data: [] }
 
   const questionIds = questions?.map(q => q.id) ?? []
