@@ -20,6 +20,7 @@ export async function renderBoardSnapshot(
   const loadedImages = new Map<string, HTMLImageElement>()
   await Promise.all(imgObjs.map(o => new Promise<void>(resolve => {
     const img = new Image()
+    if (!o.data.startsWith('data:')) img.crossOrigin = 'anonymous'
     img.onload = () => resolve()
     img.onerror = () => resolve()
     img.src = o.data

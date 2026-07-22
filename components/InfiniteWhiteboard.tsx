@@ -220,6 +220,7 @@ function InfiniteWhiteboardInner({
 
   const addImageObject = useCallback((url: string) => {
     const img = new Image()
+    img.crossOrigin = 'anonymous'
     img.onload = () => {
       const maxW = 600, maxH = 400
       const scale = Math.min(maxW / img.width, maxH / img.height, 1)
@@ -361,7 +362,10 @@ function InfiniteWhiteboardInner({
           if (cached?.complete && cached.naturalWidth > 0) {
             ctx.drawImage(cached, 0, 0, obj.width ?? 100, obj.height ?? 100)
           } else if (src && !cached) {
-            const img = new Image(); img.src = src; imageCache.set(src, img)
+            const img = new Image()
+            if (!src.startsWith('data:')) img.crossOrigin = 'anonymous'
+            img.src = src
+            imageCache.set(src, img)
           }
         }
       }
@@ -598,7 +602,9 @@ function InfiniteWhiteboardInner({
       const publicUrl = pub.publicUrl
 
       // 4. Replace the base64 data with the public URL in the objects list
-      const pubImg = new Image(); pubImg.src = publicUrl
+      const pubImg = new Image()
+      pubImg.crossOrigin = 'anonymous'
+      pubImg.src = publicUrl
       imageCache.set(publicUrl, pubImg)
       commitObjects(prev => prev.map(o => o.id === id ? { ...o, data: publicUrl } : o))
     }
