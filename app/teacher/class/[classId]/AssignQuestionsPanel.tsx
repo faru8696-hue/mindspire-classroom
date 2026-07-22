@@ -61,6 +61,11 @@ export default function AssignQuestionsPanel({ classId, units, topics, questions
   // Keyed by `${topicId}::${source}` — tracks an in-flight "publish this set"
   // click for a single source group, separately from the whole-topic one above.
   const [savingGroup, setSavingGroup] = useState<string | null>(null)
+  // Keyed by source name — tracks an in-flight "publish every X question in
+  // this class" click (the class-wide, cross-topic version of the button
+  // above), so a teacher doesn't have to open every topic one at a time to
+  // publish e.g. every Topic Worksheet question at once.
+  const [savingWholeSource, setSavingWholeSource] = useState<string | null>(null)
   const [openUnit, setOpenUnit] = useState<string | null>(units[0]?.id ?? null)
   // Topics default collapsed — with some topics now holding 30-40 questions,
   // showing every question in every topic at once made the page an endless
@@ -162,6 +167,43 @@ export default function AssignQuestionsPanel({ classId, units, topics, questions
     }
   }
 
+  // Same idea as assignSourceGroup, but scoped to a source across the ENTIRE
+  // class instead of one topic — "publish every Topic Worksheet question,
+  // wherever it lives" in a single click, instead of opening each topic and
+  // clicking its own "Publish this set" button one at a time.
+  async function assignSourceWholeClass(source: string) {
+    const unassigned = questions.filter(q => (q.source ?? 'Unsorted') === source && !assignments.has(q.id))
+    if (unassigned.length === 0) return
+    setSavingWholeSource(source)
+    try {
+      // Chunked so a large source set (100+ questions) doesn't risk hitting
+      // a request-size limit in one giant insert.
+      const inserted: Question[] = []
+      for (let i = 0; i < unassigned.length; i += 200) {
+        const chunk = unassigned.slice(i, i + 200)
+        const { error } = await supabase.from('assignments').insert(
+          chunk.map(q => ({ question_id: q.id, class_id: classId, due_date: null }))
+        )
+        if (error) break
+        inserted.push(...chunk)
+        setAssignments(prev => {
+          const m = new Map(prev)
+          for (const q of chunk) m.set(q.id, null)
+          return m
+        })
+      }
+      for (const q of inserted) {
+        fetch('/api/notify-assignment', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ classId, questionId: q.id, questionTitle: q.title }),
+        })
+      }
+    } finally {
+      setSavingWholeSource(null)
+    }
+  }
+
   async function updateDueDate(questionId: string, date: string) {
     setDueDateInputs(prev => new Map(prev).set(questionId, date))
     if (!assignments.has(questionId)) return
@@ -171,6 +213,13 @@ export default function AssignQuestionsPanel({ classId, units, topics, questions
 
   const assignedCount = assignments.size
   const totalCount = questions.length
+
+  // Whole-class, cross-topic unassigned counts per source — powers the
+  // one-click "Publish all Topic Worksheet questions" row below, so a
+  // teacher doesn't have to open all 28 topics one at a time.
+  const wholeClassGroups = groupBySource(questions)
+    .map(([source, qs]) => [source, qs.filter(q => !assignments.has(q.id))] as [string, Question[]])
+    .filter(([, qs]) => qs.length > 0)
 
   return (
     <div className="space-y-3">
@@ -182,6 +231,24 @@ export default function AssignQuestionsPanel({ classId, units, topics, questions
           <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">Students only see assigned questions</span>
         )}
       </div>
+
+      {wholeClassGroups.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 px-4 py-3">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Publish by source — whole class, one click</p>
+          <div className="flex flex-wrap gap-2">
+            {wholeClassGroups.map(([source, qs]) => (
+              <button
+                key={source}
+                onClick={() => assignSourceWholeClass(source)}
+                disabled={savingWholeSource === source}
+                className={`text-xs font-semibold px-3 py-1.5 rounded-lg disabled:opacity-50 ${SOURCE_STYLE[source] ?? SOURCE_STYLE.Unsorted} hover:brightness-95`}
+              >
+                {savingWholeSource === source ? 'Publishing…' : `Publish all ${source} (${qs.length})`}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {units.map(unit => {
         const unitTopics = topics.filter(t => t.unit_id === unit.id)
