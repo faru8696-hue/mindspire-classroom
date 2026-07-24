@@ -12,6 +12,38 @@ export default async function AllProgressPage() {
 
   const classIds = classes?.map(c => c.id) ?? []
 
+  // Tests published to these classes, and each enrolled student's most
+  // recent completed attempt per test — a separate model from the
+  // questions/submissions/feedback progress table below (score_pct rather
+  // than per-question correct/partial/wrong), so it's rendered as its own
+  // small panel per class instead of folded into that table's columns.
+  const { data: publishedTests } = classIds.length > 0
+    ? await supabase.from('diagnostic_tests').select('id, title, slug, class_id').in('class_id', classIds).eq('is_active', true)
+    : { data: [] as { id: string; title: string; slug: string; class_id: string }[] }
+  const testIds = (publishedTests ?? []).map(t => t.id)
+  const allStudentIds = (allStudents ?? []).map(s => s.id)
+  const { data: testLeads } = testIds.length > 0 && allStudentIds.length > 0
+    ? await supabase.from('diagnostic_leads').select('id, diagnostic_test_id, student_id').in('diagnostic_test_id', testIds).in('student_id', allStudentIds)
+    : { data: [] as { id: string; diagnostic_test_id: string; student_id: string | null }[] }
+  const testLeadIds = (testLeads ?? []).map(l => l.id)
+  const { data: testAttempts } = testLeadIds.length > 0
+    ? await supabase.from('diagnostic_attempts').select('lead_id, score_pct, submitted_at').in('lead_id', testLeadIds).eq('status', 'completed').order('submitted_at', { ascending: false })
+    : { data: [] as { lead_id: string; score_pct: number; submitted_at: string }[] }
+  const leadById = new Map((testLeads ?? []).map(l => [l.id, l]))
+  // key: `${studentId}:${testId}` → most recent completed score (retakes keep the latest)
+  const testScoreByStudent = new Map<string, number>()
+  for (const a of testAttempts ?? []) {
+    const lead = leadById.get(a.lead_id)
+    if (!lead?.student_id) continue
+    const key = `${lead.student_id}:${lead.diagnostic_test_id}`
+    if (!testScoreByStudent.has(key)) testScoreByStudent.set(key, a.score_pct)
+  }
+  const testsByClass = new Map<string, { id: string; title: string; slug: string }[]>()
+  for (const t of publishedTests ?? []) {
+    if (!testsByClass.has(t.class_id)) testsByClass.set(t.class_id, [])
+    testsByClass.get(t.class_id)!.push(t)
+  }
+
   // Load full content tree
   const { data: units } = classIds.length > 0
     ? await supabase.from('units').select('id, title, class_id').in('class_id', classIds)
@@ -146,6 +178,7 @@ export default async function AllProgressPage() {
         const classCorrect = rows.reduce((s, r) => s + r.correct, 0)
         const classTotal = rows.reduce((s, r) => s + r.total, 0)
         const classSubmitted = rows.reduce((s, r) => s + r.submitted, 0)
+        const classTests = testsByClass.get(cls.id) ?? []
 
         return (
           <section key={cls.id}>
@@ -154,6 +187,33 @@ export default async function AllProgressPage() {
               <span className="text-xs text-gray-500">{classStudents.length} students · {qIds.length} questions assigned</span>
               <Link href={`/teacher/class/${cls.id}`} className="text-xs text-purple-600 hover:underline">Manage →</Link>
             </div>
+
+            {/* Published Test results — separate model (score_pct per attempt)
+                from the questions/submissions table below, so it gets its own
+                small panel per test rather than being folded into that table. */}
+            {classTests.map(t => (
+              <div key={t.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden mb-3">
+                <div className="flex items-center gap-2 px-4 py-2.5 bg-gray-50 border-b border-gray-200">
+                  <span className="text-sm font-semibold text-gray-700">🧪 {t.title}</span>
+                  <Link href={`/teacher/diagnostics`} className="text-xs text-purple-600 hover:underline ml-auto">Manage tests →</Link>
+                </div>
+                <div className="divide-y divide-gray-50">
+                  {classStudents.map(s => {
+                    const scorePct = testScoreByStudent.get(`${s.id}:${t.id}`)
+                    return (
+                      <div key={s.id} className="flex items-center justify-between px-4 py-2 text-sm">
+                        <span className="text-gray-700">{s.full_name}</span>
+                        {scorePct !== undefined ? (
+                          <span className="text-xs font-bold text-green-700 bg-green-50 px-2 py-0.5 rounded-full">✓ {Math.round(scorePct)}%</span>
+                        ) : (
+                          <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">Not started</span>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            ))}
 
             {/* Class summary bar */}
             {classTotal > 0 && (
