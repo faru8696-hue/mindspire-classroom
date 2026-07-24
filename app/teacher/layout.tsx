@@ -105,6 +105,9 @@ export default async function TeacherLayout({ children }: { children: React.Reac
               <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">{unreadPracticeTests}</span>
             )}
           </Link>
+          <Link href="/teacher/diagnostics" className="text-purple-200 hover:text-white text-sm transition-colors">
+            Diagnostics
+          </Link>
         </div>
         <div className="flex items-center gap-3">
           <TeacherNotificationBell initialNotifications={initialNotifications} classes={classList ?? []} />

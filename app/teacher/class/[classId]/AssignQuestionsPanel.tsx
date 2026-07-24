@@ -167,13 +167,41 @@ export default function AssignQuestionsPanel({ classId, units, topics, questions
     }
   }
 
+  // Reverses assignSourceGroup — unpublishes every currently-assigned
+  // question in just this one source group within this one topic, without
+  // touching that topic's other source groups or this source in other topics.
+  async function unassignSourceGroup(topicId: string, source: string, groupQs: Question[]) {
+    const assigned = groupQs.filter(q => assignments.has(q.id))
+    if (assigned.length === 0) return
+    const groupKey = `${topicId}::${source}`
+    setSavingGroup(groupKey)
+    try {
+      const { error } = await supabase.from('assignments').delete()
+        .eq('class_id', classId)
+        .in('question_id', assigned.map(q => q.id))
+      if (!error) {
+        setAssignments(prev => {
+          const m = new Map(prev)
+          for (const q of assigned) m.delete(q.id)
+          return m
+        })
+      }
+    } finally {
+      setSavingGroup(null)
+    }
+  }
+
   // Same idea as assignSourceGroup, but scoped to a source across the ENTIRE
   // class instead of one topic — "publish every Topic Worksheet question,
   // wherever it lives" in a single click, instead of opening each topic and
-  // clicking its own "Publish this set" button one at a time.
+  // clicking its own "Publish this set" button one at a time. Confirms first
+  // — this is the highest-blast-radius button in the panel (every topic at
+  // once, no per-topic preview), so a stray click doesn't silently publish
+  // 100+ questions to every enrolled student.
   async function assignSourceWholeClass(source: string) {
     const unassigned = questions.filter(q => (q.source ?? 'Unsorted') === source && !assignments.has(q.id))
     if (unassigned.length === 0) return
+    if (!window.confirm(`Publish all ${unassigned.length} ${source} questions across the whole class? This makes them visible to every enrolled student right away.`)) return
     setSavingWholeSource(source)
     try {
       // Chunked so a large source set (100+ questions) doesn't risk hitting
@@ -204,6 +232,32 @@ export default function AssignQuestionsPanel({ classId, units, topics, questions
     }
   }
 
+  // Reverses assignSourceWholeClass — for undoing an accidental whole-class
+  // publish (e.g. the wrong source button was clicked) without having to
+  // toggle every single question back off by hand.
+  async function unassignSourceWholeClass(source: string) {
+    const assigned = questions.filter(q => (q.source ?? 'Unsorted') === source && assignments.has(q.id))
+    if (assigned.length === 0) return
+    if (!window.confirm(`Unpublish all ${assigned.length} ${source} questions across the whole class? Students will no longer see them.`)) return
+    setSavingWholeSource(source)
+    try {
+      for (let i = 0; i < assigned.length; i += 200) {
+        const chunk = assigned.slice(i, i + 200)
+        const { error } = await supabase.from('assignments').delete()
+          .eq('class_id', classId)
+          .in('question_id', chunk.map(q => q.id))
+        if (error) break
+        setAssignments(prev => {
+          const m = new Map(prev)
+          for (const q of chunk) m.delete(q.id)
+          return m
+        })
+      }
+    } finally {
+      setSavingWholeSource(null)
+    }
+  }
+
   async function updateDueDate(questionId: string, date: string) {
     setDueDateInputs(prev => new Map(prev).set(questionId, date))
     if (!assignments.has(questionId)) return
@@ -214,12 +268,12 @@ export default function AssignQuestionsPanel({ classId, units, topics, questions
   const assignedCount = assignments.size
   const totalCount = questions.length
 
-  // Whole-class, cross-topic unassigned counts per source — powers the
-  // one-click "Publish all Topic Worksheet questions" row below, so a
-  // teacher doesn't have to open all 28 topics one at a time.
+  // Whole-class, cross-topic breakdown per source — powers the one-click
+  // "Publish all Topic Worksheet questions" row below, so a teacher doesn't
+  // have to open all 28 topics one at a time. Each entry keeps the full
+  // group (not just unassigned) so the button can flip between "publish
+  // all" and "unpublish all" depending on current state.
   const wholeClassGroups = groupBySource(questions)
-    .map(([source, qs]) => [source, qs.filter(q => !assignments.has(q.id))] as [string, Question[]])
-    .filter(([, qs]) => qs.length > 0)
 
   return (
     <div className="space-y-3">
@@ -236,16 +290,28 @@ export default function AssignQuestionsPanel({ classId, units, topics, questions
         <div className="bg-white rounded-xl border border-gray-200 px-4 py-3">
           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Publish by source — whole class, one click</p>
           <div className="flex flex-wrap gap-2">
-            {wholeClassGroups.map(([source, qs]) => (
-              <button
-                key={source}
-                onClick={() => assignSourceWholeClass(source)}
-                disabled={savingWholeSource === source}
-                className={`text-xs font-semibold px-3 py-1.5 rounded-lg disabled:opacity-50 ${SOURCE_STYLE[source] ?? SOURCE_STYLE.Unsorted} hover:brightness-95`}
-              >
-                {savingWholeSource === source ? 'Publishing…' : `Publish all ${source} (${qs.length})`}
-              </button>
-            ))}
+            {wholeClassGroups.map(([source, qs]) => {
+              const assignedCountForSource = qs.filter(q => assignments.has(q.id)).length
+              const fullyPublished = assignedCountForSource === qs.length
+              const isSaving = savingWholeSource === source
+              return (
+                <button
+                  key={source}
+                  onClick={() => fullyPublished ? unassignSourceWholeClass(source) : assignSourceWholeClass(source)}
+                  disabled={isSaving}
+                  className={`text-xs font-semibold px-3 py-1.5 rounded-lg disabled:opacity-50 flex items-center gap-1.5 ${SOURCE_STYLE[source] ?? SOURCE_STYLE.Unsorted} hover:brightness-95`}
+                >
+                  <span className={`relative w-7 h-3.5 rounded-full flex-shrink-0 transition-colors ${fullyPublished ? 'bg-purple-600' : 'bg-black/20'}`}>
+                    <span className={`absolute top-0.5 w-2.5 h-2.5 bg-white rounded-full shadow transition-transform ${fullyPublished ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
+                  </span>
+                  {isSaving
+                    ? (fullyPublished ? 'Unpublishing…' : 'Publishing…')
+                    : fullyPublished
+                      ? `Unpublish all ${source} (${qs.length})`
+                      : `Publish all ${source} (${qs.length - assignedCountForSource}/${qs.length})`}
+                </button>
+              )
+            })}
           </div>
         </div>
       )}
@@ -301,27 +367,33 @@ export default function AssignQuestionsPanel({ classId, units, topics, questions
                       {isTopicOpen && groupBySource(topicQs).map(([source, groupQs]) => {
                         const groupUnassignedCount = groupQs.filter(q => !assignments.has(q.id)).length
                         const groupAssignedCount = groupQs.length - groupUnassignedCount
+                        const groupFullyPublished = groupUnassignedCount === 0
                         const groupKey = `${topic.id}::${source}`
+                        const isGroupSaving = savingGroup === groupKey
 
                         return (
                           <div key={source}>
                             {/* Source sub-header — teacher-only grouping so a set
-                                (e.g. just the SaveMyExams questions) can be
-                                published on its own instead of the whole topic. */}
+                                (e.g. just the SaveMyExams questions in THIS topic)
+                                can be published or unpublished on its own, without
+                                touching that same source in any other topic. */}
                             <div className="pl-8 pr-5 py-1.5 bg-white border-b border-gray-50 flex items-center justify-between gap-2">
                               <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 ${SOURCE_STYLE[source] ?? SOURCE_STYLE.Unsorted}`}>
                                 {source}
                               </span>
                               <span className="text-[11px] text-gray-400 flex-1">{groupAssignedCount}/{groupQs.length} assigned</span>
-                              {groupUnassignedCount > 0 && (
-                                <button
-                                  onClick={() => assignSourceGroup(topic.id, source, groupQs)}
-                                  disabled={savingGroup === groupKey}
-                                  className="text-[11px] font-semibold bg-purple-100 hover:bg-purple-200 text-purple-700 px-2 py-0.5 rounded-lg flex-shrink-0 disabled:opacity-50"
-                                >
-                                  {savingGroup === groupKey ? 'Publishing…' : `Publish this set (${groupUnassignedCount})`}
-                                </button>
-                              )}
+                              <button
+                                onClick={() => groupFullyPublished ? unassignSourceGroup(topic.id, source, groupQs) : assignSourceGroup(topic.id, source, groupQs)}
+                                disabled={isGroupSaving}
+                                className="text-[11px] font-semibold text-gray-600 px-2 py-0.5 rounded-lg flex-shrink-0 disabled:opacity-50 flex items-center gap-1.5 hover:bg-gray-50"
+                              >
+                                <span className={`relative w-8 h-4 rounded-full flex-shrink-0 transition-colors ${groupFullyPublished ? 'bg-purple-600' : 'bg-gray-300'}`}>
+                                  <span className={`absolute top-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform ${groupFullyPublished ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                                </span>
+                                {isGroupSaving
+                                  ? (groupFullyPublished ? 'Unpublishing…' : 'Publishing…')
+                                  : groupFullyPublished ? 'Published' : `Publish this set (${groupUnassignedCount})`}
+                              </button>
                             </div>
 
                             {groupQs.map(q => {

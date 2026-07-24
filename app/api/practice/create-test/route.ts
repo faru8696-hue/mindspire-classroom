@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCaller, createAdminClient } from '@/lib/supabase/server'
+import { sample } from '@/lib/sample'
 
 // Builds a custom self-study test: picks up to `counts[difficulty]` random
 // questions per difficulty level from the student's enrolled class (optionally
@@ -59,15 +60,6 @@ export async function POST(req: NextRequest) {
   const typeFiltered = !questionType || questionType === 'any'
     ? allQuestions
     : allQuestions.filter(q => q.question_type === questionType)
-
-  function sample<T>(arr: T[], n: number): T[] {
-    const copy = [...arr]
-    for (let i = copy.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1))
-      ;[copy[i], copy[j]] = [copy[j], copy[i]]
-    }
-    return copy.slice(0, n)
-  }
 
   let selected: string[] = []
   if (totalCount) {
