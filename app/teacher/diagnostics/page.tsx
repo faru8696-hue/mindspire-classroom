@@ -26,17 +26,17 @@ export default async function DiagnosticsListPage() {
   return (
     <div className="max-w-3xl mx-auto">
       <div className="flex items-center justify-between mb-1">
-        <h1 className="text-2xl font-bold text-purple-900">Diagnostic Tests</h1>
+        <h1 className="text-2xl font-bold text-purple-900">Tests</h1>
         <Link href="/teacher/diagnostics/new" className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-xl transition">
-          + New Diagnostic Test
+          + New Test
         </Link>
       </div>
-      <p className="text-sm text-gray-500 mb-6">Public, free diagnostic tests — no login or enrollment required to take them.</p>
+      <p className="text-sm text-gray-500 mb-6">Public, free tests — no login or enrollment required to take them.</p>
 
       {!tests?.length ? (
         <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
           <div className="text-4xl mb-3">🧪</div>
-          <p className="text-gray-500">No diagnostic tests yet.</p>
+          <p className="text-gray-500">No tests yet.</p>
         </div>
       ) : (
         <div className="space-y-2">

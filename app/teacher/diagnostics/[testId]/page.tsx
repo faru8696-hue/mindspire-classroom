@@ -2,6 +2,8 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { aggregateTopicScores } from '@/lib/diagnosticGrading'
+import TestTitleEditor from '@/components/diagnostic/TestTitleEditor'
+import StudentResultsTable, { type StudentResultRow } from '@/components/diagnostic/StudentResultsTable'
 
 export default async function DiagnosticTestDashboardPage({
   params,
@@ -61,14 +63,28 @@ export default async function DiagnosticTestDashboardPage({
     .filter((r): r is { topicId: string; topicTitle: string; isCorrect: boolean } => r !== null)
   const classStruggles = aggregateTopicScores(classStruggleRows).filter(t => t.tier !== 'mastered')
 
+  const studentRows: StudentResultRow[] = (attempts ?? []).map(a => {
+    const lead = leadById.get(a.lead_id)
+    return {
+      attemptId: a.id,
+      leadId: a.lead_id,
+      studentName: lead?.student_name ?? 'Unknown',
+      studentEmail: lead?.student_email ?? '',
+      parentName: lead?.parent_name ?? '',
+      parentPhone: lead?.parent_phone ?? '',
+      correctCount: a.correct_count,
+      totalCount: a.total_count,
+      scorePct: a.score_pct,
+      timeSpentMinutes: a.submitted_at ? Math.round((new Date(a.submitted_at).getTime() - new Date(a.started_at).getTime()) / 60000) : 0,
+      submittedAt: a.submitted_at,
+    }
+  })
+
   return (
     <div className="max-w-5xl mx-auto">
-      <Link href="/teacher/diagnostics" className="text-blue-600 text-sm hover:underline block mb-2">← All diagnostic tests</Link>
+      <Link href="/teacher/diagnostics" className="text-blue-600 text-sm hover:underline block mb-2">← All Tests</Link>
       <div className="flex items-center justify-between mb-1">
-        <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold text-gray-800">{test.title}</h1>
-          <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full font-semibold">Mindspire Lab</span>
-        </div>
+        <TestTitleEditor testId={testId} title={test.title} description={test.description} />
         <div className="flex gap-2">
           <Link href={`/teacher/diagnostics/${testId}/topics`} className="text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg font-semibold transition">Manage Topics</Link>
           <Link href={`/teacher/diagnostics/${testId}/questions`} className="text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg font-semibold transition">Manage Questions</Link>
@@ -96,45 +112,7 @@ export default async function DiagnosticTestDashboardPage({
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 bg-white rounded-2xl shadow p-6">
           <h3 className="font-bold text-gray-800 mb-4">Student Results</h3>
-          {n === 0 ? (
-            <p className="text-gray-400 text-center py-8">No students have completed the test yet.</p>
-          ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-left text-gray-400 text-xs uppercase tracking-wide">
-                  <th className="pb-2 px-3">Name</th>
-                  <th className="pb-2 px-3">Contact</th>
-                  <th className="pb-2 px-3">Score</th>
-                  <th className="pb-2 px-3">Time</th>
-                  <th className="pb-2 px-3">Date</th>
-                  <th className="pb-2 px-3"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {(attempts ?? []).map(a => {
-                  const lead = leadById.get(a.lead_id)
-                  const pct = a.score_pct ?? 0
-                  const colorCls = pct >= 80 ? 'text-green-600 font-bold' : pct >= 50 ? 'text-yellow-600 font-bold' : 'text-red-600 font-bold'
-                  const timeSpent = a.submitted_at ? Math.round((new Date(a.submitted_at).getTime() - new Date(a.started_at).getTime()) / 60000) : 0
-                  return (
-                    <tr key={a.id} className="border-b hover:bg-gray-50">
-                      <td className="py-3 px-3 font-medium">{lead?.student_name ?? 'Unknown'}</td>
-                      <td className="py-3 px-3 text-gray-500 text-xs">
-                        {lead?.student_email}<br />
-                        <span className="text-gray-400">Parent: {lead?.parent_name} · {lead?.parent_phone}</span>
-                      </td>
-                      <td className={`py-3 px-3 ${colorCls}`}>{a.correct_count}/{a.total_count} ({pct}%)</td>
-                      <td className="py-3 px-3 text-gray-500 text-xs">{timeSpent}m</td>
-                      <td className="py-3 px-3 text-gray-400 text-xs">{a.submitted_at ? new Date(a.submitted_at).toLocaleDateString() : ''}</td>
-                      <td className="py-3 px-3">
-                        <Link href={`/teacher/diagnostics/${testId}/attempts/${a.id}`} className="text-indigo-600 text-xs font-semibold hover:underline">View →</Link>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          )}
+          <StudentResultsTable testId={testId} rows={studentRows} />
         </div>
         <div className="bg-white rounded-2xl shadow p-6">
           <h3 className="font-bold text-gray-800 mb-4">Class Struggles</h3>

@@ -49,14 +49,14 @@ export default function NewDiagnosticTestPage() {
 
   return (
     <div className="max-w-lg mx-auto">
-      <Link href="/teacher/diagnostics" className="text-blue-600 text-sm hover:underline block mb-4">← All diagnostic tests</Link>
+      <Link href="/teacher/diagnostics" className="text-blue-600 text-sm hover:underline block mb-4">← All Tests</Link>
       <div className="bg-white rounded-2xl border border-gray-200 p-6">
-        <h1 className="text-xl font-bold text-gray-800 mb-4">New Diagnostic Test</h1>
+        <h1 className="text-xl font-bold text-gray-800 mb-4">New Test</h1>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
             <input value={title} onChange={e => handleTitleChange(e.target.value)} required
-              placeholder="e.g. AP Chemistry Readiness Diagnostic"
+              placeholder="e.g. AP Chemistry Readiness Test"
               className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500" />
           </div>
           <div>
@@ -89,7 +89,7 @@ export default function NewDiagnosticTestPage() {
 
           <button type="submit" disabled={loading}
             className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 rounded-lg transition disabled:opacity-50">
-            {loading ? 'Creating…' : 'Create Diagnostic Test'}
+            {loading ? 'Creating…' : 'Create Test'}
           </button>
         </form>
       </div>

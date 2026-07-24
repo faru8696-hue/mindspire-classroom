@@ -62,7 +62,7 @@ export default function DiagnosticIntakeForm({ slug }: { slug: string }) {
 
       <button type="submit" disabled={loading}
         className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl text-lg transition disabled:opacity-50">
-        {loading ? 'Starting…' : 'Start Diagnostic Test →'}
+        {loading ? 'Starting…' : 'Start Test →'}
       </button>
       <p className="text-xs text-gray-400 text-center">
         This information helps us share results with you and your family. It will never be sold or shared with third parties.
