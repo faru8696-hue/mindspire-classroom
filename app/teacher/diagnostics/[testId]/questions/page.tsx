@@ -2,6 +2,7 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import AddQuestionForm from '@/components/diagnostic/AddQuestionForm'
+import DiagnosticQuestionCard from '@/components/diagnostic/DiagnosticQuestionCard'
 
 export default async function DiagnosticQuestionsPage({
   params,
@@ -22,7 +23,7 @@ export default async function DiagnosticQuestionsPage({
 
   const { data: questions } = await admin
     .from('diagnostic_questions')
-    .select('id, topic_id, content, mcq_options, mcq_correct_index, is_active')
+    .select('id, topic_id, content, mcq_options, mcq_correct_index, image_url, source, is_active')
     .eq('diagnostic_test_id', testId)
     .order('created_at', { ascending: false })
 
@@ -43,22 +44,12 @@ export default async function DiagnosticQuestionsPage({
 
       <div className="space-y-2">
         {(questions ?? []).map(q => (
-          <div key={q.id} className="bg-white rounded-xl border border-gray-200 p-4">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
-                {topicTitleById.get(q.topic_id) ?? 'Unknown topic'}
-              </span>
-              {!q.is_active && <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">INACTIVE</span>}
-            </div>
-            <p className="text-sm text-gray-800 mb-2">{q.content}</p>
-            <div className="space-y-1">
-              {(q.mcq_options as string[]).map((opt, i) => (
-                <div key={i} className={`text-xs px-2 py-1 rounded ${i === q.mcq_correct_index ? 'bg-green-50 text-green-700 font-semibold' : 'text-gray-500'}`}>
-                  {String.fromCharCode(65 + i)}. {opt}{i === q.mcq_correct_index ? ' ✓' : ''}
-                </div>
-              ))}
-            </div>
-          </div>
+          <DiagnosticQuestionCard
+            key={q.id}
+            question={q as { id: string; topic_id: string; content: string; mcq_options: string[]; mcq_correct_index: number; image_url: string | null; source: string | null; is_active: boolean }}
+            topics={topics ?? []}
+            topicTitle={topicTitleById.get(q.topic_id) ?? 'Unknown topic'}
+          />
         ))}
         {(!questions || questions.length === 0) && (
           <p className="text-gray-400 text-center py-8">No questions yet — add one above.</p>
