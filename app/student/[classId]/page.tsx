@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createAdminClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import StudentGradeNotifications from '@/components/StudentGradeNotifications'
@@ -17,6 +17,39 @@ export default async function ClassPage({ params }: { params: Promise<{ classId:
   ])
 
   if (!cls) notFound()
+
+  // Own completed-attempt lookup for the published tests above, keyed by
+  // test so the card can show a score instead of "Start" once finished.
+  // Uses the admin client purely to read this student's own rows (their id
+  // comes from the verified session above) — diagnostic_leads/attempts have
+  // no student-facing RLS policy since every other access to them is
+  // service-role only (public lead-capture flow, teacher dashboard).
+  let completedByTestId = new Map<string, { attemptId: string; scorePct: number; submittedAt: string }>()
+  if (publishedTests && publishedTests.length > 0) {
+    const admin = await createAdminClient()
+    const { data: myLeads } = await admin
+      .from('diagnostic_leads')
+      .select('id, diagnostic_test_id')
+      .eq('student_id', studentId)
+      .in('diagnostic_test_id', publishedTests.map(t => t.id))
+    const leadIds = (myLeads ?? []).map(l => l.id)
+    const testIdByLead = new Map((myLeads ?? []).map(l => [l.id, l.diagnostic_test_id]))
+    const { data: myAttempts } = leadIds.length > 0
+      ? await admin
+          .from('diagnostic_attempts')
+          .select('id, lead_id, status, score_pct, submitted_at')
+          .in('lead_id', leadIds)
+          .eq('status', 'completed')
+          .order('submitted_at', { ascending: false })
+      : { data: [] as { id: string; lead_id: string; status: string; score_pct: number; submitted_at: string }[] }
+    // Keep only the most recent completed attempt per test (retakes allowed).
+    for (const a of myAttempts ?? []) {
+      const testId = testIdByLead.get(a.lead_id)
+      if (testId && !completedByTestId.has(testId)) {
+        completedByTestId.set(testId, { attemptId: a.id, scorePct: a.score_pct, submittedAt: a.submitted_at })
+      }
+    }
+  }
 
   const unitIds = units?.map(u => u.id) ?? []
   const { data: topics } = unitIds.length > 0
@@ -94,19 +127,28 @@ export default async function ClassPage({ params }: { params: Promise<{ classId:
         <div className="bg-white rounded-xl border border-gray-200 p-5 mb-6">
           <h2 className="font-semibold text-gray-700 mb-3">🧪 Tests</h2>
           <div className="space-y-2">
-            {publishedTests.map(t => (
-              <a
-                key={t.id}
-                href={`/diagnostic/${t.slug}`}
-                className="flex items-center justify-between gap-3 bg-gray-50 hover:bg-purple-50 rounded-lg p-3 transition-colors"
-              >
-                <div>
-                  <p className="font-semibold text-gray-800 text-sm">{t.title}</p>
-                  {t.description && <p className="text-xs text-gray-500 mt-0.5">{t.description}</p>}
-                </div>
-                <span className="text-purple-600 text-sm font-semibold flex-shrink-0">Start →</span>
-              </a>
-            ))}
+            {publishedTests.map(t => {
+              const completed = completedByTestId.get(t.id)
+              return (
+                <a
+                  key={t.id}
+                  href={completed ? `/diagnostic/${t.slug}/results/${completed.attemptId}` : `/diagnostic/${t.slug}`}
+                  className="flex items-center justify-between gap-3 bg-gray-50 hover:bg-purple-50 rounded-lg p-3 transition-colors"
+                >
+                  <div>
+                    <p className="font-semibold text-gray-800 text-sm">{t.title}</p>
+                    {t.description && <p className="text-xs text-gray-500 mt-0.5">{t.description}</p>}
+                  </div>
+                  {completed ? (
+                    <span className="text-xs font-bold text-green-700 bg-green-50 px-2 py-1 rounded-full flex-shrink-0">
+                      ✓ {Math.round(completed.scorePct)}%
+                    </span>
+                  ) : (
+                    <span className="text-purple-600 text-sm font-semibold flex-shrink-0">Start →</span>
+                  )}
+                </a>
+              )
+            })}
           </div>
         </div>
       )}

@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminClient } from '@/lib/supabase/server'
+import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { sample } from '@/lib/sample'
 
-// Public endpoint — no session exists for this flow at all, so unlike every
+// Public endpoint — most visitors have no session at all, so unlike every
 // other API route in this app, there is deliberately no getCaller() call
-// here. Straight to the service-role client for everything.
+// (which would 403 a logged-out visitor) — everything after the optional
+// session check below still goes through the service-role client.
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 export async function POST(req: NextRequest) {
@@ -30,6 +31,13 @@ export async function POST(req: NextRequest) {
   if (!EMAIL_RE.test(studentEmail) || !EMAIL_RE.test(parentEmail)) {
     return NextResponse.json({ error: 'Please enter valid email addresses.' }, { status: 400 })
   }
+
+  // If the student is taking this test while logged in (e.g. clicked it
+  // from inside their classroom), silently tie the lead to their real
+  // account — derived from their own session, never from client input, so
+  // it can't be spoofed. Anonymous public visitors simply get null here.
+  const session = await createClient()
+  const { data: { user } } = await session.auth.getUser()
 
   const admin = await createAdminClient()
 
@@ -65,6 +73,7 @@ export async function POST(req: NextRequest) {
       parent_name: parentName,
       parent_email: parentEmail,
       parent_phone: parentPhone,
+      student_id: user?.id ?? null,
     })
     .select('id')
     .single()
