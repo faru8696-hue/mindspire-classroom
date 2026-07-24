@@ -1,5 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/server'
 import Link from 'next/link'
+import { aggregateTopicScores, type TopicScore } from '@/lib/diagnosticGrading'
 
 export default async function AllProgressPage() {
   const supabase = await createAdminClient()
@@ -27,16 +28,56 @@ export default async function AllProgressPage() {
     : { data: [] as { id: string; diagnostic_test_id: string; student_id: string | null }[] }
   const testLeadIds = (testLeads ?? []).map(l => l.id)
   const { data: testAttempts } = testLeadIds.length > 0
-    ? await supabase.from('diagnostic_attempts').select('lead_id, score_pct, submitted_at').in('lead_id', testLeadIds).eq('status', 'completed').order('submitted_at', { ascending: false })
-    : { data: [] as { lead_id: string; score_pct: number; submitted_at: string }[] }
+    ? await supabase.from('diagnostic_attempts').select('id, lead_id, score_pct, submitted_at').in('lead_id', testLeadIds).eq('status', 'completed').order('submitted_at', { ascending: false })
+    : { data: [] as { id: string; lead_id: string; score_pct: number; submitted_at: string }[] }
   const leadById = new Map((testLeads ?? []).map(l => [l.id, l]))
   // key: `${studentId}:${testId}` → most recent completed score (retakes keep the latest)
   const testScoreByStudent = new Map<string, number>()
+  // key: `${studentId}:${testId}` → that attempt's id, so we can pull its
+  // per-question answers below and show a topic-level breakdown alongside
+  // the score, not just a bare percentage.
+  const testAttemptIdByStudent = new Map<string, string>()
   for (const a of testAttempts ?? []) {
     const lead = leadById.get(a.lead_id)
     if (!lead?.student_id) continue
     const key = `${lead.student_id}:${lead.diagnostic_test_id}`
-    if (!testScoreByStudent.has(key)) testScoreByStudent.set(key, a.score_pct)
+    if (!testScoreByStudent.has(key)) {
+      testScoreByStudent.set(key, a.score_pct)
+      testAttemptIdByStudent.set(key, a.id)
+    }
+  }
+
+  // Per-student topic breakdown for each of those most-recent attempts —
+  // reuses the same aggregateTopicScores() the individual test's own
+  // "Class Struggles" panel and the student's results page already use, so
+  // this teacher view can show which topics a student is strong/weak on
+  // right next to their score, not just the overall percentage.
+  const relevantAttemptIds = [...testAttemptIdByStudent.values()]
+  const { data: attemptAnswers } = relevantAttemptIds.length > 0
+    ? await supabase.from('diagnostic_attempt_answers').select('attempt_id, question_id, is_correct').in('attempt_id', relevantAttemptIds)
+    : { data: [] as { attempt_id: string; question_id: string; is_correct: boolean }[] }
+  const answerQuestionIds = [...new Set((attemptAnswers ?? []).map(a => a.question_id))]
+  const { data: diagQuestions } = answerQuestionIds.length > 0
+    ? await supabase.from('diagnostic_questions').select('id, topic_id').in('id', answerQuestionIds)
+    : { data: [] as { id: string; topic_id: string }[] }
+  const diagTopicIdByQuestion = new Map((diagQuestions ?? []).map(q => [q.id, q.topic_id]))
+  const diagTopicIds = [...new Set((diagQuestions ?? []).map(q => q.topic_id))]
+  const { data: diagTopics } = diagTopicIds.length > 0
+    ? await supabase.from('diagnostic_topics').select('id, title').in('id', diagTopicIds)
+    : { data: [] as { id: string; title: string }[] }
+  const diagTopicTitleById = new Map((diagTopics ?? []).map(t => [t.id, t.title]))
+  const answersByAttempt = new Map<string, { topicId: string; topicTitle: string; isCorrect: boolean }[]>()
+  for (const a of attemptAnswers ?? []) {
+    const topicId = diagTopicIdByQuestion.get(a.question_id)
+    if (!topicId) continue
+    if (!answersByAttempt.has(a.attempt_id)) answersByAttempt.set(a.attempt_id, [])
+    answersByAttempt.get(a.attempt_id)!.push({ topicId, topicTitle: diagTopicTitleById.get(topicId) ?? 'Unknown', isCorrect: a.is_correct })
+  }
+  // key: `${studentId}:${testId}` → topic scores, worst-first
+  const testTopicScoresByStudent = new Map<string, TopicScore[]>()
+  for (const [key, attemptId] of testAttemptIdByStudent) {
+    const rows = answersByAttempt.get(attemptId)
+    if (rows) testTopicScoresByStudent.set(key, aggregateTopicScores(rows))
   }
   const testsByClass = new Map<string, { id: string; title: string; slug: string }[]>()
   for (const t of publishedTests ?? []) {
@@ -199,14 +240,34 @@ export default async function AllProgressPage() {
                 </div>
                 <div className="divide-y divide-gray-50">
                   {classStudents.map(s => {
-                    const scorePct = testScoreByStudent.get(`${s.id}:${t.id}`)
+                    const key = `${s.id}:${t.id}`
+                    const scorePct = testScoreByStudent.get(key)
+                    const topicScores = testTopicScoresByStudent.get(key) ?? []
                     return (
-                      <div key={s.id} className="flex items-center justify-between px-4 py-2 text-sm">
-                        <span className="text-gray-700">{s.full_name}</span>
-                        {scorePct !== undefined ? (
-                          <span className="text-xs font-bold text-green-700 bg-green-50 px-2 py-0.5 rounded-full">✓ {Math.round(scorePct)}%</span>
-                        ) : (
-                          <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">Not started</span>
+                      <div key={s.id} className="px-4 py-2 text-sm">
+                        <div className="flex items-center justify-between">
+                          <span className="text-gray-700">{s.full_name}</span>
+                          {scorePct !== undefined ? (
+                            <span className="text-xs font-bold text-green-700 bg-green-50 px-2 py-0.5 rounded-full">✓ {Math.round(scorePct)}%</span>
+                          ) : (
+                            <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">Not started</span>
+                          )}
+                        </div>
+                        {topicScores.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 mt-1.5">
+                            {topicScores.map(ts => (
+                              <span
+                                key={ts.topicId}
+                                className={`text-[11px] font-medium px-1.5 py-0.5 rounded ${
+                                  ts.tier === 'mastered' ? 'bg-green-50 text-green-700' :
+                                  ts.tier === 'developing' ? 'bg-amber-50 text-amber-700' :
+                                                              'bg-red-50 text-red-600'
+                                }`}
+                              >
+                                {ts.topicTitle} {ts.pct}%
+                              </span>
+                            ))}
+                          </div>
                         )}
                       </div>
                     )
