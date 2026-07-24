@@ -10,9 +10,10 @@ export default async function ClassPage({ params }: { params: Promise<{ classId:
   if (!user) redirect('/login')
   const studentId = user.id
 
-  const [{ data: cls }, { data: units }] = await Promise.all([
+  const [{ data: cls }, { data: units }, { data: publishedTests }] = await Promise.all([
     supabase.from('classes').select('*').eq('id', classId).single(),
     supabase.from('units').select('*').eq('class_id', classId).order('order_index'),
+    supabase.from('diagnostic_tests').select('id, title, description, slug').eq('class_id', classId).eq('is_active', true),
   ])
 
   if (!cls) notFound()
@@ -88,6 +89,27 @@ export default async function ClassPage({ params }: { params: Promise<{ classId:
           </div>
         </div>
       </div>
+
+      {publishedTests && publishedTests.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-5 mb-6">
+          <h2 className="font-semibold text-gray-700 mb-3">🧪 Tests</h2>
+          <div className="space-y-2">
+            {publishedTests.map(t => (
+              <a
+                key={t.id}
+                href={`/diagnostic/${t.slug}`}
+                className="flex items-center justify-between gap-3 bg-gray-50 hover:bg-purple-50 rounded-lg p-3 transition-colors"
+              >
+                <div>
+                  <p className="font-semibold text-gray-800 text-sm">{t.title}</p>
+                  {t.description && <p className="text-xs text-gray-500 mt-0.5">{t.description}</p>}
+                </div>
+                <span className="text-purple-600 text-sm font-semibold flex-shrink-0">Start →</span>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
 
       <StudentGradeNotifications studentId={studentId} />
 

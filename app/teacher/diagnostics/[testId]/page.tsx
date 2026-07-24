@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { aggregateTopicScores } from '@/lib/diagnosticGrading'
 import TestTitleEditor from '@/components/diagnostic/TestTitleEditor'
 import StudentResultsTable, { type StudentResultRow } from '@/components/diagnostic/StudentResultsTable'
+import PublishToClass from '@/components/diagnostic/PublishToClass'
 
 export default async function DiagnosticTestDashboardPage({
   params,
@@ -15,10 +16,12 @@ export default async function DiagnosticTestDashboardPage({
 
   const { data: test } = await admin
     .from('diagnostic_tests')
-    .select('id, title, slug, description, question_count_per_attempt, duration_minutes, is_active')
+    .select('id, title, slug, description, question_count_per_attempt, duration_minutes, is_active, class_id')
     .eq('id', testId)
     .maybeSingle()
   if (!test) notFound()
+
+  const { data: classes } = await admin.from('classes').select('id, title').order('order_index')
 
   const { data: attempts } = await admin
     .from('diagnostic_attempts')
@@ -90,9 +93,13 @@ export default async function DiagnosticTestDashboardPage({
           <Link href={`/teacher/diagnostics/${testId}/questions`} className="text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg font-semibold transition">Manage Questions</Link>
         </div>
       </div>
-      <p className="text-sm text-gray-500 mb-6">
+      <p className="text-sm text-gray-500 mb-4">
         Public link: <a href={`/diagnostic/${test.slug}`} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">/diagnostic/{test.slug}</a>
       </p>
+
+      <div className="mb-6">
+        <PublishToClass testId={testId} classId={test.class_id} classes={classes ?? []} />
+      </div>
 
       <div className="grid grid-cols-3 gap-4 mb-6">
         <div className="bg-white rounded-2xl shadow p-5 text-center">
