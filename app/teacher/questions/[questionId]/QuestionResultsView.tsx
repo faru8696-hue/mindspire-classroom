@@ -3,8 +3,9 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import MiniBoard from '@/components/MiniBoard'
+import EditQuestionPanel, { type TopicOption } from '@/components/EditQuestionPanel'
 
-interface Part { id: string; title: string; content: string | null; order_index: number }
+interface Part { id: string; title: string; content: string | null; order_index: number; source: string | null }
 interface Student { id: string; full_name: string; avatar_url: string | null; nickname: string | null }
 interface Submission { id: string; student_id: string; question_id: string; canvas_data: string | null; text_answer: string | null; updated_at: string }
 interface Feedback { submission_id: string; grade: string | null }
@@ -18,6 +19,7 @@ interface Props {
   students: Student[]
   submissions: Submission[]
   feedbacks: Feedback[]
+  topicOptions: TopicOption[]
 }
 
 const GRADE_BORDER: Record<string, string> = {
@@ -40,7 +42,7 @@ const GRADE_LABEL: Record<string, string> = {
 
 export default function QuestionResultsView({
   classId, classTitle, topic, parts, activeQuestionId,
-  students, submissions, feedbacks,
+  students, submissions, feedbacks, topicOptions,
 }: Props) {
   const [selectedPartId, setSelectedPartId] = useState(activeQuestionId)
 
@@ -109,11 +111,23 @@ export default function QuestionResultsView({
       {/* Selected part question text */}
       {selectedPart && (
         <div className="bg-gray-50 border border-gray-200 rounded-xl px-5 py-4">
-          <p className="text-xs text-gray-400 uppercase tracking-widest font-semibold mb-2">
-            {parts.length > 1
-              ? `Part ${String.fromCharCode(97 + parts.indexOf(selectedPart))}`
-              : 'Question'}
-          </p>
+          <div className="flex items-start justify-between gap-3">
+            <p className="text-xs text-gray-400 uppercase tracking-widest font-semibold mb-2">
+              {parts.length > 1
+                ? `Part ${String.fromCharCode(97 + parts.indexOf(selectedPart))}`
+                : 'Question'}
+            </p>
+            <EditQuestionPanel
+              key={selectedPart.id}
+              questionId={selectedPart.id}
+              classId={classId}
+              title={selectedPart.title}
+              content={selectedPart.content}
+              topicId={topic.id}
+              source={selectedPart.source}
+              topics={topicOptions}
+            />
+          </div>
           <p className="text-[19px] font-semibold text-gray-900 leading-snug" style={{ fontFamily: 'Georgia, serif' }}>
             {selectedPart.title}
           </p>

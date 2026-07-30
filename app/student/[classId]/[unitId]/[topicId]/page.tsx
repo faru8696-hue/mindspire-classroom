@@ -127,7 +127,7 @@ export default async function TopicPage({
           return (
             <Link
               key={q.id}
-              href={`/student/${classId}/${unitId}/${topicId}/${q.id}`}
+              href={`/student/${classId}/${unitId}/${topicId}/${q.id}${difficultyFilter ? `?difficulty=${difficultyFilter}` : ''}`}
               className="block bg-white rounded-xl border border-gray-200 p-5 hover:border-purple-300 hover:shadow-md transition-all group"
             >
               <div className="flex items-center gap-4">

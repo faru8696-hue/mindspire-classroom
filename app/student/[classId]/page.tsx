@@ -96,7 +96,12 @@ export default async function ClassPage({ params }: { params: Promise<{ classId:
 
   return (
     <div className="max-w-3xl mx-auto">
-      <h1 className="text-2xl font-bold text-purple-900 mb-4">{cls.title}</h1>
+      <div className="flex items-center justify-between gap-3 mb-4">
+        <h1 className="text-2xl font-bold text-purple-900">{cls.title}</h1>
+        <Link href={`/student/${classId}/submissions`} className="text-sm font-semibold text-purple-600 hover:underline flex-shrink-0">
+          📋 My Submissions
+        </Link>
+      </div>
 
       {/* Big, hard-to-miss Self Study banner — this is the entry point for
           the whole custom-test/review-folder feature, so it shouldn't read

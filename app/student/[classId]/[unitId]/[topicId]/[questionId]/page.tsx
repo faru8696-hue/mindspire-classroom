@@ -6,8 +6,15 @@ import StudentBoardPage from './StudentBoardPage'
 import AnswerKeyText from '@/components/AnswerKeyText'
 import QuestionContent from '@/components/QuestionContent'
 
-export default async function QuestionPage({ params }: { params: Promise<{ classId: string; unitId: string; topicId: string; questionId: string }> }) {
+export default async function QuestionPage({
+  params, searchParams,
+}: {
+  params: Promise<{ classId: string; unitId: string; topicId: string; questionId: string }>
+  searchParams: Promise<{ difficulty?: string }>
+}) {
   const { classId, unitId, topicId, questionId } = await params
+  const { difficulty: difficultyFilter } = await searchParams
+  const difficultyQs = difficultyFilter ? `?difficulty=${difficultyFilter}` : ''
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
@@ -23,9 +30,12 @@ export default async function QuestionPage({ params }: { params: Promise<{ class
 
   if (!question) notFound()
 
-  // Build prev/next navigation within this topic's assigned questions
+  // Build prev/next navigation within this topic's assigned questions —
+  // filtered to the same difficulty the student picked on the topic page
+  // (if any), so clicking Next while working through "Easy" only stays
+  // within Easy questions instead of falling through to every difficulty.
   const [{ data: topicQs }, { data: clsAssign }, { data: stuAssign }] = await Promise.all([
-    supabase.from('questions').select('id').eq('topic_id', topicId).order('order_index'),
+    supabase.from('questions').select('id, difficulty').eq('topic_id', topicId).order('order_index'),
     supabase.from('assignments').select('question_id').eq('class_id', classId),
     supabase.from('student_assignments').select('question_id').eq('student_id', studentId),
   ])
@@ -33,8 +43,10 @@ export default async function QuestionPage({ params }: { params: Promise<{ class
     ...(clsAssign ?? []).map((a: { question_id: string }) => a.question_id),
     ...(stuAssign ?? []).map((a: { question_id: string }) => a.question_id),
   ])
-  const assignedSeq = (topicQs ?? []).filter(q => assignedIds.has(q.id))
-  const seq = assignedSeq.some(q => q.id === questionId) ? assignedSeq : (topicQs ?? [])
+  const byDifficulty = (qs: { id: string; difficulty: string | null }[]) =>
+    difficultyFilter ? qs.filter(q => q.difficulty === difficultyFilter) : qs
+  const assignedSeq = byDifficulty((topicQs ?? []).filter(q => assignedIds.has(q.id)))
+  const seq = assignedSeq.some(q => q.id === questionId) ? assignedSeq : byDifficulty(topicQs ?? [])
   const idx = seq.findIndex(q => q.id === questionId)
   const prevId = idx > 0 ? seq[idx - 1].id : null
   const nextId = idx >= 0 && idx < seq.length - 1 ? seq[idx + 1].id : null
@@ -92,7 +104,7 @@ export default async function QuestionPage({ params }: { params: Promise<{ class
         <div className="flex items-center gap-3 flex-shrink-0">
           <div className="flex items-center gap-1.5">
             {prevId ? (
-              <Link href={`/student/${classId}/${unitId}/${topicId}/${prevId}`}
+              <Link href={`/student/${classId}/${unitId}/${topicId}/${prevId}${difficultyQs}`}
                 className="px-3 py-1.5 rounded-lg text-sm font-medium border border-gray-200 text-gray-700 hover:border-purple-300 hover:text-purple-700 transition-colors">
                 ← Prev
               </Link>
@@ -103,12 +115,12 @@ export default async function QuestionPage({ params }: { params: Promise<{ class
               <span className="px-2 text-sm font-medium text-gray-500 whitespace-nowrap">{position.current} / {position.total}</span>
             )}
             {nextId ? (
-              <Link href={`/student/${classId}/${unitId}/${topicId}/${nextId}`}
+              <Link href={`/student/${classId}/${unitId}/${topicId}/${nextId}${difficultyQs}`}
                 className="px-3 py-1.5 rounded-lg text-sm font-medium bg-purple-600 text-white hover:bg-purple-700 transition-colors">
                 Next →
               </Link>
             ) : (
-              <Link href={`/student/${classId}/${unitId}/${topicId}`}
+              <Link href={`/student/${classId}/${unitId}/${topicId}${difficultyQs}`}
                 className="px-3 py-1.5 rounded-lg text-sm font-medium bg-green-600 text-white hover:bg-green-700 transition-colors">
                 Finish ✓
               </Link>

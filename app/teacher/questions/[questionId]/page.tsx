@@ -44,7 +44,7 @@ export default async function QuestionResultsPage({
   // All questions in this topic (parts of the same problem)
   const { data: allParts } = await supabase
     .from('questions')
-    .select('id, title, content, order_index')
+    .select('id, title, content, order_index, source')
     .eq('topic_id', topic.id)
     .order('order_index')
 
@@ -129,6 +129,13 @@ export default async function QuestionResultsPage({
       .map(t => ({ id: t.id, title: t.title, firstQuestionId: firstQuestionByTopic.get(t.id) ?? null })),
   }))
 
+  // Flattened topic list (with parent unit title) for the "move to topic"
+  // dropdown in the edit panel — every topic in this class, not just this one.
+  const unitTitleById = new Map((allUnits ?? []).map(u => [u.id, u.title]))
+  const topicOptions = (allTopics ?? []).map(t => ({
+    id: t.id, title: t.title, unitTitle: unitTitleById.get(t.unit_id) ?? '',
+  }))
+
   return (
     <div className="max-w-7xl mx-auto">
       {/* Breadcrumb */}
@@ -149,6 +156,7 @@ export default async function QuestionResultsPage({
         students={studentList}
         submissions={subList}
         feedbacks={feedbacks ?? []}
+        topicOptions={topicOptions}
       />
     </div>
   )
