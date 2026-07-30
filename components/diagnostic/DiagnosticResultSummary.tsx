@@ -1,7 +1,19 @@
 import ScoreCard from './ScoreCard'
 import MasteryBar from './MasteryBar'
 import ResultActions from './ResultActions'
+import QuestionReviewList from './QuestionReviewList'
 import type { TopicScore } from '@/lib/diagnosticGrading'
+
+export interface QuestionReviewItem {
+  questionId: string
+  content: string
+  imageUrl: string | null
+  options: string[]
+  selectedIndex: number
+  correctIndex: number
+  isCorrect: boolean
+  explanation: string | null
+}
 
 export interface DiagnosticResultData {
   testTitle: string
@@ -13,6 +25,7 @@ export interface DiagnosticResultData {
   timeSpentSeconds: number | null
   topicScores: TopicScore[]
   advice: { topicTitle: string; prepAdvice: string }[]
+  questionReview: QuestionReviewItem[]
 }
 
 // Shared by the public results page (app/diagnostic/[slug]/results/[attemptId])
@@ -53,6 +66,8 @@ export default function DiagnosticResultSummary({ result }: { result: Diagnostic
           ))}
         </div>
       </div>
+
+      <QuestionReviewList questions={result.questionReview} />
 
       <div className="bg-white rounded-2xl shadow p-6">
         <h3 className="text-lg font-bold text-gray-800 mb-4">Before You Start AP Chemistry</h3>

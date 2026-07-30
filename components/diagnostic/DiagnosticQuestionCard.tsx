@@ -12,6 +12,7 @@ export interface DiagnosticQuestionCardData {
   mcq_correct_index: number
   image_url: string | null
   source: string | null
+  explanation: string | null
   is_active: boolean
 }
 
@@ -33,6 +34,7 @@ export default function DiagnosticQuestionCard({
   const [correctIndex, setCorrectIndex] = useState(question.mcq_correct_index)
   const [imageUrl, setImageUrl] = useState(question.image_url ?? '')
   const [source, setSource] = useState(question.source ?? '')
+  const [explanation, setExplanation] = useState(question.explanation ?? '')
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const [userId, setUserId] = useState('')
@@ -72,6 +74,7 @@ export default function DiagnosticQuestionCard({
     setCorrectIndex(question.mcq_correct_index)
     setImageUrl(question.image_url ?? '')
     setSource(question.source ?? '')
+    setExplanation(question.explanation ?? '')
     setError('')
     setEditing(false)
   }
@@ -90,6 +93,7 @@ export default function DiagnosticQuestionCard({
           questionId: question.id, topicId, content,
           options: trimmedOptions, correctIndex,
           imageUrl: imageUrl || undefined, source: source || undefined,
+          explanation: explanation.trim() || undefined,
         }),
       })
       const data = await res.json()
@@ -173,6 +177,12 @@ export default function DiagnosticQuestionCard({
           <input value={source} onChange={e => setSource(e.target.value)} placeholder="e.g. Chapter 1 Practice Test"
             className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500" />
         </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Explanation (optional, shown to students after they finish)</label>
+          <textarea value={explanation} onChange={e => setExplanation(e.target.value)} rows={2}
+            placeholder="Why the correct answer is right — students see this on their results page."
+            className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        </div>
 
         {error && <p className="text-red-600 text-sm bg-red-50 p-2 rounded-lg">{error}</p>}
         <div className="flex gap-2">
@@ -215,6 +225,9 @@ export default function DiagnosticQuestionCard({
           </div>
         ))}
       </div>
+      {question.explanation && (
+        <p className="text-xs text-gray-500 mt-2 italic">💡 {question.explanation}</p>
+      )}
     </div>
   )
 }

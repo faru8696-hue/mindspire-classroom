@@ -18,6 +18,7 @@ export default function AddQuestionForm({
   const [correctIndex, setCorrectIndex] = useState(0)
   const [imageUrl, setImageUrl] = useState('')
   const [source, setSource] = useState('')
+  const [explanation, setExplanation] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [userId, setUserId] = useState('')
@@ -63,11 +64,12 @@ export default function AddQuestionForm({
           diagnosticTestId, topicId, content,
           options: trimmedOptions, correctIndex,
           imageUrl: imageUrl || undefined, source: source || undefined,
+          explanation: explanation.trim() || undefined,
         }),
       })
       const data = await res.json()
       if (!res.ok) { setError(data.error || 'Something went wrong.'); setLoading(false); return }
-      setContent(''); setOptions(['', '', '', '']); setCorrectIndex(0); setImageUrl(''); setSource(''); setLoading(false)
+      setContent(''); setOptions(['', '', '', '']); setCorrectIndex(0); setImageUrl(''); setSource(''); setExplanation(''); setLoading(false)
       router.refresh()
     } catch {
       setError('Connection error.')
@@ -122,6 +124,12 @@ export default function AddQuestionForm({
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">Source (optional)</label>
         <input value={source} onChange={e => setSource(e.target.value)} placeholder="e.g. Chapter 1 Practice Test"
+          className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Explanation (optional, shown to students after they finish)</label>
+        <textarea value={explanation} onChange={e => setExplanation(e.target.value)} rows={2}
+          placeholder="Why the correct answer is right — students see this on their results page."
           className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500" />
       </div>
 

@@ -7,7 +7,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
   }
 
-  const { diagnosticTestId, topicId, content, options, correctIndex, imageUrl, source } = await req.json() as {
+  const { diagnosticTestId, topicId, content, options, correctIndex, imageUrl, source, explanation } = await req.json() as {
     diagnosticTestId?: string
     topicId?: string
     content?: string
@@ -15,6 +15,7 @@ export async function POST(req: NextRequest) {
     correctIndex?: number
     imageUrl?: string
     source?: string
+    explanation?: string
   }
 
   if (!diagnosticTestId || !topicId || !content || !Array.isArray(options) || options.length < 2 || correctIndex === undefined) {
@@ -35,6 +36,7 @@ export async function POST(req: NextRequest) {
       mcq_correct_index: correctIndex,
       image_url: imageUrl || null,
       source: source || null,
+      explanation: explanation || null,
     })
     .select('id')
     .single()
