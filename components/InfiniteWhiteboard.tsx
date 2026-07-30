@@ -612,6 +612,16 @@ function InfiniteWhiteboardInner({
 
   // ── Mouse handlers ────────────────────────────────────────────
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    // The canvas itself isn't a focusable element, so the browser's default
+    // mousedown handling blurs whatever currently has focus (with no new
+    // element to redirect to). That default blur was firing AFTER the text
+    // tool's branch below had already focused the new text object's
+    // textarea, immediately closing it again (committing an empty value,
+    // which deletes the just-placed text box) before anyone could type —
+    // "click text tool, click the board, and it just goes back to Select"
+    // with no visible text box ever appearing. Suppressing the default here
+    // stops the browser from stealing focus back on every canvas click.
+    e.preventDefault()
     const canvasPos = screenToCanvas(e.clientX, e.clientY)
     const { mx, my } = getScreenMouse(e)
 
