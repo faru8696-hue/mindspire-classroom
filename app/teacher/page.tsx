@@ -313,25 +313,32 @@ export default async function TeacherDashboard() {
                   ) : (
                     <div className="border border-gray-100 rounded-lg divide-y divide-gray-100 bg-gray-50/50">
                       {cls.activity.map(a => (
-                        <Link
-                          key={a.studentId}
-                          href={a.href}
-                          className="flex items-center gap-3 px-3 py-2 hover:bg-white transition-colors"
-                        >
+                        <div key={a.studentId} className="flex items-center gap-3 px-3 py-2 hover:bg-white transition-colors">
                           <span className="text-base flex-shrink-0">{ACTIVITY_ICON[a.type]}</span>
                           <div className="flex-1 min-w-0">
                             <p className="text-xs font-semibold text-gray-800 truncate">
-                              {a.studentName} <span className="font-normal text-gray-500">{ACTIVITY_LABEL[a.type]}</span>
+                              <Link
+                                href={`/teacher/students/${a.studentId}`}
+                                className="hover:underline hover:text-purple-700"
+                                title="View this student's full progress across all subtopics"
+                              >
+                                {a.studentName}
+                              </Link>{' '}
+                              <Link href={a.href} className="font-normal text-gray-500 hover:underline">
+                                {ACTIVITY_LABEL[a.type]}
+                              </Link>
                             </p>
-                            <p className="text-xs text-gray-400 truncate">
-                              {a.topicTitle && <>{a.topicTitle} · </>}{a.questionTitle}
-                            </p>
-                            {a.type === 'comment' && a.message && (
-                              <p className="text-xs text-gray-600 italic truncate">&ldquo;{a.message}&rdquo;</p>
-                            )}
+                            <Link href={a.href} className="block">
+                              <p className="text-xs text-gray-400 truncate">
+                                {a.topicTitle && <>{a.topicTitle} · </>}{a.questionTitle}
+                              </p>
+                              {a.type === 'comment' && a.message && (
+                                <p className="text-xs text-gray-600 italic truncate">&ldquo;{a.message}&rdquo;</p>
+                              )}
+                            </Link>
                           </div>
                           <span className="text-xs text-gray-400 flex-shrink-0">{timeAgo(a.at)}</span>
-                        </Link>
+                        </div>
                       ))}
                     </div>
                   )}
