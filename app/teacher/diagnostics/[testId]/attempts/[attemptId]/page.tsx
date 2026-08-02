@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { createAdminClient } from '@/lib/supabase/server'
 import { getDiagnosticResult } from '@/lib/diagnosticResult'
 import DiagnosticResultSummary from '@/components/diagnostic/DiagnosticResultSummary'
+import EmailResultButton from '@/components/diagnostic/EmailResultButton'
 
 export default async function DiagnosticAttemptDetailPage({
   params,
@@ -43,10 +44,13 @@ export default async function DiagnosticAttemptDetailPage({
           <p className="text-xs uppercase tracking-widest text-blue-500 font-semibold mb-2">Contact Info</p>
           <p className="text-sm text-gray-700"><span className="font-semibold">Student:</span> {lead.student_name} · {lead.student_email}</p>
           <p className="text-sm text-gray-700"><span className="font-semibold">Parent/Guardian:</span> {lead.parent_name} · {lead.parent_email} · {lead.parent_phone}</p>
+          <div className="mt-3">
+            <EmailResultButton attemptId={attemptId} studentEmail={lead.student_email} parentEmail={lead.parent_email} />
+          </div>
         </div>
       )}
 
-      <DiagnosticResultSummary result={lookup.result} />
+      <DiagnosticResultSummary result={lookup.result} teacherView attemptId={attemptId} />
     </div>
   )
 }

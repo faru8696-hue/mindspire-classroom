@@ -25,7 +25,7 @@ export async function getDiagnosticResult(attemptId: string): Promise<Diagnostic
   const [{ data: test }, { data: lead }, { data: answers }] = await Promise.all([
     admin.from('diagnostic_tests').select('title').eq('id', attempt.diagnostic_test_id).maybeSingle(),
     admin.from('diagnostic_leads').select('student_name').eq('id', attempt.lead_id).maybeSingle(),
-    admin.from('diagnostic_attempt_answers').select('question_id, selected_index, is_correct, canvas_data').eq('attempt_id', attemptId),
+    admin.from('diagnostic_attempt_answers').select('question_id, selected_index, is_correct, canvas_data, grade').eq('attempt_id', attemptId),
   ])
 
   const breakdown = (attempt.topic_breakdown ?? { topicScores: [], advice: [] }) as {
@@ -59,9 +59,23 @@ export async function getDiagnosticResult(attemptId: string): Promise<Diagnostic
         explanation: q.explanation,
         answerKey: q.answer_key,
         canvasData: a.canvas_data,
+        grade: (a.grade as 'correct' | 'partial' | 'incorrect' | null) ?? null,
       }
     })
     .filter((r): r is QuestionReviewItem => r !== null)
+
+  // FRQ score, computed live (not frozen like the MCQ score) since teacher
+  // grading happens progressively any time after the attempt completes —
+  // pct is over graded answers only, since ungraded ones aren't "wrong",
+  // they're just not reviewed yet.
+  const frqItems = questionReview.filter(q => q.questionType === 'frq')
+  const frqScore = frqItems.length === 0 ? null : (() => {
+    const gradedCount = frqItems.filter(q => q.grade !== null).length
+    const correctCount = frqItems.filter(q => q.grade === 'correct').length
+    const partialCount = frqItems.filter(q => q.grade === 'partial').length
+    const incorrectCount = frqItems.filter(q => q.grade === 'incorrect').length
+    return { totalCount: frqItems.length, gradedCount, correctCount, partialCount, incorrectCount }
+  })()
 
   const timeSpentSeconds = attempt.submitted_at
     ? Math.round((new Date(attempt.submitted_at).getTime() - new Date(attempt.started_at).getTime()) / 1000)
@@ -76,6 +90,7 @@ export async function getDiagnosticResult(attemptId: string): Promise<Diagnostic
       correctCount: attempt.correct_count ?? 0,
       totalCount: attempt.total_count ?? 0,
       scorePct: attempt.score_pct ?? 0,
+      frqScore,
       timeSpentSeconds,
       topicScores: breakdown.topicScores,
       advice: breakdown.advice,
