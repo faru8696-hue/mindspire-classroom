@@ -107,3 +107,21 @@ export function gradeDiagnosticAttempt(
 
   return { correctCount, totalCount, scorePct, topicScores, perQuestion, advice }
 }
+
+// Combines the MCQ score (1 point per question, always fully graded) with
+// whatever FRQ points have been graded so far into a single overall score.
+// `possible` only counts FRQ points from graded questions (frq.gradedPoints,
+// not frq.totalPoints) — ungraded FRQ shouldn't drag the total down before a
+// teacher has actually reviewed them. `fullyGraded` tells the caller whether
+// this is a final number or still provisional.
+export function computeTotalScore(
+  correctCount: number,
+  totalCount: number,
+  frq: { totalCount: number; gradedCount: number; totalPoints: number; gradedPoints: number; earnedPoints: number } | null
+): { earned: number; possible: number; pct: number; fullyGraded: boolean } {
+  const earned = correctCount + (frq?.earnedPoints ?? 0)
+  const possible = totalCount + (frq?.gradedPoints ?? 0)
+  const pct = possible > 0 ? Math.round((earned / possible) * 100) : 0
+  const fullyGraded = !frq || frq.gradedCount === frq.totalCount
+  return { earned, possible, pct, fullyGraded }
+}

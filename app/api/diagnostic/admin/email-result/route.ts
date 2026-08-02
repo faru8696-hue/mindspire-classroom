@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCaller, createAdminClient } from '@/lib/supabase/server'
 import { getDiagnosticResult } from '@/lib/diagnosticResult'
+import { computeTotalScore } from '@/lib/diagnosticGrading'
 import { sendEmail } from '@/lib/email'
 import type { DiagnosticResultData } from '@/components/diagnostic/DiagnosticResultSummary'
 
 function resultEmailHtml(result: DiagnosticResultData, greetingName: string, resultsUrl: string): string {
   const frq = result.frqScore
-  const frqPct = frq && frq.gradedPoints > 0 ? Math.round((frq.earnedPoints / frq.gradedPoints) * 100) : null
+  const total = computeTotalScore(result.correctCount, result.totalCount, frq)
 
   const topicRows = result.topicScores.map(t => `
     <tr>
@@ -20,17 +21,22 @@ function resultEmailHtml(result: DiagnosticResultData, greetingName: string, res
       <p>Hi ${greetingName},</p>
       <p>Here are ${result.studentName}&rsquo;s results for <strong>${result.testTitle}</strong>, taken on ${result.dateTaken}.</p>
 
-      <table style="width:100%; margin:16px 0;">
+      <div style="padding:16px; background:#eef2ff; border-radius:8px; text-align:center; margin:16px 0;">
+        <div style="font-size:34px; font-weight:800; color:#4338ca;">${total.pct}%</div>
+        <div style="font-size:13px; color:#6b7280;">${total.earned}/${total.possible} total${!total.fullyGraded ? ' — provisional, FRQ review still in progress' : ''}</div>
+      </div>
+
+      <table style="width:100%; margin:0 0 16px;">
         <tr>
           <td style="padding:12px; background:#f9fafb; border-radius:8px; text-align:center;">
-            <div style="font-size:28px; font-weight:800; color:#1d4ed8;">${result.scorePct}%</div>
+            <div style="font-size:22px; font-weight:800; color:#1d4ed8;">${result.scorePct}%</div>
             <div style="font-size:12px; color:#6b7280;">Multiple Choice — ${result.correctCount}/${result.totalCount}</div>
           </td>
           ${frq ? `
           <td style="width:12px;"></td>
           <td style="padding:12px; background:#faf5ff; border-radius:8px; text-align:center;">
-            <div style="font-size:28px; font-weight:800; color:#7e22ce;">${frq.gradedCount === 0 ? `${frq.totalPoints} pts` : `${frq.earnedPoints}/${frq.gradedCount === frq.totalCount ? frq.totalPoints : frq.gradedPoints} pts`}</div>
-            <div style="font-size:12px; color:#6b7280;">Free Response${frqPct !== null ? ` — ${frqPct}%` : ''}${frq.gradedCount < frq.totalCount ? ` (${frq.gradedCount}/${frq.totalCount} graded)` : ''}</div>
+            <div style="font-size:22px; font-weight:800; color:#7e22ce;">${frq.gradedCount === 0 ? `${frq.totalPoints} pts` : `${frq.earnedPoints}/${frq.gradedCount === frq.totalCount ? frq.totalPoints : frq.gradedPoints} pts`}</div>
+            <div style="font-size:12px; color:#6b7280;">Free Response${frq.gradedCount < frq.totalCount ? ` (${frq.gradedCount}/${frq.totalCount} graded)` : ''}</div>
           </td>` : ''}
         </tr>
       </table>

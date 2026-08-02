@@ -2,7 +2,7 @@ import ScoreCard from './ScoreCard'
 import MasteryBar from './MasteryBar'
 import ResultActions from './ResultActions'
 import QuestionReviewList from './QuestionReviewList'
-import type { TopicScore } from '@/lib/diagnosticGrading'
+import { computeTotalScore, type TopicScore } from '@/lib/diagnosticGrading'
 
 export interface QuestionReviewItem {
   questionId: string
@@ -55,41 +55,39 @@ export default function DiagnosticResultSummary({
   attemptId?: string
 }) {
   const frq = result.frqScore
-  const frqPct = frq && frq.gradedPoints > 0 ? Math.round((frq.earnedPoints / frq.gradedPoints) * 100) : null
+  const total = computeTotalScore(result.correctCount, result.totalCount, frq)
 
   return (
     <div className="max-w-2xl mx-auto space-y-4">
       <div className="bg-white rounded-2xl shadow-xl p-8 text-center">
         <h2 className="text-2xl font-bold text-gray-800 mb-2">Your Results</h2>
-        <div className="mb-6 flex flex-wrap items-start justify-center gap-4">
+        {/* One combined total (MCQ + graded FRQ points) is the headline
+            number — the separate MCQ/FRQ cards below are a breakdown, not
+            two competing "totals". Provisional until every FRQ is graded. */}
+        <div className="mb-2 flex justify-center">
           <ScoreCard
-            correctCount={result.correctCount}
-            totalCount={result.totalCount}
-            scorePct={result.scorePct}
+            correctCount={total.earned}
+            totalCount={total.possible}
+            scorePct={total.pct}
             timeSpentSeconds={result.timeSpentSeconds}
           />
-          {frq && (
-            <div className="inline-block bg-purple-50 rounded-2xl px-8 py-6">
-              {frq.gradedCount === 0 ? (
-                <>
-                  <div className="text-3xl font-black text-purple-400">{frq.totalPoints} pts</div>
-                  <div className="text-sm font-bold text-purple-600 mt-1">Free Response</div>
-                  <div className="text-xs text-gray-500 mt-1">
-                    {teacherView ? 'not graded yet — enter scores below' : 'awaiting teacher review'}
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="text-3xl font-black text-purple-600">{frq.earnedPoints}/{frq.gradedCount === frq.totalCount ? frq.totalPoints : `${frq.gradedPoints}`} pts</div>
-                  <div className="text-sm font-bold text-purple-600 mt-1">Free Response{frqPct !== null ? ` — ${frqPct}%` : ''}</div>
-                  <div className="text-xs text-gray-500 mt-1">
-                    {frq.gradedCount < frq.totalCount ? `${frq.gradedCount}/${frq.totalCount} graded so far` : 'fully graded'}
-                  </div>
-                </>
-              )}
-            </div>
-          )}
         </div>
+        {!total.fullyGraded && (
+          <p className="text-xs text-amber-600 mb-4">
+            ⏳ Provisional{teacherView ? ' — grade the remaining free-response answers below for a final score.' : " — your teacher hasn't finished reviewing all the free-response answers yet."}
+          </p>
+        )}
+        {frq && (
+          <div className="flex flex-wrap items-center justify-center gap-2 mb-6 text-sm">
+            <span className="px-3 py-1.5 rounded-full bg-blue-50 text-blue-700 font-semibold">
+              Multiple Choice: {result.correctCount}/{result.totalCount} ({result.scorePct}%)
+            </span>
+            <span className="px-3 py-1.5 rounded-full bg-purple-50 text-purple-700 font-semibold">
+              Free Response: {frq.gradedCount === 0 ? `${frq.totalPoints} pts` : `${frq.earnedPoints}/${frq.gradedCount === frq.totalCount ? frq.totalPoints : frq.gradedPoints} pts`}
+              {frq.gradedCount < frq.totalCount ? ` (${frq.gradedCount}/${frq.totalCount} graded)` : ''}
+            </span>
+          </div>
+        )}
         <ResultActions
           pdfData={{
             testTitle: result.testTitle,
@@ -98,6 +96,7 @@ export default function DiagnosticResultSummary({
             correctCount: result.correctCount,
             totalCount: result.totalCount,
             scorePct: result.scorePct,
+            frqScore: result.frqScore,
             topicScores: result.topicScores,
             advice: result.advice,
           }}

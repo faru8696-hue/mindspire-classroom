@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { tierFor, aggregateTopicScores, gradeDiagnosticAttempt, MASTERY_THRESHOLDS } from '../diagnosticGrading'
+import { tierFor, aggregateTopicScores, gradeDiagnosticAttempt, computeTotalScore, MASTERY_THRESHOLDS } from '../diagnosticGrading'
 
 describe('tierFor', () => {
   it('is "mastered" at and above the mastered threshold', () => {
@@ -92,5 +92,29 @@ describe('gradeDiagnosticAttempt', () => {
       questions
     )
     expect(result.advice).toEqual([])
+  })
+})
+
+describe('computeTotalScore', () => {
+  it('is just the MCQ score when there are no FRQ questions', () => {
+    const result = computeTotalScore(15, 19, null)
+    expect(result).toEqual({ earned: 15, possible: 19, pct: 79, fullyGraded: true })
+  })
+
+  it('only counts graded FRQ points toward the total, not the full possible', () => {
+    // 15/19 MCQ + 1 of 2 FRQ graded (earned 3 of that question's 4 points)
+    const frq = { totalCount: 2, gradedCount: 1, totalPoints: 8, gradedPoints: 4, earnedPoints: 3 }
+    const result = computeTotalScore(15, 19, frq)
+    expect(result.earned).toBe(18) // 15 + 3
+    expect(result.possible).toBe(23) // 19 + 4 (not 19 + 8)
+    expect(result.fullyGraded).toBe(false)
+  })
+
+  it('reports fullyGraded once every FRQ has been scored', () => {
+    const frq = { totalCount: 2, gradedCount: 2, totalPoints: 8, gradedPoints: 8, earnedPoints: 6 }
+    const result = computeTotalScore(15, 19, frq)
+    expect(result.earned).toBe(21) // 15 + 6
+    expect(result.possible).toBe(27) // 19 + 8
+    expect(result.fullyGraded).toBe(true)
   })
 })

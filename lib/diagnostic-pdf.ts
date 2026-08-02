@@ -1,4 +1,12 @@
-import type { TopicScore } from './diagnosticGrading'
+import { computeTotalScore, type TopicScore } from './diagnosticGrading'
+
+export interface DiagnosticPdfFrqScore {
+  totalCount: number
+  gradedCount: number
+  totalPoints: number
+  gradedPoints: number
+  earnedPoints: number
+}
 
 export interface DiagnosticPdfData {
   testTitle: string
@@ -7,6 +15,7 @@ export interface DiagnosticPdfData {
   correctCount: number
   totalCount: number
   scorePct: number
+  frqScore: DiagnosticPdfFrqScore | null
   topicScores: TopicScore[]
   advice: { topicTitle: string; prepAdvice: string }[]
 }
@@ -48,20 +57,34 @@ export async function downloadDiagnosticPdf(data: DiagnosticPdfData): Promise<vo
   doc.text(`Student: ${data.studentName}`, lm, 24)
   doc.text(`Date: ${data.dateTaken}`, lm, 31)
 
+  const total = computeTotalScore(data.correctCount, data.totalCount, data.frqScore)
+  const perf = performanceLabel(total.pct)
+  const boxHeight = data.frqScore ? 30 : 22
+
   y = 45
-  const perf = performanceLabel(data.scorePct)
   doc.setTextColor(0, 0, 0)
   doc.setFillColor(235, 245, 255)
-  doc.rect(lm, y, pw, 22, 'F')
+  doc.rect(lm, y, pw, boxHeight, 'F')
   doc.setFontSize(14)
   doc.setFont('helvetica', 'bold')
   doc.setTextColor(30, 64, 175)
-  doc.text(`Score: ${data.correctCount}/${data.totalCount} (${data.scorePct}%) — ${perf}`, lm + 5, y + 10)
+  doc.text(`Score: ${total.earned}/${total.possible} (${total.pct}%) — ${perf}${total.fullyGraded ? '' : ' (provisional)'}`, lm + 5, y + 10)
   doc.setFontSize(10)
   doc.setFont('helvetica', 'normal')
   doc.setTextColor(80, 80, 80)
   doc.text('Mindspire Lab — Diagnostic Assessment', lm + 5, y + 18)
-  y += 30
+
+  if (data.frqScore) {
+    const frq = data.frqScore
+    const frqLabel = frq.gradedCount === 0
+      ? `${frq.totalPoints} pts`
+      : `${frq.earnedPoints}/${frq.gradedCount === frq.totalCount ? frq.totalPoints : frq.gradedPoints} pts${frq.gradedCount < frq.totalCount ? ` (${frq.gradedCount}/${frq.totalCount} graded)` : ''}`
+    doc.setFontSize(9)
+    doc.setTextColor(60, 60, 60)
+    doc.text(`Multiple Choice: ${data.correctCount}/${data.totalCount} (${data.scorePct}%)   ·   Free Response: ${frqLabel}`, lm + 5, y + 26)
+  }
+
+  y += boxHeight + 8
 
   doc.setFontSize(12)
   doc.setFont('helvetica', 'bold')
