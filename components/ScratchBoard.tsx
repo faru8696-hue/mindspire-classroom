@@ -42,9 +42,18 @@ const ScratchBoard = forwardRef<ScratchBoardHandle, { initialDataUrl?: string | 
     },
   }), [hasStrokes])
 
+  // The canvas has a fixed internal resolution (640x320) but is displayed
+  // at whatever CSS width its container gives it (w-full) — without
+  // rescaling by that ratio, drawing coordinates land wherever the pointer
+  // is on SCREEN rather than the corresponding point in the canvas's own
+  // pixel grid, which drifts further from the cursor the more the
+  // displayed size differs from 640x320 (e.g. in a narrower half-column).
   function pos(e: React.PointerEvent<HTMLCanvasElement>) {
-    const rect = e.currentTarget.getBoundingClientRect()
-    return { x: e.clientX - rect.left, y: e.clientY - rect.top }
+    const canvas = e.currentTarget
+    const rect = canvas.getBoundingClientRect()
+    const scaleX = canvas.width / rect.width
+    const scaleY = canvas.height / rect.height
+    return { x: (e.clientX - rect.left) * scaleX, y: (e.clientY - rect.top) * scaleY }
   }
 
   function start(e: React.PointerEvent<HTMLCanvasElement>) {
