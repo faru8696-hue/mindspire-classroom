@@ -102,12 +102,15 @@ export default async function LiveClassroomPage({
   const topicOptions = (topics ?? []).map(t => ({
     id: t.id, title: t.title, unitTitle: unitTitleById.get(t.unit_id) ?? '',
   }))
+  const currentTopic = (topics ?? []).find(t => t.id === question.topic_id)
 
   return (
     <LiveClassroomView
       classId={classId}
       questionId={questionId}
       classTitle={cls.title}
+      topicTitle={currentTopic?.title ?? null}
+      unitTitle={currentTopic ? (unitTitleById.get(currentTopic.unit_id) ?? null) : null}
       questionTitle={question.title}
       questionContent={question.content}
       answerKey={question.answer_key}

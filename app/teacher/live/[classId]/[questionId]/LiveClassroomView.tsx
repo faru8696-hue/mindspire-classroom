@@ -24,6 +24,8 @@ interface Props {
   classId: string
   questionId: string
   classTitle: string
+  topicTitle: string | null
+  unitTitle: string | null
   questionTitle: string
   questionContent: string | null
   answerKey: string | null
@@ -62,7 +64,7 @@ const DIFFICULTY_BADGE: Record<string, string> = {
 }
 
 export default function LiveClassroomView({
-  classId, questionId, classTitle, questionTitle, questionContent, answerKey,
+  classId, questionId, classTitle, topicTitle, unitTitle, questionTitle, questionContent, answerKey,
   questionDifficulty, questionPoints, questionTopicId, questionSource, topicOptions,
   allQuestions, questionHelp, students, initialSubmissions, initialFeedbacks, initialNotifications,
   initialComments, teacherId, teacherName, autoOpenCommentsStudentId,
@@ -528,7 +530,13 @@ export default function LiveClassroomView({
                 className="flex items-center gap-2 text-left hover:bg-gray-100 rounded-lg px-2 py-1 -mx-2 transition-colors"
               >
                 <div className="min-w-0">
-                  <p className="text-[10px] uppercase tracking-widest text-gray-400 leading-none mb-0.5">{classTitle}</p>
+                  <p className="text-[10px] uppercase tracking-widest text-gray-400 leading-none mb-0.5 truncate">
+                    {classTitle}
+                    {(unitTitle || topicTitle) && ' · '}
+                    {unitTitle}
+                    {unitTitle && topicTitle && ' · '}
+                    {topicTitle}
+                  </p>
                   <h1 className="font-bold text-gray-900 text-sm flex items-center gap-1.5 truncate">
                     <span className="truncate">{questionTitle}</span>
                     {questionDifficulty && (
