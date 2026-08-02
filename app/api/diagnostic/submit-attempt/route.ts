@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
 
   const { data: attempt } = await admin
     .from('diagnostic_attempts')
-    .select('id, diagnostic_test_id, question_ids, status')
+    .select('id, diagnostic_test_id, lead_id, question_ids, status')
     .eq('id', attemptId)
     .maybeSingle()
   if (!attempt) return NextResponse.json({ error: 'Attempt not found.' }, { status: 404 })
@@ -105,6 +105,29 @@ export async function POST(req: NextRequest) {
   if (updateError) {
     console.error('submit-attempt update error:', updateError)
     return NextResponse.json({ error: 'Could not save your results. Please try again.' }, { status: 500 })
+  }
+
+  // Surface "student completed a test" in the teacher bell/activity feed —
+  // only possible when the test-taker was logged in (lead.student_id is
+  // only set via the start-attempt-for-student route, not the public/
+  // anonymous start-attempt) and the test is published to a class (a
+  // notification has to belong to some class for the bell's mute-by-class
+  // and roster grouping to work).
+  const [{ data: lead }, { data: test }] = await Promise.all([
+    admin.from('diagnostic_leads').select('student_id').eq('id', attempt.lead_id).maybeSingle(),
+    admin.from('diagnostic_tests').select('class_id').eq('id', attempt.diagnostic_test_id).maybeSingle(),
+  ])
+  if (lead?.student_id && test?.class_id) {
+    const { error: notifError } = await admin.from('notifications').insert({
+      type: 'test_completed',
+      student_id: lead.student_id,
+      class_id: test.class_id,
+      question_id: null,
+      diagnostic_test_id: attempt.diagnostic_test_id,
+      diagnostic_attempt_id: attempt.id,
+      read: false,
+    })
+    if (notifError) console.error('submit-attempt notification insert error:', notifError)
   }
 
   return NextResponse.json({ attemptId: attempt.id })

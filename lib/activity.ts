@@ -10,7 +10,7 @@ import { createAdminClient } from './supabase/server'
 // grade can change and a stale grading event would be misleading.
 export interface ActivityEvent {
   id: string
-  type: 'help' | 'submitted' | 'comment' | 'assignment' | 'ai_chat'
+  type: 'help' | 'submitted' | 'comment' | 'assignment' | 'ai_chat' | 'test_completed'
   studentId: string
   studentName: string
   questionId: string | null
@@ -20,13 +20,17 @@ export interface ActivityEvent {
   message: string | null
   grade: string | null
   createdAt: string
+  // Only set for type: 'test_completed' — a diagnostic test has no single
+  // question_id to link through, so it needs its own link target.
+  diagnosticTestId: string | null
+  diagnosticAttemptId: string | null
 }
 
 export async function getRecentActivity({ studentId, limit = 200 }: { studentId?: string; limit?: number } = {}): Promise<ActivityEvent[]> {
   const admin = await createAdminClient()
 
   let notifQuery = admin.from('notifications')
-    .select('id, type, student_id, question_id, message, created_at')
+    .select('id, type, student_id, question_id, diagnostic_test_id, diagnostic_attempt_id, message, created_at')
     .order('created_at', { ascending: false }).limit(limit)
   let chatQuery = admin.from('ai_chat_messages')
     .select('id, student_id, question_id, message, created_at')
@@ -40,21 +44,28 @@ export async function getRecentActivity({ studentId, limit = 200 }: { studentId?
 
   const [{ data: notifs }, { data: chats }] = await Promise.all([notifQuery, chatQuery])
 
-  type NotifRow = { id: string; type: string; student_id: string; question_id: string | null; message: string | null; created_at: string }
+  type NotifRow = { id: string; type: string; student_id: string; question_id: string | null; diagnostic_test_id: string | null; diagnostic_attempt_id: string | null; message: string | null; created_at: string }
   type ChatRow = { id: string; student_id: string; question_id: string; message: string; created_at: string }
 
   const allStudentIds = new Set<string>()
   const allQuestionIds = new Set<string>()
-  for (const n of (notifs ?? []) as NotifRow[]) { allStudentIds.add(n.student_id); if (n.question_id) allQuestionIds.add(n.question_id) }
+  const allDiagTestIds = new Set<string>()
+  for (const n of (notifs ?? []) as NotifRow[]) {
+    allStudentIds.add(n.student_id)
+    if (n.question_id) allQuestionIds.add(n.question_id)
+    if (n.diagnostic_test_id) allDiagTestIds.add(n.diagnostic_test_id)
+  }
   for (const c of (chats ?? []) as ChatRow[]) { allStudentIds.add(c.student_id); allQuestionIds.add(c.question_id) }
 
-  const [{ data: profiles }, { data: questions }] = await Promise.all([
+  const [{ data: profiles }, { data: questions }, { data: diagTests }] = await Promise.all([
     allStudentIds.size > 0 ? admin.from('profiles').select('id, full_name').in('id', [...allStudentIds]) : Promise.resolve({ data: [] as { id: string; full_name: string }[] }),
     allQuestionIds.size > 0 ? admin.from('questions').select('id, title, topic_id').in('id', [...allQuestionIds]) : Promise.resolve({ data: [] as { id: string; title: string; topic_id: string }[] }),
+    allDiagTestIds.size > 0 ? admin.from('diagnostic_tests').select('id, title').in('id', [...allDiagTestIds]) : Promise.resolve({ data: [] as { id: string; title: string }[] }),
   ])
   const nameById = new Map((profiles ?? []).map(p => [p.id, p.full_name]))
   const titleById = new Map((questions ?? []).map(q => [q.id, q.title]))
   const topicIdByQuestion = new Map((questions ?? []).map(q => [q.id, q.topic_id]))
+  const diagTestTitleById = new Map((diagTests ?? []).map(t => [t.id, t.title]))
 
   // Topic/unit context per question — so an activity row can show exactly
   // which subtopic (e.g. "3.2 Properties of Solids") a question belongs to
@@ -105,19 +116,26 @@ export async function getRecentActivity({ studentId, limit = 200 }: { studentId?
 
   const events: ActivityEvent[] = [
     ...((notifs ?? []) as NotifRow[]).map(n => {
-      const type = (n.type === 'help' || n.type === 'submitted' || n.type === 'comment' || n.type === 'assignment' ? n.type : 'comment') as ActivityEvent['type']
+      const type = (
+        n.type === 'help' || n.type === 'submitted' || n.type === 'comment' || n.type === 'assignment' || n.type === 'test_completed'
+          ? n.type : 'comment'
+      ) as ActivityEvent['type']
       return {
         id: `notif:${n.id}`,
         type,
         studentId: n.student_id,
         studentName: nameById.get(n.student_id) ?? 'Unknown',
         questionId: n.question_id,
-        questionTitle: n.question_id ? (titleById.get(n.question_id) ?? null) : null,
+        questionTitle: type === 'test_completed'
+          ? (diagTestTitleById.get(n.diagnostic_test_id ?? '') ?? 'a test')
+          : n.question_id ? (titleById.get(n.question_id) ?? null) : null,
         topicTitle: topicTitleForQuestion(n.question_id),
         unitTitle: unitTitleForQuestion(n.question_id),
         message: n.message,
         grade: type === 'submitted' && n.question_id ? (gradeByStudentQuestion.get(`${n.student_id}:${n.question_id}`) ?? 'ungraded') : null,
         createdAt: n.created_at,
+        diagnosticTestId: n.diagnostic_test_id,
+        diagnosticAttemptId: n.diagnostic_attempt_id,
       }
     }),
     ...((chats ?? []) as ChatRow[]).map(c => ({
@@ -132,6 +150,8 @@ export async function getRecentActivity({ studentId, limit = 200 }: { studentId?
       message: c.message,
       grade: null,
       createdAt: c.created_at,
+      diagnosticTestId: null,
+      diagnosticAttemptId: null,
     })),
   ]
 

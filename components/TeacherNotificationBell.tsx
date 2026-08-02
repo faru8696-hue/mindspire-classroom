@@ -8,13 +8,27 @@ interface Notification {
   id: string
   type: string
   student_id: string
-  question_id: string
+  question_id: string | null
   class_id: string
+  diagnostic_test_id?: string | null
+  diagnostic_attempt_id?: string | null
   created_at: string
   read: boolean
   student_name?: string
   question_title?: string
+  test_title?: string
   message?: string | null
+}
+
+function notificationHref(n: Notification): string {
+  if (n.type === 'test_completed') return `/teacher/diagnostics/${n.diagnostic_test_id}/attempts/${n.diagnostic_attempt_id}`
+  return `/teacher/live/${n.class_id}/${n.question_id}${n.type === 'comment' ? `?comment=${n.student_id}` : ''}`
+}
+function notificationIcon(type: string): string {
+  return type === 'help' ? '🙋' : type === 'comment' ? '💬' : type === 'test_completed' ? '🧪' : '✅'
+}
+function notificationVerb(type: string): string {
+  return type === 'help' ? 'needs help' : type === 'comment' ? 'left a comment' : type === 'test_completed' ? 'completed a test' : 'is done — check their work'
 }
 
 interface ClassItem { id: string; title: string }
@@ -280,13 +294,13 @@ export default function TeacherNotificationBell({ initialNotifications, classes 
                         key={n.id}
                         className={`flex items-start gap-3 px-4 py-2.5 ${n.read ? '' : 'bg-purple-50/30'}`}
                       >
-                        <span className="text-lg flex-shrink-0 mt-0.5">{n.type === 'help' ? '🙋' : n.type === 'comment' ? '💬' : '✅'}</span>
+                        <span className="text-lg flex-shrink-0 mt-0.5">{notificationIcon(n.type)}</span>
                         <div className="flex-1 min-w-0">
                           <p className="text-xs text-gray-600">
-                            {n.type === 'help' ? 'needs help' : n.type === 'comment' ? 'left a comment' : 'is done — check their work'}
+                            {notificationVerb(n.type)}
                           </p>
-                          {n.question_title && (
-                            <p className="text-xs font-medium text-gray-700 truncate mt-0.5">{n.question_title}</p>
+                          {(n.type === 'test_completed' ? n.test_title : n.question_title) && (
+                            <p className="text-xs font-medium text-gray-700 truncate mt-0.5">{n.type === 'test_completed' ? n.test_title : n.question_title}</p>
                           )}
                           {n.type === 'comment' && n.message && (
                             <p className="text-xs text-gray-600 italic truncate mt-0.5">&ldquo;{n.message}&rdquo;</p>
@@ -297,7 +311,7 @@ export default function TeacherNotificationBell({ initialNotifications, classes 
                         </div>
                         <div className="flex flex-col gap-1.5 flex-shrink-0 items-end">
                           <Link
-                            href={`/teacher/live/${n.class_id}/${n.question_id}${n.type === 'comment' ? `?comment=${n.student_id}` : ''}`}
+                            href={notificationHref(n)}
                             onClick={() => { if (n.type !== 'comment') markRead(n.id); setOpen(false) }}
                             className="text-xs bg-purple-600 text-white px-2 py-1 rounded-lg hover:bg-purple-700 whitespace-nowrap"
                           >
@@ -325,21 +339,23 @@ export default function TeacherNotificationBell({ initialNotifications, classes 
                 ? 'bg-amber-500 border-amber-400 text-white'
                 : t.type === 'comment'
                 ? 'bg-blue-600 border-blue-500 text-white'
+                : t.type === 'test_completed'
+                ? 'bg-emerald-600 border-emerald-500 text-white'
                 : 'bg-purple-600 border-purple-500 text-white'
             }`}>
-              <span className="text-xl flex-shrink-0">{t.type === 'help' ? '🙋' : t.type === 'comment' ? '💬' : '✅'}</span>
+              <span className="text-xl flex-shrink-0">{notificationIcon(t.type)}</span>
               <div className="flex-1 min-w-0">
                 <p className="font-bold truncate">{t.student_name ?? 'A student'}</p>
-                <p className="text-xs opacity-90">{t.type === 'help' ? 'needs help' : t.type === 'comment' ? 'left a comment' : 'done — check their work'}</p>
+                <p className="text-xs opacity-90">{notificationVerb(t.type)}</p>
                 {t.type === 'comment' && t.message ? (
                   <p className="text-xs opacity-90 italic truncate">&ldquo;{t.message}&rdquo;</p>
-                ) : t.question_title ? (
-                  <p className="text-xs opacity-75 truncate">{t.question_title}</p>
+                ) : (t.type === 'test_completed' ? t.test_title : t.question_title) ? (
+                  <p className="text-xs opacity-75 truncate">{t.type === 'test_completed' ? t.test_title : t.question_title}</p>
                 ) : null}
               </div>
               <div className="flex flex-col gap-1 flex-shrink-0 items-end">
                 <Link
-                  href={`/teacher/live/${t.class_id}/${t.question_id}${t.type === 'comment' ? `?comment=${t.student_id}` : ''}`}
+                  href={notificationHref(t)}
                   onClick={() => dismissToast(t.id)}
                   className="text-xs bg-white/20 hover:bg-white/30 px-2 py-1 rounded-lg whitespace-nowrap"
                 >

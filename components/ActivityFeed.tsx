@@ -2,11 +2,12 @@ import Link from 'next/link'
 import type { ActivityEvent } from '@/lib/activity'
 
 const TYPE_META: Record<ActivityEvent['type'], { icon: string; verb: string; cls: string }> = {
-  help:       { icon: '🙋', verb: 'asked for help on',        cls: 'bg-amber-50 border-amber-200' },
-  submitted:  { icon: '✓',  verb: 'marked done on',           cls: 'bg-purple-50 border-purple-200' },
-  comment:    { icon: '💬', verb: 'commented on',              cls: 'bg-blue-50 border-blue-200' },
-  assignment: { icon: '📋', verb: 'was assigned',              cls: 'bg-gray-50 border-gray-200' },
-  ai_chat:    { icon: '🎓', verb: 'asked AI Faridah about',    cls: 'bg-indigo-50 border-indigo-200' },
+  help:           { icon: '🙋', verb: 'asked for help on',        cls: 'bg-amber-50 border-amber-200' },
+  submitted:      { icon: '✓',  verb: 'marked done on',           cls: 'bg-purple-50 border-purple-200' },
+  comment:        { icon: '💬', verb: 'commented on',              cls: 'bg-blue-50 border-blue-200' },
+  assignment:     { icon: '📋', verb: 'was assigned',              cls: 'bg-gray-50 border-gray-200' },
+  ai_chat:        { icon: '🎓', verb: 'asked AI Faridah about',    cls: 'bg-indigo-50 border-indigo-200' },
+  test_completed: { icon: '🧪', verb: 'completed',                 cls: 'bg-emerald-50 border-emerald-200' },
 }
 
 const GRADE_BADGE_CLS: Record<string, string> = {
@@ -44,7 +45,14 @@ export default function ActivityFeed({ events, showStudentName = true }: { event
                 {showStudentName && <span className="font-semibold">{e.studentName}</span>}
                 {showStudentName && ' '}
                 {meta.verb}
-                {e.questionId ? (
+                {e.type === 'test_completed' && e.diagnosticTestId && e.diagnosticAttemptId ? (
+                  <>
+                    {' '}
+                    <Link href={`/teacher/diagnostics/${e.diagnosticTestId}/attempts/${e.diagnosticAttemptId}`} className="text-purple-600 hover:underline font-medium">
+                      {e.questionTitle ?? 'a test'}
+                    </Link>
+                  </>
+                ) : e.questionId ? (
                   <>
                     {' '}
                     <Link href={`/teacher/questions/${e.questionId}`} className="text-purple-600 hover:underline font-medium">

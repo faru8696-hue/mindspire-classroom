@@ -50,26 +50,31 @@ export default async function TeacherLayout({ children }: { children: React.Reac
   }).length
   const { data: notifs } = await admin
     .from('notifications')
-    .select('id, type, student_id, question_id, class_id, created_at, read, message, profiles:profiles!notifications_student_id_fkey(full_name), questions:questions!notifications_question_id_fkey(title)')
+    .select('id, type, student_id, question_id, class_id, diagnostic_test_id, diagnostic_attempt_id, created_at, read, message, profiles:profiles!notifications_student_id_fkey(full_name), questions:questions!notifications_question_id_fkey(title), diagnostic_tests:diagnostic_tests!notifications_diagnostic_test_id_fkey(title)')
     .order('created_at', { ascending: false })
     .limit(30)
 
   const initialNotifications = (notifs ?? []).map((n: {
-    id: string; type: string; student_id: string; question_id: string; class_id: string;
+    id: string; type: string; student_id: string; question_id: string | null; class_id: string;
+    diagnostic_test_id: string | null; diagnostic_attempt_id: string | null;
     created_at: string; read: boolean; message: string | null;
     profiles: { full_name: string }[] | { full_name: string } | null;
     questions: { title: string }[] | { title: string } | null;
+    diagnostic_tests: { title: string }[] | { title: string } | null;
   }) => ({
     id: n.id,
     type: n.type,
     student_id: n.student_id,
     question_id: n.question_id,
     class_id: n.class_id,
+    diagnostic_test_id: n.diagnostic_test_id,
+    diagnostic_attempt_id: n.diagnostic_attempt_id,
     created_at: n.created_at,
     read: n.read,
     message: n.message,
     student_name: Array.isArray(n.profiles) ? n.profiles[0]?.full_name : n.profiles?.full_name,
     question_title: Array.isArray(n.questions) ? n.questions[0]?.title : n.questions?.title,
+    test_title: Array.isArray(n.diagnostic_tests) ? n.diagnostic_tests[0]?.title : n.diagnostic_tests?.title,
   }))
 
   return (

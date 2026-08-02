@@ -31,9 +31,15 @@ export default async function TeacherDashboard() {
     // flag below — needs both read and unread rows for recency, plus the
     // read flag specifically to know who still needs a response.
     classIds.length > 0
-      ? supabase.from('notifications').select('id, type, student_id, question_id, class_id, created_at, read').in('class_id', classIds).order('created_at', { ascending: false }).limit(500)
+      ? supabase.from('notifications').select('id, type, student_id, question_id, class_id, diagnostic_test_id, created_at, read').in('class_id', classIds).order('created_at', { ascending: false }).limit(500)
       : Promise.resolve({ data: [] }),
   ])
+
+  const diagTestIds = [...new Set((allNotifs ?? []).map(n => n.diagnostic_test_id).filter((id): id is string => !!id))]
+  const { data: diagTests } = diagTestIds.length > 0
+    ? await supabase.from('diagnostic_tests').select('id, title').in('id', diagTestIds)
+    : { data: [] as { id: string; title: string }[] }
+  const diagTestTitleById = new Map((diagTests ?? []).map(t => [t.id, t.title]))
 
   const enrolledStudentIds = [...new Set((classEnrollments ?? []).map(e => e.student_id))]
   const { data: studentProfiles } = enrolledStudentIds.length > 0
@@ -84,14 +90,14 @@ export default async function TeacherDashboard() {
   // Per-class stats, scoped correctly to each class's own questions.
   interface StudentActivity {
     studentId: string
-    type: 'help' | 'submitted' | 'comment' | 'writing'
+    type: 'help' | 'submitted' | 'comment' | 'writing' | 'test_completed'
     questionTitle: string
     topicTitle: string
     at: string
   }
 
-  const ACTIVITY_ICON: Record<StudentActivity['type'], string> = { help: '🙋', submitted: '✅', comment: '💬', writing: '✍️' }
-  const ACTIVITY_LABEL: Record<StudentActivity['type'], string> = { help: 'needs help', submitted: 'finished', comment: 'commented', writing: 'writing' }
+  const ACTIVITY_ICON: Record<StudentActivity['type'], string> = { help: '🙋', submitted: '✅', comment: '💬', writing: '✍️', test_completed: '🧪' }
+  const ACTIVITY_LABEL: Record<StudentActivity['type'], string> = { help: 'needs help', submitted: 'finished', comment: 'commented', writing: 'writing', test_completed: 'completed a test' }
 
   const classStats = (classes ?? []).map(cls => {
     const classUnits = (units ?? []).filter(u => u.class_id === cls.id)
@@ -116,6 +122,14 @@ export default async function TeacherDashboard() {
       if (!existing || a.at > existing.at) latestByStudent.set(a.studentId, a)
     }
     for (const n of classNotifs) {
+      if (n.type === 'test_completed') {
+        consider({
+          studentId: n.student_id, type: 'test_completed',
+          questionTitle: diagTestTitleById.get(n.diagnostic_test_id ?? '') ?? 'a test', topicTitle: '',
+          at: n.created_at,
+        })
+        continue
+      }
       if (n.type !== 'help' && n.type !== 'submitted' && n.type !== 'comment') continue
       const meta = questionMeta.get(n.question_id)
       consider({
