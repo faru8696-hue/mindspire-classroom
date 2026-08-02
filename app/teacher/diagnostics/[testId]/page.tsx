@@ -6,6 +6,7 @@ import TestTitleEditor from '@/components/diagnostic/TestTitleEditor'
 import StudentResultsTable, { type StudentResultRow } from '@/components/diagnostic/StudentResultsTable'
 import PublishToClass from '@/components/diagnostic/PublishToClass'
 import DeleteTestButton from '@/components/diagnostic/DeleteTestButton'
+import ActiveToggle from '@/components/diagnostic/ActiveToggle'
 
 export default async function DiagnosticTestDashboardPage({
   params,
@@ -92,7 +93,8 @@ export default async function DiagnosticTestDashboardPage({
       <Link href="/teacher/diagnostics" className="text-blue-600 text-sm hover:underline block mb-2">← All Tests</Link>
       <div className="flex items-center justify-between mb-1">
         <TestTitleEditor testId={testId} title={test.title} description={test.description} />
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
+          <ActiveToggle testId={testId} isActive={test.is_active} />
           <Link href={`/teacher/diagnostics/${testId}/topics`} className="text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg font-semibold transition">Manage Topics</Link>
           <Link href={`/teacher/diagnostics/${testId}/questions`} className="text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg font-semibold transition">Manage Questions</Link>
           <DeleteTestButton testId={testId} title={test.title} />
