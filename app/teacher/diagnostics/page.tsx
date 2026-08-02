@@ -4,10 +4,18 @@ import Link from 'next/link'
 export default async function DiagnosticsListPage() {
   const admin = await createAdminClient()
 
-  const { data: tests } = await admin
-    .from('diagnostic_tests')
-    .select('id, slug, title, is_active, created_at')
-    .order('created_at', { ascending: false })
+  const [{ data: tests }, { data: classes }] = await Promise.all([
+    admin.from('diagnostic_tests').select('id, slug, title, is_active, created_at, class_id').order('created_at', { ascending: false }),
+    admin.from('classes').select('id, title'),
+  ])
+
+  // Tests are grouped by the class they're published to (set via "Publish
+  // to class" on the test dashboard) — AP Chemistry and Honors Chemistry
+  // each get their own section, and anything not tied to either of those
+  // two (unpublished, or tied to some other class like a demo class) falls
+  // into "Free Tests" alongside the genuinely public, unassigned ones.
+  const apChemClass = (classes ?? []).find(c => c.title.toLowerCase().includes('ap chem'))
+  const honorsChemClass = (classes ?? []).find(c => c.title.toLowerCase().includes('honors chem'))
 
   const testIds = (tests ?? []).map(t => t.id)
   const [{ data: questionCounts }, { data: attemptCounts }] = await Promise.all([
@@ -23,22 +31,16 @@ export default async function DiagnosticsListPage() {
   const attemptCountByTest = new Map<string, number>()
   for (const a of attemptCounts ?? []) attemptCountByTest.set(a.diagnostic_test_id, (attemptCountByTest.get(a.diagnostic_test_id) ?? 0) + 1)
 
-  return (
-    <div className="max-w-3xl mx-auto">
-      <div className="flex items-center justify-between mb-1">
-        <h1 className="text-2xl font-bold text-purple-900">Tests</h1>
-        <Link href="/teacher/diagnostics/new" className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-xl transition">
-          + New Test
-        </Link>
-      </div>
-      <p className="text-sm text-gray-500 mb-6">Public, free tests — no login or enrollment required to take them.</p>
+  type Test = NonNullable<typeof tests>[number]
+  const apChemTests = (tests ?? []).filter(t => apChemClass && t.class_id === apChemClass.id)
+  const honorsChemTests = (tests ?? []).filter(t => honorsChemClass && t.class_id === honorsChemClass.id)
+  const freeTests = (tests ?? []).filter(t => !apChemTests.includes(t) && !honorsChemTests.includes(t))
 
-      {!tests?.length ? (
-        <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
-          <div className="text-4xl mb-3">🧪</div>
-          <p className="text-gray-500">No tests yet.</p>
-        </div>
-      ) : (
+  function TestSection({ title, icon, tests }: { title: string; icon: string; tests: Test[] }) {
+    if (tests.length === 0) return null
+    return (
+      <div className="mb-6">
+        <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wide mb-2">{icon} {title}</h2>
         <div className="space-y-2">
           {tests.map(t => (
             <Link
@@ -60,6 +62,31 @@ export default async function DiagnosticsListPage() {
             </Link>
           ))}
         </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="max-w-3xl mx-auto">
+      <div className="flex items-center justify-between mb-1">
+        <h1 className="text-2xl font-bold text-purple-900">Tests</h1>
+        <Link href="/teacher/diagnostics/new" className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-xl transition">
+          + New Test
+        </Link>
+      </div>
+      <p className="text-sm text-gray-500 mb-6">Public, free tests — no login or enrollment required to take them.</p>
+
+      {!tests?.length ? (
+        <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
+          <div className="text-4xl mb-3">🧪</div>
+          <p className="text-gray-500">No tests yet.</p>
+        </div>
+      ) : (
+        <>
+          <TestSection title="AP Chem" icon="🧪" tests={apChemTests} />
+          <TestSection title="Honors Chem" icon="⚗️" tests={honorsChemTests} />
+          <TestSection title="Free Tests" icon="🌐" tests={freeTests} />
+        </>
       )}
     </div>
   )
