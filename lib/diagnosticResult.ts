@@ -72,16 +72,28 @@ export async function getDiagnosticResult(attemptId: string): Promise<Diagnostic
     : { data: [] as { id: string; title: string; prep_advice: string | null }[] }
   const topicById = new Map((topicRows ?? []).map(t => [t.id, t]))
 
-  const mcqTopicRows = (answers ?? [])
-    .filter(a => a.is_correct !== null)
+  // Points-based per-topic rows so a topic's mastery bar reflects BOTH its
+  // MCQ questions (1 point each) and any graded FRQ questions (their
+  // authored points), not MCQ alone — an FRQ-heavy topic used to show no
+  // score at all here even once fully graded. Ungraded FRQ rows are
+  // skipped (aggregateTopicScores drops possible <= 0), same rule as the
+  // overall FRQ score above.
+  const scoreTopicRows = (answers ?? [])
     .map(a => {
-      const topicId = questionById.get(a.question_id)?.topic_id
-      if (!topicId) return null
-      return { topicId, topicTitle: topicById.get(topicId)?.title ?? 'Unknown', isCorrect: a.is_correct as boolean }
+      const q = questionById.get(a.question_id)
+      if (!q) return null
+      const topicId = q.topic_id
+      const topicTitle = topicById.get(topicId)?.title ?? 'Unknown'
+      if (q.question_type === 'frq') {
+        if (a.points_earned === null || q.points === null) return null
+        return { topicId, topicTitle, earned: a.points_earned, possible: q.points }
+      }
+      if (a.is_correct === null) return null
+      return { topicId, topicTitle, earned: a.is_correct ? 1 : 0, possible: 1 }
     })
-    .filter((r): r is { topicId: string; topicTitle: string; isCorrect: boolean } => r !== null)
+    .filter((r): r is { topicId: string; topicTitle: string; earned: number; possible: number } => r !== null)
 
-  const topicScores = aggregateTopicScores(mcqTopicRows)
+  const topicScores = aggregateTopicScores(scoreTopicRows)
   const advice = topicScores
     .filter(t => t.tier !== 'mastered')
     .map(t => {

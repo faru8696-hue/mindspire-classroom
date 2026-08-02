@@ -27,15 +27,22 @@ export interface TopicScore {
 }
 
 // Rolls a flat list of per-question results up into per-topic scores,
-// sorted worst-first (lowest pct first).
+// sorted worst-first (lowest pct first). Points-based (not a pass/fail
+// count) so MCQ (earned 1|0 of 1 possible) and graded FRQ (earned/possible
+// points) can land in the same topic bucket — a topic with both question
+// types shows one combined mastery bar instead of the FRQ portion being
+// silently dropped. Rows with possible <= 0 (an ungraded FRQ) are skipped
+// entirely rather than counted as 0, matching computeTotalScore's rule that
+// ungraded work shouldn't drag a topic's score down before it's reviewed.
 export function aggregateTopicScores(
-  rows: { topicId: string; topicTitle: string; isCorrect: boolean }[]
+  rows: { topicId: string; topicTitle: string; earned: number; possible: number }[]
 ): TopicScore[] {
   const byTopic = new Map<string, { topicTitle: string; correct: number; total: number }>()
   for (const row of rows) {
+    if (row.possible <= 0) continue
     const existing = byTopic.get(row.topicId) ?? { topicTitle: row.topicTitle, correct: 0, total: 0 }
-    existing.total += 1
-    if (row.isCorrect) existing.correct += 1
+    existing.total += row.possible
+    existing.correct += row.earned
     byTopic.set(row.topicId, existing)
   }
   const scores: TopicScore[] = [...byTopic.entries()].map(([topicId, v]) => {
@@ -77,7 +84,7 @@ export function gradeDiagnosticAttempt(
   const answerByQuestion = new Map(answers.map(a => [a.questionId, a.selectedIndex]))
 
   const perQuestion: { questionId: string; questionType: 'mcq' | 'frq'; isCorrect: boolean | null }[] = []
-  const topicRows: { topicId: string; topicTitle: string; isCorrect: boolean }[] = []
+  const topicRows: { topicId: string; topicTitle: string; earned: number; possible: number }[] = []
   let correctCount = 0
   let totalCount = 0
 
@@ -91,7 +98,7 @@ export function gradeDiagnosticAttempt(
     if (isCorrect) correctCount += 1
     totalCount += 1
     perQuestion.push({ questionId: q.id, questionType: 'mcq', isCorrect })
-    topicRows.push({ topicId: q.topicId, topicTitle: q.topicTitle, isCorrect })
+    topicRows.push({ topicId: q.topicId, topicTitle: q.topicTitle, earned: isCorrect ? 1 : 0, possible: 1 })
   }
 
   const scorePct = totalCount > 0 ? Math.round((correctCount / totalCount) * 100) : 0

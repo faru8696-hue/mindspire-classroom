@@ -21,16 +21,36 @@ describe('tierFor', () => {
 describe('aggregateTopicScores', () => {
   it('groups by topic and sorts worst-first', () => {
     const scores = aggregateTopicScores([
-      { topicId: 'a', topicTitle: 'Topic A', isCorrect: true },
-      { topicId: 'a', topicTitle: 'Topic A', isCorrect: true },
-      { topicId: 'b', topicTitle: 'Topic B', isCorrect: false },
-      { topicId: 'b', topicTitle: 'Topic B', isCorrect: true },
+      { topicId: 'a', topicTitle: 'Topic A', earned: 1, possible: 1 },
+      { topicId: 'a', topicTitle: 'Topic A', earned: 1, possible: 1 },
+      { topicId: 'b', topicTitle: 'Topic B', earned: 0, possible: 1 },
+      { topicId: 'b', topicTitle: 'Topic B', earned: 1, possible: 1 },
     ])
     expect(scores).toHaveLength(2)
     expect(scores[0].topicId).toBe('b') // 50% — worse than a's 100%, so first
     expect(scores[0].pct).toBe(50)
     expect(scores[1].topicId).toBe('a')
     expect(scores[1].pct).toBe(100)
+  })
+
+  it('mixes MCQ (1pt) and graded FRQ (authored points) in the same topic', () => {
+    const scores = aggregateTopicScores([
+      { topicId: 'a', topicTitle: 'Topic A', earned: 1, possible: 1 }, // mcq correct
+      { topicId: 'a', topicTitle: 'Topic A', earned: 3, possible: 4 }, // graded frq
+    ])
+    expect(scores).toHaveLength(1)
+    expect(scores[0].correct).toBe(4)
+    expect(scores[0].total).toBe(5)
+    expect(scores[0].pct).toBe(80)
+  })
+
+  it('excludes ungraded rows (possible <= 0) rather than counting them as zero', () => {
+    const scores = aggregateTopicScores([
+      { topicId: 'a', topicTitle: 'Topic A', earned: 1, possible: 1 },
+      { topicId: 'a', topicTitle: 'Topic A', earned: 0, possible: 0 }, // ungraded frq
+    ])
+    expect(scores[0].total).toBe(1)
+    expect(scores[0].pct).toBe(100)
   })
 })
 

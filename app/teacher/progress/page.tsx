@@ -54,24 +54,36 @@ export default async function AllProgressPage() {
   // right next to their score, not just the overall percentage.
   const relevantAttemptIds = [...testAttemptIdByStudent.values()]
   const { data: attemptAnswers } = relevantAttemptIds.length > 0
-    ? await supabase.from('diagnostic_attempt_answers').select('attempt_id, question_id, is_correct').in('attempt_id', relevantAttemptIds)
-    : { data: [] as { attempt_id: string; question_id: string; is_correct: boolean }[] }
+    ? await supabase.from('diagnostic_attempt_answers').select('attempt_id, question_id, is_correct, points_earned').in('attempt_id', relevantAttemptIds)
+    : { data: [] as { attempt_id: string; question_id: string; is_correct: boolean | null; points_earned: number | null }[] }
   const answerQuestionIds = [...new Set((attemptAnswers ?? []).map(a => a.question_id))]
   const { data: diagQuestions } = answerQuestionIds.length > 0
-    ? await supabase.from('diagnostic_questions').select('id, topic_id').in('id', answerQuestionIds)
-    : { data: [] as { id: string; topic_id: string }[] }
-  const diagTopicIdByQuestion = new Map((diagQuestions ?? []).map(q => [q.id, q.topic_id]))
+    ? await supabase.from('diagnostic_questions').select('id, topic_id, question_type, points').in('id', answerQuestionIds)
+    : { data: [] as { id: string; topic_id: string; question_type: 'mcq' | 'frq'; points: number | null }[] }
+  const diagQuestionById = new Map((diagQuestions ?? []).map(q => [q.id, q]))
   const diagTopicIds = [...new Set((diagQuestions ?? []).map(q => q.topic_id))]
   const { data: diagTopics } = diagTopicIds.length > 0
     ? await supabase.from('diagnostic_topics').select('id, title').in('id', diagTopicIds)
     : { data: [] as { id: string; title: string }[] }
   const diagTopicTitleById = new Map((diagTopics ?? []).map(t => [t.id, t.title]))
-  const answersByAttempt = new Map<string, { topicId: string; topicTitle: string; isCorrect: boolean }[]>()
+  // Points-based rows (MCQ 1pt, graded FRQ its authored points) — same
+  // scheme as lib/diagnosticResult.ts, so an FRQ-heavy topic's score
+  // reflects graded FRQ work here too, not just MCQ.
+  const answersByAttempt = new Map<string, { topicId: string; topicTitle: string; earned: number; possible: number }[]>()
   for (const a of attemptAnswers ?? []) {
-    const topicId = diagTopicIdByQuestion.get(a.question_id)
-    if (!topicId) continue
+    const q = diagQuestionById.get(a.question_id)
+    if (!q) continue
+    const topicId = q.topic_id
+    const topicTitle = diagTopicTitleById.get(topicId) ?? 'Unknown'
+    let row: { topicId: string; topicTitle: string; earned: number; possible: number } | null = null
+    if (q.question_type === 'frq') {
+      if (a.points_earned !== null && q.points !== null) row = { topicId, topicTitle, earned: a.points_earned, possible: q.points }
+    } else if (a.is_correct !== null) {
+      row = { topicId, topicTitle, earned: a.is_correct ? 1 : 0, possible: 1 }
+    }
+    if (!row) continue
     if (!answersByAttempt.has(a.attempt_id)) answersByAttempt.set(a.attempt_id, [])
-    answersByAttempt.get(a.attempt_id)!.push({ topicId, topicTitle: diagTopicTitleById.get(topicId) ?? 'Unknown', isCorrect: a.is_correct })
+    answersByAttempt.get(a.attempt_id)!.push(row)
   }
   // key: `${studentId}:${testId}` → topic scores, worst-first
   const testTopicScoresByStudent = new Map<string, TopicScore[]>()

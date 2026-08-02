@@ -60,16 +60,23 @@ export default async function DiagnosticTestDashboardPage({
     : { data: [] as { id: string; title: string }[] }
   const topicTitleById = new Map((topics ?? []).map(t => [t.id, t.title]))
 
+  // Points-based, same as lib/diagnosticResult.ts's per-attempt breakdown —
+  // graded FRQ points count toward a topic's mastery %, not just MCQ.
+  // Ungraded FRQ rows are skipped (aggregateTopicScores drops possible <= 0).
   const classStruggleRows = (answers ?? [])
-    // FRQ answers carry is_correct: null (not auto-graded, nothing to
-    // aggregate) — only MCQ answers belong in a mastery-percentage panel.
-    .filter(a => a.is_correct !== null)
     .map(a => {
-      const topicId = questionById.get(a.question_id)?.topic_id
-      if (!topicId) return null
-      return { topicId, topicTitle: topicTitleById.get(topicId) ?? 'Unknown', isCorrect: a.is_correct as boolean }
+      const q = questionById.get(a.question_id)
+      if (!q) return null
+      const topicId = q.topic_id
+      const topicTitle = topicTitleById.get(topicId) ?? 'Unknown'
+      if (q.question_type === 'frq') {
+        if (a.points_earned === null || q.points === null) return null
+        return { topicId, topicTitle, earned: a.points_earned, possible: q.points }
+      }
+      if (a.is_correct === null) return null
+      return { topicId, topicTitle, earned: a.is_correct ? 1 : 0, possible: 1 }
     })
-    .filter((r): r is { topicId: string; topicTitle: string; isCorrect: boolean } => r !== null)
+    .filter((r): r is { topicId: string; topicTitle: string; earned: number; possible: number } => r !== null)
   const classStruggles = aggregateTopicScores(classStruggleRows).filter(t => t.tier !== 'mastered')
 
   // Per-attempt FRQ score, same shape/logic as lib/diagnosticResult.ts.

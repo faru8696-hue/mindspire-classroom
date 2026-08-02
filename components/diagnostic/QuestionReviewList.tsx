@@ -88,7 +88,11 @@ export default function QuestionReviewList({
   attemptId?: string
 }) {
   const router = useRouter()
-  const [open, setOpen] = useState(false)
+  // Open by default for the teacher (grading + rough work review is the
+  // point of this page for them); collapsed by default for the student, so
+  // a long test doesn't dump a wall of content before they even see their
+  // score.
+  const [open, setOpen] = useState(canGrade)
   const [annotatingId, setAnnotatingId] = useState<string | null>(null)
   if (questions.length === 0) return null
 
