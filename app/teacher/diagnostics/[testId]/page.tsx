@@ -5,6 +5,7 @@ import { aggregateTopicScores } from '@/lib/diagnosticGrading'
 import TestTitleEditor from '@/components/diagnostic/TestTitleEditor'
 import StudentResultsTable, { type StudentResultRow } from '@/components/diagnostic/StudentResultsTable'
 import PublishToClass from '@/components/diagnostic/PublishToClass'
+import DeleteTestButton from '@/components/diagnostic/DeleteTestButton'
 
 export default async function DiagnosticTestDashboardPage({
   params,
@@ -91,6 +92,7 @@ export default async function DiagnosticTestDashboardPage({
         <div className="flex gap-2">
           <Link href={`/teacher/diagnostics/${testId}/topics`} className="text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg font-semibold transition">Manage Topics</Link>
           <Link href={`/teacher/diagnostics/${testId}/questions`} className="text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg font-semibold transition">Manage Questions</Link>
+          <DeleteTestButton testId={testId} title={test.title} />
         </div>
       </div>
       <p className="text-sm text-gray-500 mb-4">
