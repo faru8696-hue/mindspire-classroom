@@ -72,11 +72,14 @@ export default function DiagnosticResultSummary({ result }: { result: Diagnostic
 
       <QuestionReviewList questions={result.questionReview} />
 
-      <div className="bg-white rounded-2xl shadow p-6">
-        <h3 className="text-lg font-bold text-gray-800 mb-4">Before You Start AP Chemistry</h3>
-        {result.advice.length === 0 ? (
-          <p className="text-green-700 font-medium">🎉 You&rsquo;re ready for AP Chemistry! No specific weak areas were identified.</p>
-        ) : (
+      {/* Only shown when there's real authored prep_advice to give — a
+          topic with no advice text just isn't rendered rather than
+          falling back to a generic "you're ready!" that would contradict
+          a low score whenever advice hasn't been written for this test's
+          topics yet. */}
+      {result.advice.length > 0 && (
+        <div className="bg-white rounded-2xl shadow p-6">
+          <h3 className="text-lg font-bold text-gray-800 mb-4">Before You Start AP Chemistry</h3>
           <div className="space-y-3">
             {result.advice.map((a, i) => (
               <div key={i} className="bg-amber-50 border border-amber-100 rounded-xl p-3">
@@ -85,8 +88,8 @@ export default function DiagnosticResultSummary({ result }: { result: Diagnostic
               </div>
             ))}
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   )
 }

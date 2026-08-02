@@ -87,22 +87,20 @@ export async function downloadDiagnosticPdf(data: DiagnosticPdfData): Promise<vo
     if (y > 270) { doc.addPage(); y = 20 }
   }
 
-  y += 5
-  doc.setFontSize(12)
-  doc.setFont('helvetica', 'bold')
-  doc.setTextColor(0, 0, 0)
-  doc.text('Before You Start AP Chemistry', lm, y)
-  y += 6
-  doc.line(lm, y, lm + pw, y)
-  y += 6
+  // Only printed when there's real authored prep_advice — omitted entirely
+  // rather than falling back to a generic "you're ready!" that would
+  // contradict a low score whenever advice hasn't been written for this
+  // test's topics yet.
+  if (data.advice.length > 0) {
+    y += 5
+    doc.setFontSize(12)
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(0, 0, 0)
+    doc.text('Before You Start AP Chemistry', lm, y)
+    y += 6
+    doc.line(lm, y, lm + pw, y)
+    y += 6
 
-  if (data.advice.length === 0) {
-    doc.setFontSize(10)
-    doc.setFont('helvetica', 'normal')
-    doc.setTextColor(16, 185, 129)
-    doc.text("You're ready for AP Chemistry! No specific weak areas were identified.", lm, y)
-    y += 8
-  } else {
     for (const a of data.advice) {
       doc.setFontSize(9)
       doc.setFont('helvetica', 'bold')
