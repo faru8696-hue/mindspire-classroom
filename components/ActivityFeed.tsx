@@ -58,6 +58,11 @@ export default function ActivityFeed({ events, showStudentName = true }: { event
                   </span>
                 )}
               </p>
+              {(e.unitTitle || e.topicTitle) && (
+                <p className="text-xs text-gray-400 truncate mt-0.5">
+                  {e.unitTitle}{e.unitTitle && e.topicTitle ? ' · ' : ''}{e.topicTitle}
+                </p>
+              )}
               {e.message && <p className="text-xs text-gray-500 italic truncate mt-0.5">&ldquo;{e.message}&rdquo;</p>}
               <p className="text-xs text-gray-400 mt-0.5">{timeAgo(e.createdAt)}</p>
             </div>

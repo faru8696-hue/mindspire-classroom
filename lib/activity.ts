@@ -15,6 +15,8 @@ export interface ActivityEvent {
   studentName: string
   questionId: string | null
   questionTitle: string | null
+  topicTitle: string | null
+  unitTitle: string | null
   message: string | null
   grade: string | null
   createdAt: string
@@ -48,10 +50,37 @@ export async function getRecentActivity({ studentId, limit = 200 }: { studentId?
 
   const [{ data: profiles }, { data: questions }] = await Promise.all([
     allStudentIds.size > 0 ? admin.from('profiles').select('id, full_name').in('id', [...allStudentIds]) : Promise.resolve({ data: [] as { id: string; full_name: string }[] }),
-    allQuestionIds.size > 0 ? admin.from('questions').select('id, title').in('id', [...allQuestionIds]) : Promise.resolve({ data: [] as { id: string; title: string }[] }),
+    allQuestionIds.size > 0 ? admin.from('questions').select('id, title, topic_id').in('id', [...allQuestionIds]) : Promise.resolve({ data: [] as { id: string; title: string; topic_id: string }[] }),
   ])
   const nameById = new Map((profiles ?? []).map(p => [p.id, p.full_name]))
   const titleById = new Map((questions ?? []).map(q => [q.id, q.title]))
+  const topicIdByQuestion = new Map((questions ?? []).map(q => [q.id, q.topic_id]))
+
+  // Topic/unit context per question — so an activity row can show exactly
+  // which subtopic (e.g. "3.2 Properties of Solids") a question belongs to
+  // without the teacher having to click through.
+  const allTopicIds = [...new Set((questions ?? []).map(q => q.topic_id))]
+  const { data: topicRows } = allTopicIds.length > 0
+    ? await admin.from('topics').select('id, title, unit_id').in('id', allTopicIds)
+    : { data: [] as { id: string; title: string; unit_id: string }[] }
+  const topicById = new Map((topicRows ?? []).map(t => [t.id, t]))
+
+  const allUnitIds = [...new Set((topicRows ?? []).map(t => t.unit_id))]
+  const { data: unitRows } = allUnitIds.length > 0
+    ? await admin.from('units').select('id, title').in('id', allUnitIds)
+    : { data: [] as { id: string; title: string }[] }
+  const unitTitleById = new Map((unitRows ?? []).map(u => [u.id, u.title]))
+
+  const topicTitleForQuestion = (questionId: string | null): string | null => {
+    if (!questionId) return null
+    const topic = topicById.get(topicIdByQuestion.get(questionId) ?? '')
+    return topic?.title ?? null
+  }
+  const unitTitleForQuestion = (questionId: string | null): string | null => {
+    if (!questionId) return null
+    const topic = topicById.get(topicIdByQuestion.get(questionId) ?? '')
+    return topic ? (unitTitleById.get(topic.unit_id) ?? null) : null
+  }
 
   // For every "done" ping, look up the CURRENT grade (feedback is
   // upserted per submission, so this is always the latest, unlike a
@@ -84,6 +113,8 @@ export async function getRecentActivity({ studentId, limit = 200 }: { studentId?
         studentName: nameById.get(n.student_id) ?? 'Unknown',
         questionId: n.question_id,
         questionTitle: n.question_id ? (titleById.get(n.question_id) ?? null) : null,
+        topicTitle: topicTitleForQuestion(n.question_id),
+        unitTitle: unitTitleForQuestion(n.question_id),
         message: n.message,
         grade: type === 'submitted' && n.question_id ? (gradeByStudentQuestion.get(`${n.student_id}:${n.question_id}`) ?? 'ungraded') : null,
         createdAt: n.created_at,
@@ -96,6 +127,8 @@ export async function getRecentActivity({ studentId, limit = 200 }: { studentId?
       studentName: nameById.get(c.student_id) ?? 'Unknown',
       questionId: c.question_id,
       questionTitle: titleById.get(c.question_id) ?? null,
+      topicTitle: topicTitleForQuestion(c.question_id),
+      unitTitle: unitTitleForQuestion(c.question_id),
       message: c.message,
       grade: null,
       createdAt: c.created_at,
