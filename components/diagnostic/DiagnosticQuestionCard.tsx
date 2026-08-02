@@ -15,6 +15,7 @@ export interface DiagnosticQuestionCardData {
   source: string | null
   explanation: string | null
   answer_key: string | null
+  points: number | null
   is_active: boolean
 }
 
@@ -39,6 +40,7 @@ export default function DiagnosticQuestionCard({
   const [source, setSource] = useState(question.source ?? '')
   const [explanation, setExplanation] = useState(question.explanation ?? '')
   const [answerKey, setAnswerKey] = useState(question.answer_key ?? '')
+  const [points, setPoints] = useState(question.points != null ? String(question.points) : '4')
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const [userId, setUserId] = useState('')
@@ -81,6 +83,7 @@ export default function DiagnosticQuestionCard({
     setSource(question.source ?? '')
     setExplanation(question.explanation ?? '')
     setAnswerKey(question.answer_key ?? '')
+    setPoints(question.points != null ? String(question.points) : '4')
     setError('')
     setEditing(false)
   }
@@ -91,6 +94,8 @@ export default function DiagnosticQuestionCard({
     if (questionType === 'mcq') {
       if (trimmedOptions.length < 2) { setError('At least 2 non-empty options are required.'); return }
       if (correctIndex >= trimmedOptions.length) { setError('The correct answer must be one of the remaining options.'); return }
+    } else if (!points.trim() || Number(points) <= 0) {
+      setError('Enter the total points this question is worth.'); return
     }
     setSaving(true)
     try {
@@ -104,6 +109,7 @@ export default function DiagnosticQuestionCard({
           imageUrl: imageUrl || undefined, source: source || undefined,
           explanation: explanation.trim() || undefined,
           answerKey: answerKey.trim() || undefined,
+          points: questionType === 'frq' ? Number(points) : undefined,
         }),
       })
       const data = await res.json()
@@ -197,12 +203,19 @@ export default function DiagnosticQuestionCard({
             ))}
           </div>
         ) : (
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Answer key (shown during review)</label>
-            <textarea value={answerKey} onChange={e => setAnswerKey(e.target.value)} rows={4}
-              placeholder="Model answer / worked solution."
-              className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-          </div>
+          <>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Total points</label>
+              <input type="number" min={0.5} step={0.5} value={points} onChange={e => setPoints(e.target.value)}
+                className="w-24 border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Answer key (shown during review)</label>
+              <textarea value={answerKey} onChange={e => setAnswerKey(e.target.value)} rows={4}
+                placeholder="Model answer / worked solution."
+                className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+          </>
         )}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Source (optional)</label>
@@ -254,7 +267,7 @@ export default function DiagnosticQuestionCard({
       <p className="text-sm text-gray-800 mb-2">{question.content}</p>
       {question.question_type === 'frq' ? (
         <>
-          <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">📝 Free response</span>
+          <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">📝 Free response · {question.points ?? '?'} pts</span>
           {question.answer_key && (
             <p className="text-xs text-gray-500 mt-2 whitespace-pre-wrap">📖 {question.answer_key}</p>
           )}

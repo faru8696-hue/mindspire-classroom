@@ -16,15 +16,16 @@ export interface QuestionReviewItem {
   explanation: string | null
   answerKey: string | null
   canvasData: string | null
-  grade: 'correct' | 'partial' | 'incorrect' | null
+  points: number | null
+  pointsEarned: number | null
 }
 
 export interface FrqScore {
   totalCount: number
   gradedCount: number
-  correctCount: number
-  partialCount: number
-  incorrectCount: number
+  totalPoints: number
+  gradedPoints: number
+  earnedPoints: number
 }
 
 export interface DiagnosticResultData {
@@ -54,7 +55,7 @@ export default function DiagnosticResultSummary({
   attemptId?: string
 }) {
   const frq = result.frqScore
-  const frqPct = frq && frq.gradedCount > 0 ? Math.round(((frq.correctCount + frq.partialCount * 0.5) / frq.gradedCount) * 100) : null
+  const frqPct = frq && frq.gradedPoints > 0 ? Math.round((frq.earnedPoints / frq.gradedPoints) * 100) : null
 
   return (
     <div className="max-w-2xl mx-auto space-y-4">
@@ -69,20 +70,20 @@ export default function DiagnosticResultSummary({
           />
           {frq && (
             <div className="inline-block bg-purple-50 rounded-2xl px-8 py-6">
-              {frq.gradedCount < frq.totalCount ? (
+              {frq.gradedCount === 0 ? (
                 <>
-                  <div className="text-3xl font-black text-purple-500">{frq.gradedCount}/{frq.totalCount}</div>
+                  <div className="text-3xl font-black text-purple-400">{frq.totalPoints} pts</div>
                   <div className="text-sm font-bold text-purple-600 mt-1">Free Response</div>
                   <div className="text-xs text-gray-500 mt-1">
-                    {teacherView ? 'reviewed — grade the rest below' : 'awaiting teacher review'}
+                    {teacherView ? 'not graded yet — enter scores below' : 'awaiting teacher review'}
                   </div>
                 </>
               ) : (
                 <>
-                  <div className="text-3xl font-black text-purple-600">{frqPct}%</div>
-                  <div className="text-sm font-bold text-purple-600 mt-1">Free Response</div>
+                  <div className="text-3xl font-black text-purple-600">{frq.earnedPoints}/{frq.gradedCount === frq.totalCount ? frq.totalPoints : `${frq.gradedPoints}`} pts</div>
+                  <div className="text-sm font-bold text-purple-600 mt-1">Free Response{frqPct !== null ? ` — ${frqPct}%` : ''}</div>
                   <div className="text-xs text-gray-500 mt-1">
-                    {frq.correctCount} correct{frq.partialCount > 0 ? `, ${frq.partialCount} partial` : ''}{frq.incorrectCount > 0 ? `, ${frq.incorrectCount} incorrect` : ''}
+                    {frq.gradedCount < frq.totalCount ? `${frq.gradedCount}/${frq.totalCount} graded so far` : 'fully graded'}
                   </div>
                 </>
               )}

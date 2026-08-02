@@ -6,7 +6,7 @@ import type { DiagnosticResultData } from '@/components/diagnostic/DiagnosticRes
 
 function resultEmailHtml(result: DiagnosticResultData, greetingName: string, resultsUrl: string): string {
   const frq = result.frqScore
-  const frqPct = frq && frq.gradedCount > 0 ? Math.round(((frq.correctCount + frq.partialCount * 0.5) / frq.gradedCount) * 100) : null
+  const frqPct = frq && frq.gradedPoints > 0 ? Math.round((frq.earnedPoints / frq.gradedPoints) * 100) : null
 
   const topicRows = result.topicScores.map(t => `
     <tr>
@@ -29,8 +29,8 @@ function resultEmailHtml(result: DiagnosticResultData, greetingName: string, res
           ${frq ? `
           <td style="width:12px;"></td>
           <td style="padding:12px; background:#faf5ff; border-radius:8px; text-align:center;">
-            <div style="font-size:28px; font-weight:800; color:#7e22ce;">${frqPct !== null ? frqPct + '%' : `${frq.gradedCount}/${frq.totalCount}`}</div>
-            <div style="font-size:12px; color:#6b7280;">Free Response${frq.gradedCount < frq.totalCount ? ' — reviewed' : ''}</div>
+            <div style="font-size:28px; font-weight:800; color:#7e22ce;">${frq.gradedCount === 0 ? `${frq.totalPoints} pts` : `${frq.earnedPoints}/${frq.gradedCount === frq.totalCount ? frq.totalPoints : frq.gradedPoints} pts`}</div>
+            <div style="font-size:12px; color:#6b7280;">Free Response${frqPct !== null ? ` — ${frqPct}%` : ''}${frq.gradedCount < frq.totalCount ? ` (${frq.gradedCount}/${frq.totalCount} graded)` : ''}</div>
           </td>` : ''}
         </tr>
       </table>

@@ -4,18 +4,80 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import type { QuestionReviewItem } from './DiagnosticResultSummary'
 
-const GRADE_OPTIONS: { value: 'correct' | 'partial' | 'incorrect'; label: string; cls: string }[] = [
-  { value: 'correct', label: '✓ Correct', cls: 'bg-green-600 text-white' },
-  { value: 'partial', label: '~ Partial', cls: 'bg-amber-500 text-white' },
-  { value: 'incorrect', label: '✗ Incorrect', cls: 'bg-red-500 text-white' },
-]
+function frqBadge(points: number | null, pointsEarned: number | null): { label: string; cls: string } {
+  if (pointsEarned === null) return { label: '📝 Ungraded', cls: 'bg-purple-100 text-purple-700' }
+  if (points !== null && pointsEarned >= points) return { label: `✓ ${pointsEarned}/${points} pts`, cls: 'bg-green-100 text-green-700' }
+  if (pointsEarned <= 0) return { label: `${pointsEarned}/${points ?? '?'} pts`, cls: 'bg-red-100 text-red-600' }
+  return { label: `${pointsEarned}/${points ?? '?'} pts`, cls: 'bg-amber-100 text-amber-700' }
+}
+
+// Points-entry control for one FRQ answer — local draft state so typing
+// doesn't round-trip to the server on every keystroke; only Save commits it
+// and refreshes the page's frq score/badge.
+function FrqScoreInput({
+  attemptId, questionId, points, pointsEarned, onSaved,
+}: {
+  attemptId: string
+  questionId: string
+  points: number | null
+  pointsEarned: number | null
+  onSaved: () => void
+}) {
+  const [value, setValue] = useState(pointsEarned !== null ? String(pointsEarned) : '')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  async function save() {
+    setError('')
+    const trimmed = value.trim()
+    const num = trimmed === '' ? null : Number(trimmed)
+    if (num !== null && (Number.isNaN(num) || num < 0 || (points !== null && num > points))) {
+      setError(`Enter 0–${points ?? 'any'}.`)
+      return
+    }
+    setSaving(true)
+    try {
+      const res = await fetch('/api/diagnostic/admin/grade-frq-answer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ attemptId, questionId, pointsEarned: num }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setError(data.error || 'Something went wrong.'); setSaving(false); return }
+      onSaved()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-2 mt-3 flex-wrap">
+      <span className="text-xs font-semibold text-gray-500">Score:</span>
+      <input
+        type="number" min={0} max={points ?? undefined} step={0.5}
+        value={value} onChange={e => setValue(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter') save() }}
+        className="w-16 border border-gray-300 rounded-lg px-2 py-1 text-sm text-center focus:outline-none focus:ring-2 focus:ring-purple-400"
+      />
+      <span className="text-xs text-gray-400">/ {points ?? '?'} pts</span>
+      <button
+        onClick={save}
+        disabled={saving}
+        className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white disabled:opacity-50"
+      >
+        {saving ? 'Saving…' : 'Save'}
+      </button>
+      {error && <span className="text-xs text-red-600">{error}</span>}
+    </div>
+  )
+}
 
 // Collapsed by default — a 90-question attempt would otherwise dump a huge
 // wall of content onto the results page before the student even sees their
 // score. Wrong answers are sorted first since that's what's actually useful
 // to review; correct ones are still included so the list matches "all
 // questions", not just a filtered subset. `canGrade` (teacher view only)
-// turns on the FRQ grading buttons — students see the same grade, if set,
+// turns on the FRQ points input — students see the same score, if entered,
 // as a read-only badge.
 export default function QuestionReviewList({
   questions, canGrade = false, attemptId,
@@ -26,36 +88,20 @@ export default function QuestionReviewList({
 }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
-  const [saving, setSaving] = useState<string | null>(null)
   if (questions.length === 0) return null
-
-  async function setGrade(questionId: string, grade: 'correct' | 'partial' | 'incorrect') {
-    if (!attemptId) return
-    setSaving(questionId)
-    try {
-      const res = await fetch('/api/diagnostic/admin/grade-frq-answer', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ attemptId, questionId, grade }),
-      })
-      if (res.ok) router.refresh()
-    } finally {
-      setSaving(null)
-    }
-  }
 
   // FRQ items have isCorrect: null (nothing to grade) — sort ungraded ones
   // first in teacher view (most actionable), otherwise after the MCQ ones.
   const sorted = [...questions].sort((a, b) => {
     if (canGrade) {
-      const aUngraded = a.questionType === 'frq' && a.grade === null
-      const bUngraded = b.questionType === 'frq' && b.grade === null
+      const aUngraded = a.questionType === 'frq' && a.pointsEarned === null
+      const bUngraded = b.questionType === 'frq' && b.pointsEarned === null
       if (aUngraded !== bUngraded) return aUngraded ? -1 : 1
     }
     return Number(a.isCorrect ?? 2) - Number(b.isCorrect ?? 2)
   })
   const wrongCount = questions.filter(q => q.questionType === 'mcq' && !q.isCorrect).length
-  const ungradedFrqCount = questions.filter(q => q.questionType === 'frq' && q.grade === null).length
+  const ungradedFrqCount = questions.filter(q => q.questionType === 'frq' && q.pointsEarned === null).length
 
   return (
     <div className="bg-white rounded-2xl shadow p-6">
@@ -73,87 +119,78 @@ export default function QuestionReviewList({
 
       {open && (
         <div className="mt-4 space-y-4">
-          {sorted.map(q => (
-            <div
-              key={q.questionId}
-              className={`rounded-xl border p-4 ${
-                q.questionType === 'frq'
-                  ? (q.grade === 'correct' ? 'border-green-100 bg-green-50/30' : q.grade === 'incorrect' ? 'border-red-100 bg-red-50/30' : 'border-purple-100 bg-purple-50/30')
-                  : q.isCorrect ? 'border-green-100 bg-green-50/30' : 'border-red-100 bg-red-50/30'
-              }`}
-            >
-              <div className="flex items-start gap-2 mb-2">
-                <span className={`text-xs font-bold px-2 py-0.5 rounded-full flex-shrink-0 ${
+          {sorted.map(q => {
+            const badge = q.questionType === 'frq' ? frqBadge(q.points, q.pointsEarned) : null
+            return (
+              <div
+                key={q.questionId}
+                className={`rounded-xl border p-4 ${
                   q.questionType === 'frq'
-                    ? (GRADE_OPTIONS.find(g => g.value === q.grade)?.cls ?? 'bg-purple-100 text-purple-700')
-                    : q.isCorrect ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'
-                }`}>
-                  {q.questionType === 'frq'
-                    ? (GRADE_OPTIONS.find(g => g.value === q.grade)?.label ?? '📝 Ungraded')
-                    : q.isCorrect ? '✓ Correct' : '✗ Incorrect'}
-                </span>
-                <p className="text-sm text-gray-800 whitespace-pre-wrap">{q.content}</p>
-              </div>
-              {q.imageUrl && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={q.imageUrl} alt="" className="max-h-64 rounded-lg border border-gray-200 mb-2 object-contain bg-white" />
-              )}
-              {q.questionType === 'frq' ? (
-                <>
-                  {q.canvasData ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={q.canvasData} alt="Student's work" className="w-full rounded-lg border border-gray-200 mb-2 bg-white" />
-                  ) : (
-                    <p className="text-sm text-gray-400 italic mb-2">No work submitted.</p>
-                  )}
-                  {q.answerKey && (
-                    <p className="text-sm text-gray-700 bg-white border border-gray-200 rounded-lg p-2 mt-2 whitespace-pre-wrap">📖 {q.answerKey}</p>
-                  )}
-                  {canGrade && (
-                    <div className="flex items-center gap-2 mt-3">
-                      {GRADE_OPTIONS.map(g => (
-                        <button
-                          key={g.value}
-                          onClick={() => setGrade(q.questionId, g.value)}
-                          disabled={saving === q.questionId}
-                          className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition disabled:opacity-50 ${
-                            q.grade === g.value ? g.cls : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    ? (q.pointsEarned === null ? 'border-purple-100 bg-purple-50/30' : q.pointsEarned >= (q.points ?? 0) ? 'border-green-100 bg-green-50/30' : q.pointsEarned <= 0 ? 'border-red-100 bg-red-50/30' : 'border-amber-100 bg-amber-50/30')
+                    : q.isCorrect ? 'border-green-100 bg-green-50/30' : 'border-red-100 bg-red-50/30'
+                }`}
+              >
+                <div className="flex items-start gap-2 mb-2">
+                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full flex-shrink-0 ${
+                    badge ? badge.cls : q.isCorrect ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'
+                  }`}>
+                    {badge ? badge.label : q.isCorrect ? '✓ Correct' : '✗ Incorrect'}
+                  </span>
+                  <p className="text-sm text-gray-800 whitespace-pre-wrap">{q.content}</p>
+                </div>
+                {q.imageUrl && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={q.imageUrl} alt="" className="max-h-64 rounded-lg border border-gray-200 mb-2 object-contain bg-white" />
+                )}
+                {q.questionType === 'frq' ? (
+                  <>
+                    {q.canvasData ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={q.canvasData} alt="Student's work" className="w-full rounded-lg border border-gray-200 mb-2 bg-white" />
+                    ) : (
+                      <p className="text-sm text-gray-400 italic mb-2">No work submitted.</p>
+                    )}
+                    {q.answerKey && (
+                      <p className="text-sm text-gray-700 bg-white border border-gray-200 rounded-lg p-2 mt-2 whitespace-pre-wrap">📖 {q.answerKey}</p>
+                    )}
+                    {canGrade && attemptId && (
+                      <FrqScoreInput
+                        attemptId={attemptId}
+                        questionId={q.questionId}
+                        points={q.points}
+                        pointsEarned={q.pointsEarned}
+                        onSaved={() => router.refresh()}
+                      />
+                    )}
+                  </>
+                ) : (
+                  <div className="space-y-1 mb-2">
+                    {(q.options ?? []).map((opt, idx) => {
+                      const isCorrectOpt = idx === q.correctIndex
+                      const isSelectedOpt = idx === q.selectedIndex
+                      return (
+                        <div
+                          key={idx}
+                          className={`text-sm px-2 py-1 rounded flex items-center gap-1.5 ${
+                            isCorrectOpt ? 'bg-green-100 text-green-800 font-semibold' :
+                            isSelectedOpt ? 'bg-red-100 text-red-700 font-semibold' :
+                                            'text-gray-600'
                           }`}
                         >
-                          {g.label}
-                        </button>
-                      ))}
-                      {saving === q.questionId && <span className="text-xs text-gray-400">Saving…</span>}
-                    </div>
-                  )}
-                </>
-              ) : (
-                <div className="space-y-1 mb-2">
-                  {(q.options ?? []).map((opt, idx) => {
-                    const isCorrectOpt = idx === q.correctIndex
-                    const isSelectedOpt = idx === q.selectedIndex
-                    return (
-                      <div
-                        key={idx}
-                        className={`text-sm px-2 py-1 rounded flex items-center gap-1.5 ${
-                          isCorrectOpt ? 'bg-green-100 text-green-800 font-semibold' :
-                          isSelectedOpt ? 'bg-red-100 text-red-700 font-semibold' :
-                                          'text-gray-600'
-                        }`}
-                      >
-                        <span>{String.fromCharCode(65 + idx)}. {opt}</span>
-                        {isCorrectOpt && <span>✓</span>}
-                        {isSelectedOpt && !isCorrectOpt && <span>← your answer</span>}
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-              {q.questionType === 'mcq' && q.explanation && (
-                <p className="text-sm text-gray-700 bg-white border border-gray-200 rounded-lg p-2 mt-2">💡 {q.explanation}</p>
-              )}
-            </div>
-          ))}
+                          <span>{String.fromCharCode(65 + idx)}. {opt}</span>
+                          {isCorrectOpt && <span>✓</span>}
+                          {isSelectedOpt && !isCorrectOpt && <span>← your answer</span>}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+                {q.questionType === 'mcq' && q.explanation && (
+                  <p className="text-sm text-gray-700 bg-white border border-gray-200 rounded-lg p-2 mt-2">💡 {q.explanation}</p>
+                )}
+              </div>
+            )
+          })}
         </div>
       )}
     </div>

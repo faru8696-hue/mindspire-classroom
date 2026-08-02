@@ -25,7 +25,7 @@ export async function getDiagnosticResult(attemptId: string): Promise<Diagnostic
   const [{ data: test }, { data: lead }, { data: answers }] = await Promise.all([
     admin.from('diagnostic_tests').select('title').eq('id', attempt.diagnostic_test_id).maybeSingle(),
     admin.from('diagnostic_leads').select('student_name').eq('id', attempt.lead_id).maybeSingle(),
-    admin.from('diagnostic_attempt_answers').select('question_id, selected_index, is_correct, canvas_data, grade').eq('attempt_id', attemptId),
+    admin.from('diagnostic_attempt_answers').select('question_id, selected_index, is_correct, canvas_data, points_earned').eq('attempt_id', attemptId),
   ])
 
   const breakdown = (attempt.topic_breakdown ?? { topicScores: [], advice: [] }) as {
@@ -40,8 +40,8 @@ export async function getDiagnosticResult(attemptId: string): Promise<Diagnostic
   // wants when reviewing what they got wrong.
   const questionIds = (answers ?? []).map(a => a.question_id)
   const { data: reviewQuestions } = questionIds.length > 0
-    ? await admin.from('diagnostic_questions').select('id, content, image_url, mcq_options, mcq_correct_index, question_type, explanation, answer_key').in('id', questionIds)
-    : { data: [] as { id: string; content: string; image_url: string | null; mcq_options: string[] | null; mcq_correct_index: number | null; question_type: 'mcq' | 'frq'; explanation: string | null; answer_key: string | null }[] }
+    ? await admin.from('diagnostic_questions').select('id, content, image_url, mcq_options, mcq_correct_index, question_type, explanation, answer_key, points').in('id', questionIds)
+    : { data: [] as { id: string; content: string; image_url: string | null; mcq_options: string[] | null; mcq_correct_index: number | null; question_type: 'mcq' | 'frq'; explanation: string | null; answer_key: string | null; points: number | null }[] }
   const questionById = new Map((reviewQuestions ?? []).map(q => [q.id, q]))
   const questionReview: QuestionReviewItem[] = (answers ?? [])
     .map(a => {
@@ -59,22 +59,25 @@ export async function getDiagnosticResult(attemptId: string): Promise<Diagnostic
         explanation: q.explanation,
         answerKey: q.answer_key,
         canvasData: a.canvas_data,
-        grade: (a.grade as 'correct' | 'partial' | 'incorrect' | null) ?? null,
+        points: q.points ?? null,
+        pointsEarned: a.points_earned ?? null,
       }
     })
     .filter((r): r is QuestionReviewItem => r !== null)
 
   // FRQ score, computed live (not frozen like the MCQ score) since teacher
-  // grading happens progressively any time after the attempt completes —
-  // pct is over graded answers only, since ungraded ones aren't "wrong",
-  // they're just not reviewed yet.
+  // grading happens progressively any time after the attempt completes.
+  // gradedPoints/totalPoints (not earnedPoints/totalPoints) drives the pct
+  // shown while review is still in progress, so a partially-reviewed
+  // attempt shows an accurate percentage of what's been graded so far
+  // rather than treating ungraded questions as worth 0.
   const frqItems = questionReview.filter(q => q.questionType === 'frq')
   const frqScore = frqItems.length === 0 ? null : (() => {
-    const gradedCount = frqItems.filter(q => q.grade !== null).length
-    const correctCount = frqItems.filter(q => q.grade === 'correct').length
-    const partialCount = frqItems.filter(q => q.grade === 'partial').length
-    const incorrectCount = frqItems.filter(q => q.grade === 'incorrect').length
-    return { totalCount: frqItems.length, gradedCount, correctCount, partialCount, incorrectCount }
+    const gradedItems = frqItems.filter(q => q.pointsEarned !== null)
+    const totalPoints = frqItems.reduce((sum, q) => sum + (q.points ?? 0), 0)
+    const gradedPoints = gradedItems.reduce((sum, q) => sum + (q.points ?? 0), 0)
+    const earnedPoints = gradedItems.reduce((sum, q) => sum + (q.pointsEarned ?? 0), 0)
+    return { totalCount: frqItems.length, gradedCount: gradedItems.length, totalPoints, gradedPoints, earnedPoints }
   })()
 
   const timeSpentSeconds = attempt.submitted_at

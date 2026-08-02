@@ -23,7 +23,7 @@ export default async function DiagnosticQuestionsPage({
 
   const { data: questions } = await admin
     .from('diagnostic_questions')
-    .select('id, topic_id, content, question_type, mcq_options, mcq_correct_index, image_url, source, explanation, answer_key, is_active')
+    .select('id, topic_id, content, question_type, mcq_options, mcq_correct_index, image_url, source, explanation, answer_key, points, is_active')
     .eq('diagnostic_test_id', testId)
     .order('created_at', { ascending: false })
 
@@ -46,7 +46,7 @@ export default async function DiagnosticQuestionsPage({
         {(questions ?? []).map(q => (
           <DiagnosticQuestionCard
             key={q.id}
-            question={q as { id: string; topic_id: string; content: string; question_type: 'mcq' | 'frq'; mcq_options: string[] | null; mcq_correct_index: number | null; image_url: string | null; source: string | null; explanation: string | null; answer_key: string | null; is_active: boolean }}
+            question={q as { id: string; topic_id: string; content: string; question_type: 'mcq' | 'frq'; mcq_options: string[] | null; mcq_correct_index: number | null; image_url: string | null; source: string | null; explanation: string | null; answer_key: string | null; points: number | null; is_active: boolean }}
             topics={topics ?? []}
             topicTitle={topicTitleById.get(q.topic_id) ?? 'Unknown topic'}
           />

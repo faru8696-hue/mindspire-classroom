@@ -21,6 +21,7 @@ export default function AddQuestionForm({
   const [source, setSource] = useState('')
   const [explanation, setExplanation] = useState('')
   const [answerKey, setAnswerKey] = useState('')
+  const [points, setPoints] = useState('4')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [userId, setUserId] = useState('')
@@ -56,6 +57,7 @@ export default function AddQuestionForm({
     setError('')
     const trimmedOptions = options.map(o => o.trim()).filter(Boolean)
     if (questionType === 'mcq' && trimmedOptions.length < 2) { setError('At least 2 non-empty options are required.'); return }
+    if (questionType === 'frq' && (!points.trim() || Number(points) <= 0)) { setError('Enter the total points this question is worth.'); return }
     if (!topicId) { setError('Add a topic first.'); return }
     setLoading(true)
     try {
@@ -69,11 +71,12 @@ export default function AddQuestionForm({
           imageUrl: imageUrl || undefined, source: source || undefined,
           explanation: explanation.trim() || undefined,
           answerKey: answerKey.trim() || undefined,
+          points: questionType === 'frq' ? Number(points) : undefined,
         }),
       })
       const data = await res.json()
       if (!res.ok) { setError(data.error || 'Something went wrong.'); setLoading(false); return }
-      setContent(''); setOptions(['', '', '', '']); setCorrectIndex(0); setImageUrl(''); setSource(''); setExplanation(''); setAnswerKey(''); setLoading(false)
+      setContent(''); setOptions(['', '', '', '']); setCorrectIndex(0); setImageUrl(''); setSource(''); setExplanation(''); setAnswerKey(''); setPoints('4'); setLoading(false)
       router.refresh()
     } catch {
       setError('Connection error.')
@@ -143,12 +146,19 @@ export default function AddQuestionForm({
           ))}
         </div>
       ) : (
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Answer key (shown during review, not to the student while testing)</label>
-          <textarea value={answerKey} onChange={e => setAnswerKey(e.target.value)} rows={4}
-            placeholder="Model answer / worked solution."
-            className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-        </div>
+        <>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Total points</label>
+            <input type="number" min={0.5} step={0.5} value={points} onChange={e => setPoints(e.target.value)}
+              className="w-24 border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Answer key (shown during review, not to the student while testing)</label>
+            <textarea value={answerKey} onChange={e => setAnswerKey(e.target.value)} rows={4}
+              placeholder="Model answer / worked solution."
+              className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          </div>
+        </>
       )}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">Source (optional)</label>
