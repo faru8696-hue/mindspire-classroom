@@ -44,7 +44,7 @@ export default async function QuestionResultsPage({
   // All questions in this topic (parts of the same problem)
   const { data: allParts } = await supabase
     .from('questions')
-    .select('id, title, content, order_index, source')
+    .select('id, title, content, order_index, source, difficulty, points')
     .eq('topic_id', topic.id)
     .order('order_index')
 

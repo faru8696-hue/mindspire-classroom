@@ -7,6 +7,7 @@ import MiniBoard from '@/components/MiniBoard'
 import Comments from '@/components/Comments'
 import AiChatHistory from '@/components/AiChatHistory'
 import AnswerKeyPanel from '@/components/AnswerKeyPanel'
+import EditQuestionPanel, { type TopicOption } from '@/components/EditQuestionPanel'
 import TeacherWatchBoard from './[studentId]/TeacherWatchBoard'
 import { GRADE_LIST, GRADE_MAP } from '@/lib/grades'
 import { renderBoardSnapshot } from '@/lib/renderBoardSnapshot'
@@ -28,6 +29,9 @@ interface Props {
   answerKey: string | null
   questionDifficulty: string | null
   questionPoints: number | null
+  questionTopicId: string
+  questionSource: string | null
+  topicOptions: TopicOption[]
   allQuestions: ClassQuestion[]
   questionHelp: Record<string, number>
   students: Student[]
@@ -59,7 +63,7 @@ const DIFFICULTY_BADGE: Record<string, string> = {
 
 export default function LiveClassroomView({
   classId, questionId, classTitle, questionTitle, questionContent, answerKey,
-  questionDifficulty, questionPoints,
+  questionDifficulty, questionPoints, questionTopicId, questionSource, topicOptions,
   allQuestions, questionHelp, students, initialSubmissions, initialFeedbacks, initialNotifications,
   initialComments, teacherId, teacherName, autoOpenCommentsStudentId,
 }: Props) {
@@ -549,6 +553,17 @@ export default function LiveClassroomView({
                   {questionCollapsed ? '▼ show details' : '▲ hide details'}
                 </button>
               )}
+              <EditQuestionPanel
+                questionId={questionId}
+                classId={classId}
+                title={questionTitle}
+                content={questionContent}
+                topicId={questionTopicId}
+                source={questionSource}
+                difficulty={questionDifficulty}
+                points={questionPoints}
+                topics={topicOptions}
+              />
             </div>
 
             {switcherOpen && (
@@ -766,7 +781,14 @@ export default function LiveClassroomView({
                     )}
                     <div className="px-3 py-2 bg-white border-t border-gray-100 flex items-center justify-between gap-2">
                       <div className="min-w-0">
-                        <p className={`text-sm font-semibold truncate ${isChecked ? 'text-green-600 line-through' : 'text-gray-900'}`}>{student.full_name}</p>
+                        <Link
+                          href={`/teacher/students/${student.id}`}
+                          onClick={e => e.stopPropagation()}
+                          className={`text-sm font-semibold truncate hover:underline block ${isChecked ? 'text-green-600 line-through' : 'text-gray-900 hover:text-purple-700'}`}
+                          title="View this student's full progress across all subtopics"
+                        >
+                          {student.full_name}
+                        </Link>
                         <p className="text-xs text-gray-500">{isChecked ? '✅ Checked' : needsHelp ? '🙋 Needs help' : isDone ? '✓ Done' : grade ? grade : sub ? 'In progress' : 'Not started'}</p>
                       </div>
                       {/* Grade right from the grid — no need to open the

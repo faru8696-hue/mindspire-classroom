@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 export interface TopicOption { id: string; title: string; unitTitle: string }
 
 export default function EditQuestionPanel({
-  questionId, classId, title, content, topicId, source, topics,
+  questionId, classId, title, content, topicId, source, difficulty, points, topics,
 }: {
   questionId: string
   classId: string
@@ -14,6 +14,8 @@ export default function EditQuestionPanel({
   content: string | null
   topicId: string
   source: string | null
+  difficulty?: string | null
+  points?: number | null
   topics: TopicOption[]
 }) {
   const router = useRouter()
@@ -22,6 +24,8 @@ export default function EditQuestionPanel({
   const [draftContent, setDraftContent] = useState(content ?? '')
   const [draftTopicId, setDraftTopicId] = useState(topicId)
   const [draftSource, setDraftSource] = useState(source ?? '')
+  const [draftDifficulty, setDraftDifficulty] = useState(difficulty ?? '')
+  const [draftPoints, setDraftPoints] = useState(points != null ? String(points) : '')
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -37,20 +41,18 @@ export default function EditQuestionPanel({
         body: JSON.stringify({
           questionId, title: draftTitle.trim(), content: draftContent.trim() || undefined,
           topicId: draftTopicId, source: draftSource.trim() || undefined,
+          difficulty: draftDifficulty || null,
+          points: draftPoints.trim() ? Number(draftPoints) : null,
         }),
       })
       const data = await res.json()
       if (!res.ok) { setError(data.error || 'Something went wrong.'); setSaving(false); return }
       setSaving(false)
       setOpen(false)
-      // Moved to a different topic — this page is keyed by topicId in the
-      // URL, so it needs to navigate to the question's new location rather
-      // than just refreshing the same (now-stale) route.
-      if (draftTopicId !== topicId) {
-        router.push(`/teacher/questions/${questionId}`)
-      } else {
-        router.refresh()
-      }
+      // Every page this panel is used on is keyed by questionId (not
+      // topicId), so a refresh alone re-fetches the question at its new
+      // topic/location — no navigation needed even after a move.
+      router.refresh()
     } catch {
       setError('Connection error.')
       setSaving(false)
@@ -115,6 +117,23 @@ export default function EditQuestionPanel({
               <label className="block text-sm font-medium text-gray-700 mb-1">Source / worksheet (optional)</label>
               <input value={draftSource} onChange={e => setDraftSource(e.target.value)} placeholder="e.g. MCQ Practice, Episode Review"
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-400" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Difficulty</label>
+                <select value={draftDifficulty} onChange={e => setDraftDifficulty(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-400">
+                  <option value="">None</option>
+                  <option value="easy">Easy</option>
+                  <option value="medium">Medium</option>
+                  <option value="hard">Hard</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Points</label>
+                <input type="number" min={0} value={draftPoints} onChange={e => setDraftPoints(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-400" />
+              </div>
             </div>
 
             {error && <p className="text-red-600 text-sm bg-red-50 p-2 rounded-lg">{error}</p>}

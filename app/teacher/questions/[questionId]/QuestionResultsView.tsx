@@ -5,7 +5,7 @@ import Link from 'next/link'
 import MiniBoard from '@/components/MiniBoard'
 import EditQuestionPanel, { type TopicOption } from '@/components/EditQuestionPanel'
 
-interface Part { id: string; title: string; content: string | null; order_index: number; source: string | null }
+interface Part { id: string; title: string; content: string | null; order_index: number; source: string | null; difficulty: string | null; points: number | null }
 interface Student { id: string; full_name: string; avatar_url: string | null; nickname: string | null }
 interface Submission { id: string; student_id: string; question_id: string; canvas_data: string | null; text_answer: string | null; updated_at: string }
 interface Feedback { submission_id: string; grade: string | null }
@@ -125,6 +125,8 @@ export default function QuestionResultsView({
               content={selectedPart.content}
               topicId={topic.id}
               source={selectedPart.source}
+              difficulty={selectedPart.difficulty}
+              points={selectedPart.points}
               topics={topicOptions}
             />
           </div>

@@ -12,8 +12,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
   }
 
-  const { questionId, title, content, topicId, source } = await req.json() as {
+  const { questionId, title, content, topicId, source, difficulty, points } = await req.json() as {
     questionId?: string; title?: string; content?: string; topicId?: string; source?: string
+    difficulty?: string | null; points?: number | null
   }
   if (!questionId || !title || !topicId) {
     return NextResponse.json({ error: 'questionId, title, and topicId are required.' }, { status: 400 })
@@ -27,6 +28,8 @@ export async function POST(req: NextRequest) {
       content: content || null,
       topic_id: topicId,
       source: source || null,
+      difficulty: difficulty || null,
+      points: points ?? null,
     })
     .eq('id', questionId)
 

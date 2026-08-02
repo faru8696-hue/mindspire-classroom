@@ -15,7 +15,7 @@ export default async function LiveClassroomPage({
 
   const [{ data: cls }, { data: question }, { data: enrollments }, { data: units }] = await Promise.all([
     supabase.from('classes').select('title').eq('id', classId).single(),
-    supabase.from('questions').select('title, content, answer_key, difficulty, points').eq('id', questionId).single(),
+    supabase.from('questions').select('title, content, answer_key, difficulty, points, topic_id, source').eq('id', questionId).single(),
     supabase.from('class_enrollments').select('student_id').eq('class_id', classId),
     supabase.from('units').select('id, title, order_index').eq('class_id', classId),
   ])
@@ -96,6 +96,13 @@ export default async function LiveClassroomPage({
 
   const { data: teacherProfile } = await supabase.from('profiles').select('id, full_name').eq('role', 'teacher').limit(1).single()
 
+  // Flattened topic list (with parent unit title) for the "move to topic"
+  // dropdown in the edit panel — every topic in this class, not just this one.
+  const unitTitleById = new Map((units ?? []).map(u => [u.id, u.title]))
+  const topicOptions = (topics ?? []).map(t => ({
+    id: t.id, title: t.title, unitTitle: unitTitleById.get(t.unit_id) ?? '',
+  }))
+
   return (
     <LiveClassroomView
       classId={classId}
@@ -106,6 +113,9 @@ export default async function LiveClassroomPage({
       answerKey={question.answer_key}
       questionDifficulty={question.difficulty}
       questionPoints={question.points}
+      questionTopicId={question.topic_id}
+      questionSource={question.source}
+      topicOptions={topicOptions}
       allQuestions={allQuestions}
       questionHelp={questionHelp}
       students={students ?? []}
