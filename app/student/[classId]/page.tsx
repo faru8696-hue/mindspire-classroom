@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import StudentGradeNotifications from '@/components/StudentGradeNotifications'
 import StartTestButton from '@/components/diagnostic/StartTestButton'
+import CompletedTestCard from '@/components/diagnostic/CompletedTestCard'
 
 export default async function ClassPage({ params }: { params: Promise<{ classId: string }> }) {
   const { classId } = await params
@@ -137,19 +138,14 @@ export default async function ClassPage({ params }: { params: Promise<{ classId:
               const completed = completedByTestId.get(t.id)
               if (completed) {
                 return (
-                  <a
+                  <CompletedTestCard
                     key={t.id}
-                    href={`/diagnostic/${t.slug}/results/${completed.attemptId}`}
-                    className="flex items-center justify-between gap-3 bg-gray-50 hover:bg-purple-50 rounded-lg p-3 transition-colors"
-                  >
-                    <div>
-                      <p className="font-semibold text-gray-800 text-sm">{t.title}</p>
-                      {t.description && <p className="text-xs text-gray-500 mt-0.5">{t.description}</p>}
-                    </div>
-                    <span className="text-xs font-bold text-green-700 bg-green-50 px-2 py-1 rounded-full flex-shrink-0">
-                      ✓ {Math.round(completed.scorePct)}%
-                    </span>
-                  </a>
+                    slug={t.slug}
+                    title={t.title}
+                    description={t.description}
+                    attemptId={completed.attemptId}
+                    scorePct={completed.scorePct}
+                  />
                 )
               }
               return <StartTestButton key={t.id} slug={t.slug} title={t.title} description={t.description} />

@@ -57,6 +57,29 @@ export default async function StudentDashboard() {
 
   const classIds = classes.map(c => c.id)
 
+  // ── Pending Tests count — published+active tests across every enrolled
+  // class this student hasn't completed yet, for the dashboard summary card.
+  const { data: publishedTests } = await admin
+    .from('diagnostic_tests')
+    .select('id')
+    .in('class_id', classIds)
+    .eq('is_active', true)
+  let pendingTestCount = 0
+  if (publishedTests && publishedTests.length > 0) {
+    const { data: myLeads } = await admin
+      .from('diagnostic_leads')
+      .select('id, diagnostic_test_id')
+      .eq('student_id', user.id)
+      .in('diagnostic_test_id', publishedTests.map(t => t.id))
+    const leadIds = (myLeads ?? []).map(l => l.id)
+    const testIdByLead = new Map((myLeads ?? []).map(l => [l.id, l.diagnostic_test_id]))
+    const { data: myAttempts } = leadIds.length > 0
+      ? await admin.from('diagnostic_attempts').select('lead_id').in('lead_id', leadIds).eq('status', 'completed')
+      : { data: [] as { lead_id: string }[] }
+    const completedTestIds = new Set((myAttempts ?? []).map(a => testIdByLead.get(a.lead_id)).filter(Boolean))
+    pendingTestCount = publishedTests.filter(t => !completedTestIds.has(t.id)).length
+  }
+
   // ── Per-class progress (assigned / submitted / graded) ─────────────────
   const [{ data: units }, { data: classAssignments }, { data: studentAssignments }] = await Promise.all([
     admin.from('units').select('id, class_id').in('class_id', classIds),
@@ -142,6 +165,26 @@ export default async function StudentDashboard() {
   return (
     <div className="max-w-3xl mx-auto">
       <h1 className="text-2xl font-bold text-purple-900 mb-6">My Dashboard</h1>
+
+      {/* Tests summary — pending count front and center, links through to the
+          full pending/completed breakdown across every class. */}
+      <Link
+        href="/student/tests"
+        className="flex items-center justify-between gap-3 bg-white border border-gray-200 rounded-xl p-5 mb-8 hover:border-purple-400 hover:shadow-md transition-all group"
+      >
+        <div className="flex items-center gap-3">
+          <div className="text-3xl">🧪</div>
+          <div>
+            <p className="font-bold text-gray-800 group-hover:text-purple-700 transition-colors">Tests</p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              {pendingTestCount > 0 ? `${pendingTestCount} pending` : 'See your results'} · click to view
+            </p>
+          </div>
+        </div>
+        {pendingTestCount > 0 && (
+          <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-purple-100 text-purple-700 flex-shrink-0">{pendingTestCount} to do</span>
+        )}
+      </Link>
 
       {/* Recent activity — feedback, comments, new assignments, all in one place */}
       {activity.length > 0 && (

@@ -11,11 +11,24 @@ export default async function DiagnosticLandingPage({ params }: { params: Promis
 
   const { data: test } = await admin
     .from('diagnostic_tests')
-    .select('title, description, question_count_per_attempt, duration_minutes')
+    .select('title, description, question_count_per_attempt, duration_minutes, is_active')
     .eq('slug', slug)
-    .eq('is_active', true)
     .maybeSingle()
   if (!test) notFound()
+
+  if (!test.is_active) {
+    return (
+      <GradientHero>
+        <div className="text-center">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-amber-100 rounded-full mb-3">
+            <span className="text-3xl">🔒</span>
+          </div>
+          <h1 className="text-2xl font-bold text-gray-800">{test.title}</h1>
+          <p className="text-gray-500 text-sm mt-2">This test isn&rsquo;t published yet. Check back soon.</p>
+        </div>
+      </GradientHero>
+    )
+  }
 
   return (
     <GradientHero>
