@@ -8,6 +8,8 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null) as {
     attemptId?: string
     answers?: { questionId: string; selectedIndex?: number; canvasData?: string | null }[]
+    tabSwitchCount?: number
+    tabSwitchSeconds?: number
   } | null
 
   const attemptId = body?.attemptId
@@ -93,6 +95,10 @@ export async function POST(req: NextRequest) {
       total_count: graded.totalCount,
       score_pct: graded.scorePct,
       topic_breakdown: { topicScores: graded.topicScores, advice: graded.advice },
+      // Neutral "left the test tab" counter — not a screenshot detector,
+      // just visibilitychange/blur tracking (see DiagnosticTestSession).
+      tab_switch_count: body?.tabSwitchCount ?? 0,
+      tab_switch_seconds: body?.tabSwitchSeconds ?? 0,
     })
     .eq('id', attempt.id)
 

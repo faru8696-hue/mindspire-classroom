@@ -38,6 +38,11 @@ export interface DiagnosticResultData {
   scorePct: number
   frqScore: FrqScore | null
   timeSpentSeconds: number | null
+  // Neutral "left the test tab" counter — rendered on the teacher attempt
+  // page only (see app/teacher/diagnostics/[testId]/attempts/[attemptId]),
+  // never here, so it's never shown to the student.
+  tabSwitchCount: number
+  tabSwitchSeconds: number
   topicScores: TopicScore[]
   advice: { topicTitle: string; prepAdvice: string }[]
   questionReview: QuestionReviewItem[]

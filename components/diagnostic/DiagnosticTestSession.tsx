@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import TopicBadge from './TopicBadge'
 import ProgressDots from './ProgressDots'
+import Watermark from './Watermark'
 import ScratchBoard, { ScratchBoardHandle } from '../ScratchBoard'
 
 export interface DiagnosticSessionQuestion {
@@ -23,13 +24,15 @@ function formatClock(totalSeconds: number): string {
 }
 
 export default function DiagnosticTestSession({
-  slug, attemptId, testTitle, questions, durationMinutes,
+  slug, attemptId, testTitle, questions, durationMinutes, studentName, studentEmail,
 }: {
   slug: string
   attemptId: string
   testTitle: string
   questions: DiagnosticSessionQuestion[]
   durationMinutes: number
+  studentName: string
+  studentEmail: string
 }) {
   const router = useRouter()
   const [index, setIndex] = useState(0)
@@ -43,6 +46,43 @@ export default function DiagnosticTestSession({
   const [submitting, setSubmitting] = useState(false)
   const submittingRef = useRef(false)
   const canvasRef = useRef<ScratchBoardHandle>(null)
+  const watermarkText = [studentName, studentEmail].filter(Boolean).join(' · ')
+
+  // Neutral "left the test tab" counter — not a screenshot detector (no such
+  // thing exists on the web), just visibilitychange/blur tracking, shown to
+  // the teacher later as a plain fact ("left the tab N times, Xs total"),
+  // never as an accusation. Refs, not state, since nothing here needs to
+  // re-render — it's only read once, at submit time.
+  const tabSwitchCountRef = useRef(0)
+  const tabSwitchSecondsRef = useRef(0)
+  const awayRef = useRef(false)
+  const awaySinceRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    function markAway() {
+      if (awayRef.current) return
+      awayRef.current = true
+      awaySinceRef.current = Date.now()
+      tabSwitchCountRef.current += 1
+    }
+    function markBack() {
+      if (!awayRef.current) return
+      awayRef.current = false
+      if (awaySinceRef.current) {
+        tabSwitchSecondsRef.current += Math.round((Date.now() - awaySinceRef.current) / 1000)
+        awaySinceRef.current = null
+      }
+    }
+    function onVisibility() { if (document.hidden) markAway(); else markBack() }
+    document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('blur', markAway)
+    window.addEventListener('focus', markBack)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('blur', markAway)
+      window.removeEventListener('focus', markBack)
+    }
+  }, [])
 
   const q = questions[index]
   const answeredSet = new Set(
@@ -83,7 +123,12 @@ export default function DiagnosticTestSession({
       const res = await fetch('/api/diagnostic/submit-attempt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ attemptId, answers: payload }),
+        body: JSON.stringify({
+          attemptId,
+          answers: payload,
+          tabSwitchCount: tabSwitchCountRef.current,
+          tabSwitchSeconds: tabSwitchSecondsRef.current,
+        }),
       })
       if (res.ok) {
         router.push(`/diagnostic/${slug}/results/${attemptId}`)
@@ -140,7 +185,8 @@ export default function DiagnosticTestSession({
       <div className="max-w-5xl mx-auto px-4 py-4">
         <ProgressDots total={questions.length} current={index} answered={answeredSet} onJump={goTo} />
 
-        <div className="bg-white rounded-2xl shadow border border-gray-100 p-6">
+        <div className="relative overflow-hidden bg-white rounded-2xl shadow border border-gray-100 p-6">
+          {watermarkText && <Watermark text={watermarkText} />}
           <div className="flex gap-2 flex-wrap mb-4">
             <TopicBadge topicId={q.topicId} label={q.topicTitle} />
             <span className="text-xs text-gray-400 px-2 py-1">Q{index + 1}</span>

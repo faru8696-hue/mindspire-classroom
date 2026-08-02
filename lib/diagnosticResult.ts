@@ -20,7 +20,7 @@ export async function getDiagnosticResult(attemptId: string): Promise<Diagnostic
 
   const { data: attempt } = await admin
     .from('diagnostic_attempts')
-    .select('id, diagnostic_test_id, lead_id, status, started_at, submitted_at, correct_count, total_count, score_pct')
+    .select('id, diagnostic_test_id, lead_id, status, started_at, submitted_at, correct_count, total_count, score_pct, tab_switch_count, tab_switch_seconds')
     .eq('id', attemptId)
     .maybeSingle()
   if (!attempt) return { status: 'not_found' }
@@ -132,6 +132,10 @@ export async function getDiagnosticResult(attemptId: string): Promise<Diagnostic
       scorePct: attempt.score_pct ?? 0,
       frqScore,
       timeSpentSeconds,
+      // Neutral fact, teacher-page-only (never rendered on the student
+      // results page) — see DiagnosticTestSession's tab-switch tracking.
+      tabSwitchCount: attempt.tab_switch_count ?? 0,
+      tabSwitchSeconds: attempt.tab_switch_seconds ?? 0,
       topicScores,
       advice,
       questionReview,

@@ -50,6 +50,21 @@ export default async function DiagnosticAttemptDetailPage({
         </div>
       )}
 
+      {/* A plain fact, not an accusation — tab/window focus loss is a weak,
+          high-false-positive signal (checking a calculator, a notification,
+          accidental alt-tab all trigger it too), so it's shown here as a
+          neutral count, on the teacher page only, never labeled "cheating"
+          and never shown to the student. */}
+      {(lookup.result.tabSwitchCount > 0) && (
+        <div className="bg-gray-50 border border-gray-200 rounded-2xl p-4 mb-4 flex items-center gap-2">
+          <span className="text-lg">🔀</span>
+          <p className="text-sm text-gray-600">
+            Left the test tab <span className="font-semibold text-gray-800">{lookup.result.tabSwitchCount}</span> time{lookup.result.tabSwitchCount === 1 ? '' : 's'}
+            {lookup.result.tabSwitchSeconds > 0 && <> · <span className="font-semibold text-gray-800">{lookup.result.tabSwitchSeconds}s</span> total away</>}
+          </p>
+        </div>
+      )}
+
       <DiagnosticResultSummary result={lookup.result} teacherView attemptId={attemptId} />
     </div>
   )
