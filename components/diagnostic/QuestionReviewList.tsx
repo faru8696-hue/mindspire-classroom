@@ -144,15 +144,26 @@ export default function QuestionReviewList({
                 )}
                 {q.questionType === 'frq' ? (
                   <>
-                    {q.canvasData ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={q.canvasData} alt="Student's work" className="w-full rounded-lg border border-gray-200 mb-2 bg-white" />
-                    ) : (
-                      <p className="text-sm text-gray-400 italic mb-2">No work submitted.</p>
-                    )}
-                    {q.answerKey && (
-                      <p className="text-sm text-gray-700 bg-white border border-gray-200 rounded-lg p-2 mt-2 whitespace-pre-wrap">📖 {q.answerKey}</p>
-                    )}
+                    {/* Side by side so a teacher can compare the student's
+                        work against the reference answer without scrolling
+                        back and forth — stacks on narrow screens. */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-2">
+                      <div>
+                        <p className="text-xs font-semibold text-gray-500 mb-1">Student&rsquo;s Work</p>
+                        {q.canvasData ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={q.canvasData} alt="Student's work" className="w-full rounded-lg border border-gray-200 bg-white" />
+                        ) : (
+                          <p className="text-sm text-gray-400 italic">No work submitted.</p>
+                        )}
+                      </div>
+                      {q.answerKey && (
+                        <div>
+                          <p className="text-xs font-semibold text-gray-500 mb-1">Answer Key</p>
+                          <p className="text-sm text-gray-700 bg-white border border-gray-200 rounded-lg p-2 whitespace-pre-wrap">📖 {q.answerKey}</p>
+                        </div>
+                      )}
+                    </div>
                     {canGrade && attemptId && (
                       <FrqScoreInput
                         attemptId={attemptId}
