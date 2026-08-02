@@ -34,7 +34,11 @@ export default function DiagnosticTestSession({
   const router = useRouter()
   const [index, setIndex] = useState(0)
   const [answers, setAnswers] = useState<Map<string, number>>(new Map())
-  const [frqCanvas, setFrqCanvas] = useState<Map<string, string | null>>(new Map())
+  // Scratch work for every question, not just FRQ — MCQ questions get a
+  // rough-work board alongside the options so students can work out
+  // calculations without needing paper. It's saved with the answer either
+  // way but never affects MCQ grading (that's still purely selectedIndex).
+  const [canvasByQuestion, setCanvasByQuestion] = useState<Map<string, string | null>>(new Map())
   const [secondsLeft, setSecondsLeft] = useState(durationMinutes * 60)
   const [submitting, setSubmitting] = useState(false)
   const submittingRef = useRef(false)
@@ -44,18 +48,21 @@ export default function DiagnosticTestSession({
   const answeredSet = new Set(
     questions
       .map((qq, i) => {
-        const answered = qq.questionType === 'frq' ? !!frqCanvas.get(qq.id) : answers.has(qq.id)
+        // FRQ is "answered" only once there's scratch work (that IS the
+        // answer); MCQ counts as answered once an option is picked —
+        // rough-work on an MCQ question doesn't count toward this.
+        const answered = qq.questionType === 'frq' ? !!canvasByQuestion.get(qq.id) : answers.has(qq.id)
         return answered ? i : -1
       })
       .filter(i => i >= 0)
   )
 
   // Grabs whatever's currently on the scratch board before navigating away
-  // from an FRQ question — mirrors SelfCheckSession's capture-on-navigate
-  // pattern, since React state updates from setFrqCanvas wouldn't be
-  // visible within the same function call otherwise.
+  // — mirrors SelfCheckSession's capture-on-navigate pattern, since React
+  // state updates from setCanvasByQuestion wouldn't be visible within the
+  // same function call otherwise.
   function captureCurrentCanvas(map: Map<string, string | null>): Map<string, string | null> {
-    if (q?.questionType !== 'frq') return map
+    if (!q) return map
     const next = new Map(map)
     next.set(q.id, canvasRef.current?.getSnapshot() ?? null)
     return next
@@ -66,16 +73,17 @@ export default function DiagnosticTestSession({
     submittingRef.current = true
     setSubmitting(true)
     try {
-      const finalCanvas = captureCurrentCanvas(frqCanvas)
-      setFrqCanvas(finalCanvas)
-      const mcqPayload = [...answers.entries()].map(([questionId, selectedIndex]) => ({ questionId, selectedIndex }))
-      const frqPayload = questions
-        .filter(qq => qq.questionType === 'frq')
-        .map(qq => ({ questionId: qq.id, canvasData: finalCanvas.get(qq.id) ?? null }))
+      const finalCanvas = captureCurrentCanvas(canvasByQuestion)
+      setCanvasByQuestion(finalCanvas)
+      const payload = questions.map(qq => ({
+        questionId: qq.id,
+        selectedIndex: qq.questionType === 'mcq' ? answers.get(qq.id) : undefined,
+        canvasData: finalCanvas.get(qq.id) ?? null,
+      }))
       const res = await fetch('/api/diagnostic/submit-attempt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ attemptId, answers: [...mcqPayload, ...frqPayload] }),
+        body: JSON.stringify({ attemptId, answers: payload }),
       })
       if (res.ok) {
         router.push(`/diagnostic/${slug}/results/${attemptId}`)
@@ -85,7 +93,7 @@ export default function DiagnosticTestSession({
     submittingRef.current = false
     setSubmitting(false)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [answers, frqCanvas, questions, attemptId, slug, router])
+  }, [answers, canvasByQuestion, questions, attemptId, slug, router])
 
   useEffect(() => {
     if (secondsLeft <= 0) { handleSubmit(); return }
@@ -97,7 +105,7 @@ export default function DiagnosticTestSession({
     setAnswers(prev => new Map(prev).set(q.id, optionIndex))
   }
   function goTo(target: number) {
-    setFrqCanvas(prev => captureCurrentCanvas(prev))
+    setCanvasByQuestion(prev => captureCurrentCanvas(prev))
     setIndex(target)
   }
   function next() { if (index < questions.length - 1) goTo(index + 1) }
@@ -105,7 +113,7 @@ export default function DiagnosticTestSession({
 
   function confirmSubmit() {
     const answeredCount = questions.filter(qq =>
-      qq.questionType === 'frq' ? (qq.id === q.id ? true : !!frqCanvas.get(qq.id)) : answers.has(qq.id)
+      qq.questionType === 'frq' ? (qq.id === q.id ? true : !!canvasByQuestion.get(qq.id)) : answers.has(qq.id)
     ).length
     const unanswered = questions.length - answeredCount
     if (unanswered > 0 && !confirm(`${unanswered} question${unanswered === 1 ? '' : 's'} unanswered. Submit anyway?`)) return
@@ -115,7 +123,7 @@ export default function DiagnosticTestSession({
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="bg-white border-b shadow-sm sticky top-0 z-10">
-        <div className="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between">
+        <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <span className="text-blue-600 text-lg">🧪</span>
             <span className="font-bold text-gray-800 text-sm">{testTitle}</span>
@@ -129,7 +137,7 @@ export default function DiagnosticTestSession({
         </div>
       </div>
 
-      <div className="max-w-3xl mx-auto px-4 py-4">
+      <div className="max-w-5xl mx-auto px-4 py-4">
         <ProgressDots total={questions.length} current={index} answered={answeredSet} onJump={goTo} />
 
         <div className="bg-white rounded-2xl shadow border border-gray-100 p-6">
@@ -162,28 +170,34 @@ export default function DiagnosticTestSession({
           </p>
 
           {q.questionType === 'frq' ? (
-            <ScratchBoard key={q.id} ref={canvasRef} initialDataUrl={frqCanvas.get(q.id) ?? null} />
+            <ScratchBoard key={q.id} ref={canvasRef} initialDataUrl={canvasByQuestion.get(q.id) ?? null} />
           ) : (
-            <div className="space-y-3 select-none" onCopy={e => e.preventDefault()} onContextMenu={e => e.preventDefault()}>
-              {(q.options ?? []).map((opt, i) => {
-                const selected = answers.get(q.id) === i
-                return (
-                  <button
-                    key={i}
-                    onClick={() => pick(i)}
-                    className={`w-full text-left px-5 py-4 border-2 rounded-xl text-gray-800 transition-transform hover:translate-x-1 ${
-                      selected ? 'bg-blue-800 text-white border-blue-800' : 'border-gray-200 hover:border-blue-300'
-                    }`}
-                  >
-                    <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full font-bold mr-3 text-sm ${
-                      selected ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-700'
-                    }`}>
-                      {String.fromCharCode(65 + i)}
-                    </span>
-                    {opt}
-                  </button>
-                )
-              })}
+            // Options beside a rough-work board on wide screens (stacked on
+            // narrow ones) — a scratch space for calculations instead of
+            // needing paper, saved with the answer but never graded.
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+              <div className="space-y-3 select-none" onCopy={e => e.preventDefault()} onContextMenu={e => e.preventDefault()}>
+                {(q.options ?? []).map((opt, i) => {
+                  const selected = answers.get(q.id) === i
+                  return (
+                    <button
+                      key={i}
+                      onClick={() => pick(i)}
+                      className={`w-full text-left px-5 py-4 border-2 rounded-xl text-gray-800 transition-transform hover:translate-x-1 ${
+                        selected ? 'bg-blue-800 text-white border-blue-800' : 'border-gray-200 hover:border-blue-300'
+                      }`}
+                    >
+                      <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full font-bold mr-3 text-sm ${
+                        selected ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-700'
+                      }`}>
+                        {String.fromCharCode(65 + i)}
+                      </span>
+                      {opt}
+                    </button>
+                  )
+                })}
+              </div>
+              <ScratchBoard key={q.id} ref={canvasRef} initialDataUrl={canvasByQuestion.get(q.id) ?? null} label="🧮 Rough work" />
             </div>
           )}
         </div>

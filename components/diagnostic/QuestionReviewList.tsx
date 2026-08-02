@@ -210,6 +210,13 @@ export default function QuestionReviewList({
                     })}
                   </div>
                 )}
+                {q.questionType === 'mcq' && q.canvasData && (
+                  <details className="mt-2">
+                    <summary className="text-xs font-semibold text-gray-500 cursor-pointer hover:text-gray-700">🧮 Rough work</summary>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={q.canvasData} alt="Rough work" className="w-full max-w-md rounded-lg border border-gray-200 bg-white mt-1" />
+                  </details>
+                )}
                 {q.questionType === 'mcq' && q.explanation && (
                   <p className="text-sm text-gray-700 bg-white border border-gray-200 rounded-lg p-2 mt-2">💡 {q.explanation}</p>
                 )}

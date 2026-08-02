@@ -71,7 +71,9 @@ export async function POST(req: NextRequest) {
       question_id: pq.questionId,
       selected_index: submitted?.selectedIndex ?? -1,
       is_correct: pq.isCorrect,
-      canvas_data: null,
+      // Rough-work scratch board, not graded — just saved for the student's
+      // (and teacher's) own reference alongside the picked answer.
+      canvas_data: submitted?.canvasData ?? null,
     }
   })
   if (answerRows.length > 0) {
