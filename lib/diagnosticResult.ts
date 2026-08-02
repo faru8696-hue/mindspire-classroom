@@ -29,7 +29,7 @@ export async function getDiagnosticResult(attemptId: string): Promise<Diagnostic
   const [{ data: test }, { data: lead }, { data: answers }] = await Promise.all([
     admin.from('diagnostic_tests').select('title').eq('id', attempt.diagnostic_test_id).maybeSingle(),
     admin.from('diagnostic_leads').select('student_name').eq('id', attempt.lead_id).maybeSingle(),
-    admin.from('diagnostic_attempt_answers').select('question_id, selected_index, is_correct, canvas_data, points_earned').eq('attempt_id', attemptId),
+    admin.from('diagnostic_attempt_answers').select('question_id, selected_index, is_correct, canvas_data, points_earned, teacher_annotation').eq('attempt_id', attemptId),
   ])
 
   // Per-question review: read live from diagnostic_questions (current
@@ -57,6 +57,7 @@ export async function getDiagnosticResult(attemptId: string): Promise<Diagnostic
         explanation: q.explanation,
         answerKey: q.answer_key,
         canvasData: a.canvas_data,
+        teacherAnnotation: a.teacher_annotation,
         points: q.points ?? null,
         pointsEarned: a.points_earned ?? null,
       }

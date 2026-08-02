@@ -16,6 +16,7 @@ export interface QuestionReviewItem {
   explanation: string | null
   answerKey: string | null
   canvasData: string | null
+  teacherAnnotation: string | null
   points: number | null
   pointsEarned: number | null
 }

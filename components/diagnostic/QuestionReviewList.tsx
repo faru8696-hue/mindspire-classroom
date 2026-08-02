@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import type { QuestionReviewItem } from './DiagnosticResultSummary'
+import FrqAnnotatorModal from './FrqAnnotatorModal'
 
 function frqBadge(points: number | null, pointsEarned: number | null): { label: string; cls: string } {
   if (pointsEarned === null) return { label: '📝 Ungraded', cls: 'bg-purple-100 text-purple-700' }
@@ -88,7 +89,10 @@ export default function QuestionReviewList({
 }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
+  const [annotatingId, setAnnotatingId] = useState<string | null>(null)
   if (questions.length === 0) return null
+
+  const annotatingQuestion = questions.find(q => q.questionId === annotatingId) ?? null
 
   // FRQ items have isCorrect: null (nothing to grade) — sort ungraded ones
   // first in teacher view (most actionable), otherwise after the MCQ ones.
@@ -144,26 +148,36 @@ export default function QuestionReviewList({
                 )}
                 {q.questionType === 'frq' ? (
                   <>
-                    {/* Side by side so a teacher can compare the student's
-                        work against the reference answer without scrolling
-                        back and forth — stacks on narrow screens. */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-2">
-                      <div>
-                        <p className="text-xs font-semibold text-gray-500 mb-1">Student&rsquo;s Work</p>
-                        {q.canvasData ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={q.canvasData} alt="Student's work" className="w-full rounded-lg border border-gray-200 bg-white" />
-                        ) : (
-                          <p className="text-sm text-gray-400 italic">No work submitted.</p>
+                    {/* Stacked (not side by side) so the work image can run
+                        full width — legible handwriting matters more here
+                        than fitting the answer key alongside it. */}
+                    <div className="mb-2">
+                      <div className="flex items-center justify-between mb-1">
+                        <p className="text-xs font-semibold text-gray-500">
+                          Student&rsquo;s Work{q.teacherAnnotation && <span className="text-purple-600"> · ✏️ annotated</span>}
+                        </p>
+                        {canGrade && attemptId && q.canvasData && (
+                          <button
+                            onClick={() => setAnnotatingId(q.questionId)}
+                            className="text-xs font-semibold text-purple-600 hover:text-purple-800"
+                          >
+                            ✏️ {q.teacherAnnotation ? 'Edit annotation' : 'Annotate'}
+                          </button>
                         )}
                       </div>
-                      {q.answerKey && (
-                        <div>
-                          <p className="text-xs font-semibold text-gray-500 mb-1">Answer Key</p>
-                          <p className="text-sm text-gray-700 bg-white border border-gray-200 rounded-lg p-2 whitespace-pre-wrap">📖 {q.answerKey}</p>
-                        </div>
+                      {q.teacherAnnotation || q.canvasData ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={q.teacherAnnotation ?? q.canvasData ?? ''} alt="Student's work" className="w-full rounded-lg border border-gray-200 bg-white" />
+                      ) : (
+                        <p className="text-sm text-gray-400 italic">No work submitted.</p>
                       )}
                     </div>
+                    {q.answerKey && (
+                      <div className="mb-2">
+                        <p className="text-xs font-semibold text-gray-500 mb-1">Answer Key</p>
+                        <p className="text-sm text-gray-700 bg-white border border-gray-200 rounded-lg p-2 whitespace-pre-wrap">📖 {q.answerKey}</p>
+                      </div>
+                    )}
                     {canGrade && attemptId && (
                       <FrqScoreInput
                         attemptId={attemptId}
@@ -203,6 +217,14 @@ export default function QuestionReviewList({
             )
           })}
         </div>
+      )}
+      {annotatingQuestion && attemptId && (
+        <FrqAnnotatorModal
+          attemptId={attemptId}
+          questionId={annotatingQuestion.questionId}
+          startingImage={annotatingQuestion.teacherAnnotation ?? annotatingQuestion.canvasData ?? ''}
+          onClose={() => setAnnotatingId(null)}
+        />
       )}
     </div>
   )

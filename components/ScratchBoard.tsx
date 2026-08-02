@@ -12,8 +12,8 @@ export interface ScratchBoardHandle {
 // board; reusing it here would collide with that same student's actual
 // submission for this question). This is pen + clear only, entirely local
 // state, exported as a PNG data URL on demand via the ref.
-const ScratchBoard = forwardRef<ScratchBoardHandle, { initialDataUrl?: string | null }>(function ScratchBoard(
-  { initialDataUrl }, ref
+const ScratchBoard = forwardRef<ScratchBoardHandle, { initialDataUrl?: string | null; label?: string }>(function ScratchBoard(
+  { initialDataUrl, label = '✏️ Work it out here' }, ref
 ) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const drawing = useRef(false)
@@ -85,7 +85,7 @@ const ScratchBoard = forwardRef<ScratchBoardHandle, { initialDataUrl?: string | 
   return (
     <div className="border border-gray-200 rounded-xl overflow-hidden bg-white">
       <div className="flex items-center justify-between px-3 py-1.5 bg-gray-50 border-b border-gray-100">
-        <span className="text-xs font-semibold text-gray-500">✏️ Work it out here</span>
+        <span className="text-xs font-semibold text-gray-500">{label}</span>
         <button onClick={clear} className="text-xs text-gray-400 hover:text-red-500 font-medium">Clear</button>
       </div>
       <canvas

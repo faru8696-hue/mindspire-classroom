@@ -139,19 +139,32 @@ export default function DiagnosticTestSession({
           </div>
 
           {q.imageUrl && (
-            <div className="w-full mb-5 flex justify-center">
+            <div
+              className="w-full mb-5 flex justify-center select-none"
+              onContextMenu={e => e.preventDefault()}
+            >
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={q.imageUrl} alt="Question diagram" loading="lazy"
+              <img src={q.imageUrl} alt="Question diagram" loading="lazy" draggable={false}
                 className="max-w-full max-h-[420px] object-contain rounded-lg border border-gray-200 bg-gray-50" />
             </div>
           )}
 
-          <p className="text-gray-800 font-medium text-base leading-relaxed mb-6 whitespace-pre-wrap">{q.content}</p>
+          {/* select-none + blocked copy/context-menu/drag — a plain deterrent
+              against casually pasting the question into another app, not a
+              hard barrier (screenshots/retyping still work, same as any
+              client-side measure). */}
+          <p
+            className="text-gray-800 font-medium text-base leading-relaxed mb-6 whitespace-pre-wrap select-none"
+            onCopy={e => e.preventDefault()}
+            onContextMenu={e => e.preventDefault()}
+          >
+            {q.content}
+          </p>
 
           {q.questionType === 'frq' ? (
             <ScratchBoard key={q.id} ref={canvasRef} initialDataUrl={frqCanvas.get(q.id) ?? null} />
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-3 select-none" onCopy={e => e.preventDefault()} onContextMenu={e => e.preventDefault()}>
               {(q.options ?? []).map((opt, i) => {
                 const selected = answers.get(q.id) === i
                 return (
