@@ -1,7 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { aggregateTopicScores } from '@/lib/diagnosticGrading'
+import { aggregateTopicScores, computeTotalScore } from '@/lib/diagnosticGrading'
 import TestTitleEditor from '@/components/diagnostic/TestTitleEditor'
 import StudentResultsTable, { type StudentResultRow } from '@/components/diagnostic/StudentResultsTable'
 import PublishToClass from '@/components/diagnostic/PublishToClass'
@@ -39,20 +39,21 @@ export default async function DiagnosticTestDashboardPage({
   const leadById = new Map((leads ?? []).map(l => [l.id, l]))
 
   const n = attempts?.length ?? 0
-  const avgPct = n > 0 ? Math.round((attempts ?? []).reduce((sum, a) => sum + (a.score_pct ?? 0), 0) / n) : 0
 
-  // Class Struggles: aggregate across every completed attempt's answers for
-  // this test, using the same aggregateTopicScores() a single attempt's
-  // breakdown uses — no separate aggregation logic to maintain.
+  // Class Struggles + per-student FRQ scores both need every answer for
+  // this test's completed attempts, joined to each question's CURRENT
+  // topic/type/points — same live-recompute approach as
+  // lib/diagnosticResult.ts, so a subtopic reorganization or FRQ grading
+  // shows up here immediately instead of only on the per-attempt page.
   const attemptIds = (attempts ?? []).map(a => a.id)
   const { data: answers } = attemptIds.length > 0
-    ? await admin.from('diagnostic_attempt_answers').select('question_id, is_correct').in('attempt_id', attemptIds)
-    : { data: [] as { question_id: string; is_correct: boolean | null }[] }
+    ? await admin.from('diagnostic_attempt_answers').select('attempt_id, question_id, is_correct, points_earned').in('attempt_id', attemptIds)
+    : { data: [] as { attempt_id: string; question_id: string; is_correct: boolean | null; points_earned: number | null }[] }
   const questionIds = [...new Set((answers ?? []).map(a => a.question_id))]
   const { data: questions } = questionIds.length > 0
-    ? await admin.from('diagnostic_questions').select('id, topic_id').in('id', questionIds)
-    : { data: [] as { id: string; topic_id: string }[] }
-  const topicIdByQuestion = new Map((questions ?? []).map(q => [q.id, q.topic_id]))
+    ? await admin.from('diagnostic_questions').select('id, topic_id, question_type, points').in('id', questionIds)
+    : { data: [] as { id: string; topic_id: string; question_type: 'mcq' | 'frq'; points: number | null }[] }
+  const questionById = new Map((questions ?? []).map(q => [q.id, q]))
   const topicIds = [...new Set((questions ?? []).map(q => q.topic_id))]
   const { data: topics } = topicIds.length > 0
     ? await admin.from('diagnostic_topics').select('id, title').in('id', topicIds)
@@ -64,15 +65,33 @@ export default async function DiagnosticTestDashboardPage({
     // aggregate) — only MCQ answers belong in a mastery-percentage panel.
     .filter(a => a.is_correct !== null)
     .map(a => {
-      const topicId = topicIdByQuestion.get(a.question_id)
+      const topicId = questionById.get(a.question_id)?.topic_id
       if (!topicId) return null
       return { topicId, topicTitle: topicTitleById.get(topicId) ?? 'Unknown', isCorrect: a.is_correct as boolean }
     })
     .filter((r): r is { topicId: string; topicTitle: string; isCorrect: boolean } => r !== null)
   const classStruggles = aggregateTopicScores(classStruggleRows).filter(t => t.tier !== 'mastered')
 
+  // Per-attempt FRQ score, same shape/logic as lib/diagnosticResult.ts.
+  const frqByAttempt = new Map<string, { totalCount: number; gradedCount: number; totalPoints: number; gradedPoints: number; earnedPoints: number }>()
+  for (const a of answers ?? []) {
+    const q = questionById.get(a.question_id)
+    if (q?.question_type !== 'frq') continue
+    const entry = frqByAttempt.get(a.attempt_id) ?? { totalCount: 0, gradedCount: 0, totalPoints: 0, gradedPoints: 0, earnedPoints: 0 }
+    entry.totalCount += 1
+    entry.totalPoints += q.points ?? 0
+    if (a.points_earned !== null) {
+      entry.gradedCount += 1
+      entry.gradedPoints += q.points ?? 0
+      entry.earnedPoints += a.points_earned
+    }
+    frqByAttempt.set(a.attempt_id, entry)
+  }
+
   const studentRows: StudentResultRow[] = (attempts ?? []).map(a => {
     const lead = leadById.get(a.lead_id)
+    const frq = frqByAttempt.get(a.id) ?? null
+    const total = computeTotalScore(a.correct_count ?? 0, a.total_count ?? 0, frq)
     return {
       attemptId: a.id,
       leadId: a.lead_id,
@@ -80,13 +99,17 @@ export default async function DiagnosticTestDashboardPage({
       studentEmail: lead?.student_email ?? '',
       parentName: lead?.parent_name ?? '',
       parentPhone: lead?.parent_phone ?? '',
-      correctCount: a.correct_count,
-      totalCount: a.total_count,
-      scorePct: a.score_pct,
+      correctCount: total.earned,
+      totalCount: total.possible,
+      scorePct: total.pct,
+      fullyGraded: total.fullyGraded,
+      hasFrq: frq !== null,
       timeSpentMinutes: a.submitted_at ? Math.round((new Date(a.submitted_at).getTime() - new Date(a.started_at).getTime()) / 60000) : 0,
       submittedAt: a.submitted_at,
     }
   })
+
+  const avgPct = n > 0 ? Math.round(studentRows.reduce((sum, r) => sum + (r.scorePct ?? 0), 0) / n) : 0
 
   return (
     <div className="max-w-5xl mx-auto">

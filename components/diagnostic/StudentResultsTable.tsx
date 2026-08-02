@@ -11,9 +11,12 @@ export interface StudentResultRow {
   studentEmail: string
   parentName: string
   parentPhone: string
+  // Total score (MCQ + graded FRQ points combined) — see computeTotalScore.
   correctCount: number | null
   totalCount: number | null
   scorePct: number | null
+  fullyGraded: boolean
+  hasFrq: boolean
   timeSpentMinutes: number
   submittedAt: string | null
 }
@@ -67,7 +70,12 @@ export default function StudentResultsTable({ testId, rows }: { testId: string; 
                 {row.studentEmail}<br />
                 <span className="text-gray-400">Parent: {row.parentName} · {row.parentPhone}</span>
               </td>
-              <td className={`py-3 px-3 ${colorCls}`}>{row.correctCount}/{row.totalCount} ({pct}%)</td>
+              <td className={`py-3 px-3 ${colorCls}`}>
+                {row.correctCount}/{row.totalCount} ({pct}%)
+                {row.hasFrq && !row.fullyGraded && (
+                  <span className="block text-[10px] font-medium text-amber-600 normal-case">⏳ FRQ pending review</span>
+                )}
+              </td>
               <td className="py-3 px-3 text-gray-500 text-xs">{row.timeSpentMinutes}m</td>
               <td className="py-3 px-3 text-gray-400 text-xs">{row.submittedAt ? new Date(row.submittedAt).toLocaleDateString() : ''}</td>
               <td className="py-3 px-3 whitespace-nowrap">
