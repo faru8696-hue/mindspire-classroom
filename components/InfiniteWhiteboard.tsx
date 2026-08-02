@@ -695,7 +695,7 @@ function InfiniteWhiteboardInner({
     } else if (toolRef.current === 'text') {
       pushHistory()
       const id = `text-${Date.now()}`
-      const fontSize = 20, fontFamily = 'Arial, sans-serif'
+      const fontSize = 48, fontFamily = 'Arial, sans-serif'
       const e2 = { id, value: '', color: colorRef.current, fontSize, fontFamily, x: canvasPos.x, y: canvasPos.y }
       // flushSync + an immediate synchronous focus() — without this, the
       // textarea mounts on the next React commit, which is just late enough
@@ -932,7 +932,7 @@ function InfiniteWhiteboardInner({
           // the synthetic mouse events React's onMouseDown relies on).
           pushHistory()
           const id = `text-${Date.now()}`
-          const fontSize = 20, fontFamily = 'Arial, sans-serif'
+          const fontSize = 48, fontFamily = 'Arial, sans-serif'
           const e2 = { id, value: '', color: colorRef.current, fontSize, fontFamily, x: canvasPos.x, y: canvasPos.y }
           flushSync(() => {
             commitObjects(prev => [...prev, { id, type: 'text', x: canvasPos.x, y: canvasPos.y, rotation: 0, data: '', color: colorRef.current, fontSize, fontFamily, zIndex: Date.now() }])
