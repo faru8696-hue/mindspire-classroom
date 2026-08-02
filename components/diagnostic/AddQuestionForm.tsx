@@ -13,12 +13,14 @@ export default function AddQuestionForm({
   const supabase = createClient()
   const router = useRouter()
   const [topicId, setTopicId] = useState(topics[0]?.id ?? '')
+  const [questionType, setQuestionType] = useState<'mcq' | 'frq'>('mcq')
   const [content, setContent] = useState('')
   const [options, setOptions] = useState(['', '', '', ''])
   const [correctIndex, setCorrectIndex] = useState(0)
   const [imageUrl, setImageUrl] = useState('')
   const [source, setSource] = useState('')
   const [explanation, setExplanation] = useState('')
+  const [answerKey, setAnswerKey] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [userId, setUserId] = useState('')
@@ -53,7 +55,7 @@ export default function AddQuestionForm({
     e.preventDefault()
     setError('')
     const trimmedOptions = options.map(o => o.trim()).filter(Boolean)
-    if (trimmedOptions.length < 2) { setError('At least 2 non-empty options are required.'); return }
+    if (questionType === 'mcq' && trimmedOptions.length < 2) { setError('At least 2 non-empty options are required.'); return }
     if (!topicId) { setError('Add a topic first.'); return }
     setLoading(true)
     try {
@@ -61,15 +63,17 @@ export default function AddQuestionForm({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          diagnosticTestId, topicId, content,
-          options: trimmedOptions, correctIndex,
+          diagnosticTestId, topicId, content, questionType,
+          options: questionType === 'mcq' ? trimmedOptions : undefined,
+          correctIndex: questionType === 'mcq' ? correctIndex : undefined,
           imageUrl: imageUrl || undefined, source: source || undefined,
           explanation: explanation.trim() || undefined,
+          answerKey: answerKey.trim() || undefined,
         }),
       })
       const data = await res.json()
       if (!res.ok) { setError(data.error || 'Something went wrong.'); setLoading(false); return }
-      setContent(''); setOptions(['', '', '', '']); setCorrectIndex(0); setImageUrl(''); setSource(''); setExplanation(''); setLoading(false)
+      setContent(''); setOptions(['', '', '', '']); setCorrectIndex(0); setImageUrl(''); setSource(''); setExplanation(''); setAnswerKey(''); setLoading(false)
       router.refresh()
     } catch {
       setError('Connection error.')
@@ -86,6 +90,22 @@ export default function AddQuestionForm({
           className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500">
           {topics.map(t => <option key={t.id} value={t.id}>{t.title}</option>)}
         </select>
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Question type</label>
+        <div className="inline-flex rounded-lg border border-gray-300 overflow-hidden text-sm">
+          <button type="button" onClick={() => setQuestionType('mcq')}
+            className={`px-3 py-1.5 font-semibold ${questionType === 'mcq' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>
+            Multiple choice
+          </button>
+          <button type="button" onClick={() => setQuestionType('frq')}
+            className={`px-3 py-1.5 font-semibold ${questionType === 'frq' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>
+            Free response
+          </button>
+        </div>
+        {questionType === 'frq' && (
+          <p className="text-xs text-gray-400 mt-1">Students get a scratch board to show their work — not auto-graded, reviewed afterward.</p>
+        )}
       </div>
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">Question</label>
@@ -110,28 +130,39 @@ export default function AddQuestionForm({
         <input value={imageUrl} onChange={e => setImageUrl(e.target.value)} placeholder="…or paste an image URL"
           className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
       </div>
-      <div className="space-y-2">
-        <label className="block text-sm font-medium text-gray-700">Options — mark the correct one</label>
-        {options.map((opt, i) => (
-          <div key={i} className="flex items-center gap-2">
-            <input type="radio" name="correctIndex" checked={correctIndex === i} onChange={() => setCorrectIndex(i)} />
-            <span className="text-sm font-bold text-gray-500 w-5">{String.fromCharCode(65 + i)}</span>
-            <input value={opt} onChange={e => setOption(i, e.target.value)} placeholder={`Option ${String.fromCharCode(65 + i)}`}
-              className="flex-1 border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-          </div>
-        ))}
-      </div>
+      {questionType === 'mcq' ? (
+        <div className="space-y-2">
+          <label className="block text-sm font-medium text-gray-700">Options — mark the correct one</label>
+          {options.map((opt, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <input type="radio" name="correctIndex" checked={correctIndex === i} onChange={() => setCorrectIndex(i)} />
+              <span className="text-sm font-bold text-gray-500 w-5">{String.fromCharCode(65 + i)}</span>
+              <input value={opt} onChange={e => setOption(i, e.target.value)} placeholder={`Option ${String.fromCharCode(65 + i)}`}
+                className="flex-1 border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Answer key (shown during review, not to the student while testing)</label>
+          <textarea value={answerKey} onChange={e => setAnswerKey(e.target.value)} rows={4}
+            placeholder="Model answer / worked solution."
+            className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        </div>
+      )}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">Source (optional)</label>
         <input value={source} onChange={e => setSource(e.target.value)} placeholder="e.g. Chapter 1 Practice Test"
           className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500" />
       </div>
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Explanation (optional, shown to students after they finish)</label>
-        <textarea value={explanation} onChange={e => setExplanation(e.target.value)} rows={2}
-          placeholder="Why the correct answer is right — students see this on their results page."
-          className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-      </div>
+      {questionType === 'mcq' && (
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Explanation (optional, shown to students after they finish)</label>
+          <textarea value={explanation} onChange={e => setExplanation(e.target.value)} rows={2}
+            placeholder="Why the correct answer is right — students see this on their results page."
+            className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        </div>
+      )}
 
       {error && <p className="text-red-600 text-sm bg-red-50 p-2 rounded-lg">{error}</p>}
       <button type="submit" disabled={loading || uploadingImage || topics.length === 0}

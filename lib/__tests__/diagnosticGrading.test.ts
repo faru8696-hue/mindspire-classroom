@@ -36,9 +36,9 @@ describe('aggregateTopicScores', () => {
 
 describe('gradeDiagnosticAttempt', () => {
   const questions = [
-    { id: 'q1', topicId: 't1', topicTitle: 'Stoichiometry', mcqCorrectIndex: 0, prepAdvice: 'Review mole conversions.' },
-    { id: 'q2', topicId: 't1', topicTitle: 'Stoichiometry', mcqCorrectIndex: 1, prepAdvice: 'Review mole conversions.' },
-    { id: 'q3', topicId: 't2', topicTitle: 'Sig Figs', mcqCorrectIndex: 2, prepAdvice: null },
+    { id: 'q1', topicId: 't1', topicTitle: 'Stoichiometry', questionType: 'mcq' as const, mcqCorrectIndex: 0, prepAdvice: 'Review mole conversions.' },
+    { id: 'q2', topicId: 't1', topicTitle: 'Stoichiometry', questionType: 'mcq' as const, mcqCorrectIndex: 1, prepAdvice: 'Review mole conversions.' },
+    { id: 'q3', topicId: 't2', topicTitle: 'Sig Figs', questionType: 'mcq' as const, mcqCorrectIndex: 2, prepAdvice: null },
   ]
 
   it('computes correct/incorrect per question and an overall score', () => {
@@ -50,10 +50,25 @@ describe('gradeDiagnosticAttempt', () => {
     expect(result.totalCount).toBe(3)
     expect(result.scorePct).toBe(67)
     expect(result.perQuestion).toEqual([
-      { questionId: 'q1', isCorrect: true },
-      { questionId: 'q2', isCorrect: false },
-      { questionId: 'q3', isCorrect: true },
+      { questionId: 'q1', questionType: 'mcq', isCorrect: true },
+      { questionId: 'q2', questionType: 'mcq', isCorrect: false },
+      { questionId: 'q3', questionType: 'mcq', isCorrect: true },
     ])
+  })
+
+  it('excludes FRQ questions from scoring entirely', () => {
+    const withFrq = [
+      ...questions,
+      { id: 'q4', topicId: 't2', topicTitle: 'Sig Figs', questionType: 'frq' as const, mcqCorrectIndex: null, prepAdvice: null },
+    ]
+    const result = gradeDiagnosticAttempt(
+      [{ questionId: 'q1', selectedIndex: 0 }, { questionId: 'q2', selectedIndex: 1 }, { questionId: 'q3', selectedIndex: 2 }],
+      withFrq
+    )
+    expect(result.correctCount).toBe(3)
+    expect(result.totalCount).toBe(3) // q4 (FRQ) not counted
+    expect(result.scorePct).toBe(100)
+    expect(result.perQuestion).toContainEqual({ questionId: 'q4', questionType: 'frq', isCorrect: null })
   })
 
   it('treats a missing answer as incorrect rather than throwing', () => {

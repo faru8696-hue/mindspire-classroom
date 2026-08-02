@@ -4,12 +4,14 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import TopicBadge from './TopicBadge'
 import ProgressDots from './ProgressDots'
+import ScratchBoard, { ScratchBoardHandle } from '../ScratchBoard'
 
 export interface DiagnosticSessionQuestion {
   id: string
   content: string
   imageUrl: string | null
-  options: string[]
+  questionType: 'mcq' | 'frq'
+  options: string[] | null
   topicId: string
   topicTitle: string
 }
@@ -32,25 +34,48 @@ export default function DiagnosticTestSession({
   const router = useRouter()
   const [index, setIndex] = useState(0)
   const [answers, setAnswers] = useState<Map<string, number>>(new Map())
+  const [frqCanvas, setFrqCanvas] = useState<Map<string, string | null>>(new Map())
   const [secondsLeft, setSecondsLeft] = useState(durationMinutes * 60)
   const [submitting, setSubmitting] = useState(false)
   const submittingRef = useRef(false)
+  const canvasRef = useRef<ScratchBoardHandle>(null)
 
   const q = questions[index]
   const answeredSet = new Set(
-    questions.map((qq, i) => (answers.has(qq.id) ? i : -1)).filter(i => i >= 0)
+    questions
+      .map((qq, i) => {
+        const answered = qq.questionType === 'frq' ? !!frqCanvas.get(qq.id) : answers.has(qq.id)
+        return answered ? i : -1
+      })
+      .filter(i => i >= 0)
   )
+
+  // Grabs whatever's currently on the scratch board before navigating away
+  // from an FRQ question — mirrors SelfCheckSession's capture-on-navigate
+  // pattern, since React state updates from setFrqCanvas wouldn't be
+  // visible within the same function call otherwise.
+  function captureCurrentCanvas(map: Map<string, string | null>): Map<string, string | null> {
+    if (q?.questionType !== 'frq') return map
+    const next = new Map(map)
+    next.set(q.id, canvasRef.current?.getSnapshot() ?? null)
+    return next
+  }
 
   const handleSubmit = useCallback(async () => {
     if (submittingRef.current) return
     submittingRef.current = true
     setSubmitting(true)
     try {
-      const payload = [...answers.entries()].map(([questionId, selectedIndex]) => ({ questionId, selectedIndex }))
+      const finalCanvas = captureCurrentCanvas(frqCanvas)
+      setFrqCanvas(finalCanvas)
+      const mcqPayload = [...answers.entries()].map(([questionId, selectedIndex]) => ({ questionId, selectedIndex }))
+      const frqPayload = questions
+        .filter(qq => qq.questionType === 'frq')
+        .map(qq => ({ questionId: qq.id, canvasData: finalCanvas.get(qq.id) ?? null }))
       const res = await fetch('/api/diagnostic/submit-attempt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ attemptId, answers: payload }),
+        body: JSON.stringify({ attemptId, answers: [...mcqPayload, ...frqPayload] }),
       })
       if (res.ok) {
         router.push(`/diagnostic/${slug}/results/${attemptId}`)
@@ -59,7 +84,8 @@ export default function DiagnosticTestSession({
     } catch {}
     submittingRef.current = false
     setSubmitting(false)
-  }, [answers, attemptId, slug, router])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [answers, frqCanvas, questions, attemptId, slug, router])
 
   useEffect(() => {
     if (secondsLeft <= 0) { handleSubmit(); return }
@@ -70,11 +96,18 @@ export default function DiagnosticTestSession({
   function pick(optionIndex: number) {
     setAnswers(prev => new Map(prev).set(q.id, optionIndex))
   }
-  function next() { if (index < questions.length - 1) setIndex(i => i + 1) }
-  function prev() { if (index > 0) setIndex(i => i - 1) }
+  function goTo(target: number) {
+    setFrqCanvas(prev => captureCurrentCanvas(prev))
+    setIndex(target)
+  }
+  function next() { if (index < questions.length - 1) goTo(index + 1) }
+  function prev() { if (index > 0) goTo(index - 1) }
 
   function confirmSubmit() {
-    const unanswered = questions.length - answers.size
+    const answeredCount = questions.filter(qq =>
+      qq.questionType === 'frq' ? (qq.id === q.id ? true : !!frqCanvas.get(qq.id)) : answers.has(qq.id)
+    ).length
+    const unanswered = questions.length - answeredCount
     if (unanswered > 0 && !confirm(`${unanswered} question${unanswered === 1 ? '' : 's'} unanswered. Submit anyway?`)) return
     handleSubmit()
   }
@@ -97,7 +130,7 @@ export default function DiagnosticTestSession({
       </div>
 
       <div className="max-w-3xl mx-auto px-4 py-4">
-        <ProgressDots total={questions.length} current={index} answered={answeredSet} onJump={setIndex} />
+        <ProgressDots total={questions.length} current={index} answered={answeredSet} onJump={goTo} />
 
         <div className="bg-white rounded-2xl shadow border border-gray-100 p-6">
           <div className="flex gap-2 flex-wrap mb-4">
@@ -115,27 +148,31 @@ export default function DiagnosticTestSession({
 
           <p className="text-gray-800 font-medium text-base leading-relaxed mb-6 whitespace-pre-wrap">{q.content}</p>
 
-          <div className="space-y-3">
-            {q.options.map((opt, i) => {
-              const selected = answers.get(q.id) === i
-              return (
-                <button
-                  key={i}
-                  onClick={() => pick(i)}
-                  className={`w-full text-left px-5 py-4 border-2 rounded-xl text-gray-800 transition-transform hover:translate-x-1 ${
-                    selected ? 'bg-blue-800 text-white border-blue-800' : 'border-gray-200 hover:border-blue-300'
-                  }`}
-                >
-                  <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full font-bold mr-3 text-sm ${
-                    selected ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-700'
-                  }`}>
-                    {String.fromCharCode(65 + i)}
-                  </span>
-                  {opt}
-                </button>
-              )
-            })}
-          </div>
+          {q.questionType === 'frq' ? (
+            <ScratchBoard key={q.id} ref={canvasRef} initialDataUrl={frqCanvas.get(q.id) ?? null} />
+          ) : (
+            <div className="space-y-3">
+              {(q.options ?? []).map((opt, i) => {
+                const selected = answers.get(q.id) === i
+                return (
+                  <button
+                    key={i}
+                    onClick={() => pick(i)}
+                    className={`w-full text-left px-5 py-4 border-2 rounded-xl text-gray-800 transition-transform hover:translate-x-1 ${
+                      selected ? 'bg-blue-800 text-white border-blue-800' : 'border-gray-200 hover:border-blue-300'
+                    }`}
+                  >
+                    <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full font-bold mr-3 text-sm ${
+                      selected ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-700'
+                    }`}>
+                      {String.fromCharCode(65 + i)}
+                    </span>
+                    {opt}
+                  </button>
+                )
+              })}
+            </div>
+          )}
         </div>
 
         <div className="flex justify-between items-center mt-4 pb-8">

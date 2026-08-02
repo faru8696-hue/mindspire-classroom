@@ -25,7 +25,7 @@ export async function getDiagnosticResult(attemptId: string): Promise<Diagnostic
   const [{ data: test }, { data: lead }, { data: answers }] = await Promise.all([
     admin.from('diagnostic_tests').select('title').eq('id', attempt.diagnostic_test_id).maybeSingle(),
     admin.from('diagnostic_leads').select('student_name').eq('id', attempt.lead_id).maybeSingle(),
-    admin.from('diagnostic_attempt_answers').select('question_id, selected_index, is_correct').eq('attempt_id', attemptId),
+    admin.from('diagnostic_attempt_answers').select('question_id, selected_index, is_correct, canvas_data').eq('attempt_id', attemptId),
   ])
 
   const breakdown = (attempt.topic_breakdown ?? { topicScores: [], advice: [] }) as {
@@ -40,8 +40,8 @@ export async function getDiagnosticResult(attemptId: string): Promise<Diagnostic
   // wants when reviewing what they got wrong.
   const questionIds = (answers ?? []).map(a => a.question_id)
   const { data: reviewQuestions } = questionIds.length > 0
-    ? await admin.from('diagnostic_questions').select('id, content, image_url, mcq_options, mcq_correct_index, explanation').in('id', questionIds)
-    : { data: [] as { id: string; content: string; image_url: string | null; mcq_options: string[]; mcq_correct_index: number; explanation: string | null }[] }
+    ? await admin.from('diagnostic_questions').select('id, content, image_url, mcq_options, mcq_correct_index, question_type, explanation, answer_key').in('id', questionIds)
+    : { data: [] as { id: string; content: string; image_url: string | null; mcq_options: string[] | null; mcq_correct_index: number | null; question_type: 'mcq' | 'frq'; explanation: string | null; answer_key: string | null }[] }
   const questionById = new Map((reviewQuestions ?? []).map(q => [q.id, q]))
   const questionReview: QuestionReviewItem[] = (answers ?? [])
     .map(a => {
@@ -51,11 +51,14 @@ export async function getDiagnosticResult(attemptId: string): Promise<Diagnostic
         questionId: a.question_id,
         content: q.content,
         imageUrl: q.image_url,
+        questionType: q.question_type ?? 'mcq',
         options: q.mcq_options,
         selectedIndex: a.selected_index,
         correctIndex: q.mcq_correct_index,
         isCorrect: a.is_correct,
         explanation: q.explanation,
+        answerKey: q.answer_key,
+        canvasData: a.canvas_data,
       }
     })
     .filter((r): r is QuestionReviewItem => r !== null)

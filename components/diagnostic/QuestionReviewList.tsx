@@ -12,8 +12,10 @@ export default function QuestionReviewList({ questions }: { questions: QuestionR
   const [open, setOpen] = useState(false)
   if (questions.length === 0) return null
 
-  const sorted = [...questions].sort((a, b) => Number(a.isCorrect) - Number(b.isCorrect))
-  const wrongCount = questions.filter(q => !q.isCorrect).length
+  // FRQ items have isCorrect: null (nothing to grade) — sort them after the
+  // MCQ ones, which are wrong-first same as before.
+  const sorted = [...questions].sort((a, b) => Number(a.isCorrect ?? 2) - Number(b.isCorrect ?? 2))
+  const wrongCount = questions.filter(q => q.questionType === 'mcq' && !q.isCorrect).length
 
   return (
     <div className="bg-white rounded-2xl shadow p-6">
@@ -33,11 +35,17 @@ export default function QuestionReviewList({ questions }: { questions: QuestionR
           {sorted.map(q => (
             <div
               key={q.questionId}
-              className={`rounded-xl border p-4 ${q.isCorrect ? 'border-green-100 bg-green-50/30' : 'border-red-100 bg-red-50/30'}`}
+              className={`rounded-xl border p-4 ${
+                q.questionType === 'frq' ? 'border-purple-100 bg-purple-50/30' :
+                q.isCorrect ? 'border-green-100 bg-green-50/30' : 'border-red-100 bg-red-50/30'
+              }`}
             >
               <div className="flex items-start gap-2 mb-2">
-                <span className={`text-xs font-bold px-2 py-0.5 rounded-full flex-shrink-0 ${q.isCorrect ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
-                  {q.isCorrect ? '✓ Correct' : '✗ Incorrect'}
+                <span className={`text-xs font-bold px-2 py-0.5 rounded-full flex-shrink-0 ${
+                  q.questionType === 'frq' ? 'bg-purple-100 text-purple-700' :
+                  q.isCorrect ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'
+                }`}>
+                  {q.questionType === 'frq' ? '📝 Free response' : q.isCorrect ? '✓ Correct' : '✗ Incorrect'}
                 </span>
                 <p className="text-sm text-gray-800 whitespace-pre-wrap">{q.content}</p>
               </div>
@@ -45,27 +53,41 @@ export default function QuestionReviewList({ questions }: { questions: QuestionR
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={q.imageUrl} alt="" className="max-h-64 rounded-lg border border-gray-200 mb-2 object-contain bg-white" />
               )}
-              <div className="space-y-1 mb-2">
-                {q.options.map((opt, idx) => {
-                  const isCorrectOpt = idx === q.correctIndex
-                  const isSelectedOpt = idx === q.selectedIndex
-                  return (
-                    <div
-                      key={idx}
-                      className={`text-sm px-2 py-1 rounded flex items-center gap-1.5 ${
-                        isCorrectOpt ? 'bg-green-100 text-green-800 font-semibold' :
-                        isSelectedOpt ? 'bg-red-100 text-red-700 font-semibold' :
-                                        'text-gray-600'
-                      }`}
-                    >
-                      <span>{String.fromCharCode(65 + idx)}. {opt}</span>
-                      {isCorrectOpt && <span>✓</span>}
-                      {isSelectedOpt && !isCorrectOpt && <span>← your answer</span>}
-                    </div>
-                  )
-                })}
-              </div>
-              {q.explanation && (
+              {q.questionType === 'frq' ? (
+                <>
+                  {q.canvasData ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={q.canvasData} alt="Student's work" className="w-full rounded-lg border border-gray-200 mb-2 bg-white" />
+                  ) : (
+                    <p className="text-sm text-gray-400 italic mb-2">No work submitted.</p>
+                  )}
+                  {q.answerKey && (
+                    <p className="text-sm text-gray-700 bg-white border border-gray-200 rounded-lg p-2 mt-2 whitespace-pre-wrap">📖 {q.answerKey}</p>
+                  )}
+                </>
+              ) : (
+                <div className="space-y-1 mb-2">
+                  {(q.options ?? []).map((opt, idx) => {
+                    const isCorrectOpt = idx === q.correctIndex
+                    const isSelectedOpt = idx === q.selectedIndex
+                    return (
+                      <div
+                        key={idx}
+                        className={`text-sm px-2 py-1 rounded flex items-center gap-1.5 ${
+                          isCorrectOpt ? 'bg-green-100 text-green-800 font-semibold' :
+                          isSelectedOpt ? 'bg-red-100 text-red-700 font-semibold' :
+                                          'text-gray-600'
+                        }`}
+                      >
+                        <span>{String.fromCharCode(65 + idx)}. {opt}</span>
+                        {isCorrectOpt && <span>✓</span>}
+                        {isSelectedOpt && !isCorrectOpt && <span>← your answer</span>}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+              {q.questionType === 'mcq' && q.explanation && (
                 <p className="text-sm text-gray-700 bg-white border border-gray-200 rounded-lg p-2 mt-2">💡 {q.explanation}</p>
               )}
             </div>

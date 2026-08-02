@@ -46,7 +46,7 @@ export default async function DiagnosticTestDashboardPage({
   const attemptIds = (attempts ?? []).map(a => a.id)
   const { data: answers } = attemptIds.length > 0
     ? await admin.from('diagnostic_attempt_answers').select('question_id, is_correct').in('attempt_id', attemptIds)
-    : { data: [] as { question_id: string; is_correct: boolean }[] }
+    : { data: [] as { question_id: string; is_correct: boolean | null }[] }
   const questionIds = [...new Set((answers ?? []).map(a => a.question_id))]
   const { data: questions } = questionIds.length > 0
     ? await admin.from('diagnostic_questions').select('id, topic_id').in('id', questionIds)
@@ -59,10 +59,13 @@ export default async function DiagnosticTestDashboardPage({
   const topicTitleById = new Map((topics ?? []).map(t => [t.id, t.title]))
 
   const classStruggleRows = (answers ?? [])
+    // FRQ answers carry is_correct: null (not auto-graded, nothing to
+    // aggregate) — only MCQ answers belong in a mastery-percentage panel.
+    .filter(a => a.is_correct !== null)
     .map(a => {
       const topicId = topicIdByQuestion.get(a.question_id)
       if (!topicId) return null
-      return { topicId, topicTitle: topicTitleById.get(topicId) ?? 'Unknown', isCorrect: a.is_correct }
+      return { topicId, topicTitle: topicTitleById.get(topicId) ?? 'Unknown', isCorrect: a.is_correct as boolean }
     })
     .filter((r): r is { topicId: string; topicTitle: string; isCorrect: boolean } => r !== null)
   const classStruggles = aggregateTopicScores(classStruggleRows).filter(t => t.tier !== 'mastered')

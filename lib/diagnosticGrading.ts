@@ -49,7 +49,8 @@ export interface DiagnosticQuestionForGrading {
   id: string
   topicId: string
   topicTitle: string
-  mcqCorrectIndex: number
+  questionType: 'mcq' | 'frq'
+  mcqCorrectIndex: number | null
   prepAdvice: string | null
 }
 
@@ -58,7 +59,11 @@ export interface GradedAttempt {
   totalCount: number
   scorePct: number
   topicScores: TopicScore[]
-  perQuestion: { questionId: string; isCorrect: boolean }[]
+  // FRQ questions carry isCorrect: null — they're not auto-graded, just
+  // reviewed afterward, so they're excluded from correctCount/totalCount/
+  // topicScores/scorePct entirely (an FRQ-heavy test shouldn't drag down
+  // or inflate a score that's supposed to reflect objective correctness).
+  perQuestion: { questionId: string; questionType: 'mcq' | 'frq'; isCorrect: boolean | null }[]
   // Non-mastered topics that have authored prep_advice, worst-first —
   // exactly what both the results page and the PDF render. Deterministic,
   // no AI: this is just a filter + sort over already-authored text.
@@ -66,24 +71,29 @@ export interface GradedAttempt {
 }
 
 export function gradeDiagnosticAttempt(
-  answers: { questionId: string; selectedIndex: number }[],
+  answers: { questionId: string; selectedIndex?: number }[],
   questions: DiagnosticQuestionForGrading[]
 ): GradedAttempt {
   const answerByQuestion = new Map(answers.map(a => [a.questionId, a.selectedIndex]))
 
-  const perQuestion: { questionId: string; isCorrect: boolean }[] = []
+  const perQuestion: { questionId: string; questionType: 'mcq' | 'frq'; isCorrect: boolean | null }[] = []
   const topicRows: { topicId: string; topicTitle: string; isCorrect: boolean }[] = []
   let correctCount = 0
+  let totalCount = 0
 
   for (const q of questions) {
+    if (q.questionType === 'frq') {
+      perQuestion.push({ questionId: q.id, questionType: 'frq', isCorrect: null })
+      continue
+    }
     const selectedIndex = answerByQuestion.get(q.id)
     const isCorrect = selectedIndex !== undefined && selectedIndex === q.mcqCorrectIndex
     if (isCorrect) correctCount += 1
-    perQuestion.push({ questionId: q.id, isCorrect })
+    totalCount += 1
+    perQuestion.push({ questionId: q.id, questionType: 'mcq', isCorrect })
     topicRows.push({ topicId: q.topicId, topicTitle: q.topicTitle, isCorrect })
   }
 
-  const totalCount = questions.length
   const scorePct = totalCount > 0 ? Math.round((correctCount / totalCount) * 100) : 0
   const topicScores = aggregateTopicScores(topicRows)
 

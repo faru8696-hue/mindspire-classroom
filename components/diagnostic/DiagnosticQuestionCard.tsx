@@ -8,11 +8,13 @@ export interface DiagnosticQuestionCardData {
   id: string
   topic_id: string
   content: string
-  mcq_options: string[]
-  mcq_correct_index: number
+  question_type: 'mcq' | 'frq'
+  mcq_options: string[] | null
+  mcq_correct_index: number | null
   image_url: string | null
   source: string | null
   explanation: string | null
+  answer_key: string | null
   is_active: boolean
 }
 
@@ -27,14 +29,16 @@ export default function DiagnosticQuestionCard({
   const router = useRouter()
   const [editing, setEditing] = useState(false)
   const [topicId, setTopicId] = useState(question.topic_id)
+  const [questionType, setQuestionType] = useState<'mcq' | 'frq'>(question.question_type ?? 'mcq')
   const [content, setContent] = useState(question.content)
   const [options, setOptions] = useState<string[]>(
-    question.mcq_options.length >= 4 ? question.mcq_options : [...question.mcq_options, '', '', '', ''].slice(0, 4)
+    (question.mcq_options ?? []).length >= 4 ? (question.mcq_options as string[]) : [...(question.mcq_options ?? []), '', '', '', ''].slice(0, 4)
   )
-  const [correctIndex, setCorrectIndex] = useState(question.mcq_correct_index)
+  const [correctIndex, setCorrectIndex] = useState(question.mcq_correct_index ?? 0)
   const [imageUrl, setImageUrl] = useState(question.image_url ?? '')
   const [source, setSource] = useState(question.source ?? '')
   const [explanation, setExplanation] = useState(question.explanation ?? '')
+  const [answerKey, setAnswerKey] = useState(question.answer_key ?? '')
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const [userId, setUserId] = useState('')
@@ -69,12 +73,14 @@ export default function DiagnosticQuestionCard({
 
   function cancelEdit() {
     setTopicId(question.topic_id)
+    setQuestionType(question.question_type ?? 'mcq')
     setContent(question.content)
-    setOptions(question.mcq_options.length >= 4 ? question.mcq_options : [...question.mcq_options, '', '', '', ''].slice(0, 4))
-    setCorrectIndex(question.mcq_correct_index)
+    setOptions((question.mcq_options ?? []).length >= 4 ? (question.mcq_options as string[]) : [...(question.mcq_options ?? []), '', '', '', ''].slice(0, 4))
+    setCorrectIndex(question.mcq_correct_index ?? 0)
     setImageUrl(question.image_url ?? '')
     setSource(question.source ?? '')
     setExplanation(question.explanation ?? '')
+    setAnswerKey(question.answer_key ?? '')
     setError('')
     setEditing(false)
   }
@@ -82,18 +88,22 @@ export default function DiagnosticQuestionCard({
   async function save() {
     setError('')
     const trimmedOptions = options.map(o => o.trim()).filter(Boolean)
-    if (trimmedOptions.length < 2) { setError('At least 2 non-empty options are required.'); return }
-    if (correctIndex >= trimmedOptions.length) { setError('The correct answer must be one of the remaining options.'); return }
+    if (questionType === 'mcq') {
+      if (trimmedOptions.length < 2) { setError('At least 2 non-empty options are required.'); return }
+      if (correctIndex >= trimmedOptions.length) { setError('The correct answer must be one of the remaining options.'); return }
+    }
     setSaving(true)
     try {
       const res = await fetch('/api/diagnostic/admin/update-question', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          questionId: question.id, topicId, content,
-          options: trimmedOptions, correctIndex,
+          questionId: question.id, topicId, content, questionType,
+          options: questionType === 'mcq' ? trimmedOptions : undefined,
+          correctIndex: questionType === 'mcq' ? correctIndex : undefined,
           imageUrl: imageUrl || undefined, source: source || undefined,
           explanation: explanation.trim() || undefined,
+          answerKey: answerKey.trim() || undefined,
         }),
       })
       const data = await res.json()
@@ -139,6 +149,19 @@ export default function DiagnosticQuestionCard({
           </select>
         </div>
         <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Question type</label>
+          <div className="inline-flex rounded-lg border border-gray-300 overflow-hidden text-sm">
+            <button type="button" onClick={() => setQuestionType('mcq')}
+              className={`px-3 py-1.5 font-semibold ${questionType === 'mcq' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>
+              Multiple choice
+            </button>
+            <button type="button" onClick={() => setQuestionType('frq')}
+              className={`px-3 py-1.5 font-semibold ${questionType === 'frq' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>
+              Free response
+            </button>
+          </div>
+        </div>
+        <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Question</label>
           <textarea value={content} onChange={e => setContent(e.target.value)} rows={3}
             className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500" />
@@ -161,28 +184,39 @@ export default function DiagnosticQuestionCard({
           <input value={imageUrl} onChange={e => setImageUrl(e.target.value)} placeholder="…or paste an image URL"
             className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
         </div>
-        <div className="space-y-2">
-          <label className="block text-sm font-medium text-gray-700">Options — mark the correct one</label>
-          {options.map((opt, i) => (
-            <div key={i} className="flex items-center gap-2">
-              <input type="radio" name={`correctIndex-${question.id}`} checked={correctIndex === i} onChange={() => setCorrectIndex(i)} />
-              <span className="text-sm font-bold text-gray-500 w-5">{String.fromCharCode(65 + i)}</span>
-              <input value={opt} onChange={e => setOption(i, e.target.value)} placeholder={`Option ${String.fromCharCode(65 + i)}`}
-                className="flex-1 border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-            </div>
-          ))}
-        </div>
+        {questionType === 'mcq' ? (
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-gray-700">Options — mark the correct one</label>
+            {options.map((opt, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <input type="radio" name={`correctIndex-${question.id}`} checked={correctIndex === i} onChange={() => setCorrectIndex(i)} />
+                <span className="text-sm font-bold text-gray-500 w-5">{String.fromCharCode(65 + i)}</span>
+                <input value={opt} onChange={e => setOption(i, e.target.value)} placeholder={`Option ${String.fromCharCode(65 + i)}`}
+                  className="flex-1 border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Answer key (shown during review)</label>
+            <textarea value={answerKey} onChange={e => setAnswerKey(e.target.value)} rows={4}
+              placeholder="Model answer / worked solution."
+              className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          </div>
+        )}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Source (optional)</label>
           <input value={source} onChange={e => setSource(e.target.value)} placeholder="e.g. Chapter 1 Practice Test"
             className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500" />
         </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Explanation (optional, shown to students after they finish)</label>
-          <textarea value={explanation} onChange={e => setExplanation(e.target.value)} rows={2}
-            placeholder="Why the correct answer is right — students see this on their results page."
-            className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-        </div>
+        {questionType === 'mcq' && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Explanation (optional, shown to students after they finish)</label>
+            <textarea value={explanation} onChange={e => setExplanation(e.target.value)} rows={2}
+              placeholder="Why the correct answer is right — students see this on their results page."
+              className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          </div>
+        )}
 
         {error && <p className="text-red-600 text-sm bg-red-50 p-2 rounded-lg">{error}</p>}
         <div className="flex gap-2">
@@ -218,14 +252,23 @@ export default function DiagnosticQuestionCard({
         </div>
       </div>
       <p className="text-sm text-gray-800 mb-2">{question.content}</p>
-      <div className="space-y-1">
-        {question.mcq_options.map((opt, i) => (
-          <div key={i} className={`text-xs px-2 py-1 rounded ${i === question.mcq_correct_index ? 'bg-green-50 text-green-700 font-semibold' : 'text-gray-500'}`}>
-            {String.fromCharCode(65 + i)}. {opt}{i === question.mcq_correct_index ? ' ✓' : ''}
-          </div>
-        ))}
-      </div>
-      {question.explanation && (
+      {question.question_type === 'frq' ? (
+        <>
+          <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">📝 Free response</span>
+          {question.answer_key && (
+            <p className="text-xs text-gray-500 mt-2 whitespace-pre-wrap">📖 {question.answer_key}</p>
+          )}
+        </>
+      ) : (
+        <div className="space-y-1">
+          {(question.mcq_options ?? []).map((opt, i) => (
+            <div key={i} className={`text-xs px-2 py-1 rounded ${i === question.mcq_correct_index ? 'bg-green-50 text-green-700 font-semibold' : 'text-gray-500'}`}>
+              {String.fromCharCode(65 + i)}. {opt}{i === question.mcq_correct_index ? ' ✓' : ''}
+            </div>
+          ))}
+        </div>
+      )}
+      {question.question_type === 'mcq' && question.explanation && (
         <p className="text-xs text-gray-500 mt-2 italic">💡 {question.explanation}</p>
       )}
     </div>

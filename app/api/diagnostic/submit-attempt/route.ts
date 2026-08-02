@@ -7,7 +7,7 @@ import { gradeDiagnosticAttempt, type DiagnosticQuestionForGrading } from '@/lib
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null) as {
     attemptId?: string
-    answers?: { questionId: string; selectedIndex: number }[]
+    answers?: { questionId: string; selectedIndex?: number; canvasData?: string | null }[]
   } | null
 
   const attemptId = body?.attemptId
@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
   const questionIds = attempt.question_ids as string[]
   const { data: questions } = await admin
     .from('diagnostic_questions')
-    .select('id, topic_id, mcq_correct_index')
+    .select('id, topic_id, question_type, mcq_correct_index')
     .in('id', questionIds)
 
   const topicIds = [...new Set((questions ?? []).map(q => q.topic_id))]
@@ -47,6 +47,7 @@ export async function POST(req: NextRequest) {
       id: q.id,
       topicId: q.topic_id,
       topicTitle: topic?.title ?? 'Unknown topic',
+      questionType: (q.question_type as 'mcq' | 'frq') ?? 'mcq',
       mcqCorrectIndex: q.mcq_correct_index,
       prepAdvice: topic?.prep_advice ?? null,
     }
@@ -56,11 +57,21 @@ export async function POST(req: NextRequest) {
 
   const answerRows = graded.perQuestion.map(pq => {
     const submitted = answers.find(a => a.questionId === pq.questionId)
+    if (pq.questionType === 'frq') {
+      return {
+        attempt_id: attempt.id,
+        question_id: pq.questionId,
+        selected_index: null,
+        is_correct: null,
+        canvas_data: submitted?.canvasData ?? null,
+      }
+    }
     return {
       attempt_id: attempt.id,
       question_id: pq.questionId,
       selected_index: submitted?.selectedIndex ?? -1,
       is_correct: pq.isCorrect,
+      canvas_data: null,
     }
   })
   if (answerRows.length > 0) {

@@ -8,11 +8,14 @@ export interface QuestionReviewItem {
   questionId: string
   content: string
   imageUrl: string | null
-  options: string[]
-  selectedIndex: number
-  correctIndex: number
-  isCorrect: boolean
+  questionType: 'mcq' | 'frq'
+  options: string[] | null
+  selectedIndex: number | null
+  correctIndex: number | null
+  isCorrect: boolean | null
   explanation: string | null
+  answerKey: string | null
+  canvasData: string | null
 }
 
 export interface DiagnosticResultData {

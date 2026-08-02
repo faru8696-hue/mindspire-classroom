@@ -7,22 +7,30 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
   }
 
-  const { diagnosticTestId, topicId, content, options, correctIndex, imageUrl, source, explanation } = await req.json() as {
+  const { diagnosticTestId, topicId, content, questionType, options, correctIndex, imageUrl, source, explanation, answerKey } = await req.json() as {
     diagnosticTestId?: string
     topicId?: string
     content?: string
+    questionType?: 'mcq' | 'frq'
     options?: string[]
     correctIndex?: number
     imageUrl?: string
     source?: string
     explanation?: string
+    answerKey?: string
   }
 
-  if (!diagnosticTestId || !topicId || !content || !Array.isArray(options) || options.length < 2 || correctIndex === undefined) {
-    return NextResponse.json({ error: 'diagnosticTestId, topicId, content, at least 2 options, and correctIndex are required.' }, { status: 400 })
+  if (!diagnosticTestId || !topicId || !content) {
+    return NextResponse.json({ error: 'diagnosticTestId, topicId, and content are required.' }, { status: 400 })
   }
-  if (correctIndex < 0 || correctIndex >= options.length) {
-    return NextResponse.json({ error: 'correctIndex is out of range for the given options.' }, { status: 400 })
+  const type = questionType === 'frq' ? 'frq' : 'mcq'
+  if (type === 'mcq') {
+    if (!Array.isArray(options) || options.length < 2 || correctIndex === undefined) {
+      return NextResponse.json({ error: 'At least 2 options and correctIndex are required for MCQ questions.' }, { status: 400 })
+    }
+    if (correctIndex < 0 || correctIndex >= options.length) {
+      return NextResponse.json({ error: 'correctIndex is out of range for the given options.' }, { status: 400 })
+    }
   }
 
   const admin = await createAdminClient()
@@ -32,11 +40,13 @@ export async function POST(req: NextRequest) {
       diagnostic_test_id: diagnosticTestId,
       topic_id: topicId,
       content,
-      mcq_options: options,
-      mcq_correct_index: correctIndex,
+      question_type: type,
+      mcq_options: type === 'mcq' ? options : null,
+      mcq_correct_index: type === 'mcq' ? correctIndex : null,
       image_url: imageUrl || null,
       source: source || null,
-      explanation: explanation || null,
+      explanation: type === 'mcq' ? (explanation || null) : null,
+      answer_key: type === 'frq' ? (answerKey || null) : null,
     })
     .select('id')
     .single()

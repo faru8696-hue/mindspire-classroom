@@ -36,7 +36,11 @@ export default async function DiagnosticsListPage() {
   const honorsChemTests = (tests ?? []).filter(t => honorsChemClass && t.class_id === honorsChemClass.id)
   const freeTests = (tests ?? []).filter(t => !apChemTests.includes(t) && !honorsChemTests.includes(t))
 
-  function TestSection({ title, icon, tests }: { title: string; icon: string; tests: Test[] }) {
+  // A plain rendering function (called directly, not used as a JSX
+  // component tag) — it closes over questionCountByTest/attemptCountByTest
+  // computed above, and defining an actual component here would recreate
+  // it (and reset any state) on every render.
+  function renderTestSection({ title, icon, tests }: { title: string; icon: string; tests: Test[] }) {
     if (tests.length === 0) return null
     return (
       <div className="mb-6">
@@ -83,9 +87,9 @@ export default async function DiagnosticsListPage() {
         </div>
       ) : (
         <>
-          <TestSection title="AP Chem" icon="🧪" tests={apChemTests} />
-          <TestSection title="Honors Chem" icon="⚗️" tests={honorsChemTests} />
-          <TestSection title="Free Tests" icon="🌐" tests={freeTests} />
+          {renderTestSection({ title: 'AP Chem', icon: '🧪', tests: apChemTests })}
+          {renderTestSection({ title: 'Honors Chem', icon: '⚗️', tests: honorsChemTests })}
+          {renderTestSection({ title: 'Free Tests', icon: '🌐', tests: freeTests })}
         </>
       )}
     </div>

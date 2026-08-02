@@ -30,7 +30,7 @@ export default async function DiagnosticTakePage({
   const questionIds = attempt.question_ids as string[]
   const { data: questions } = await admin
     .from('diagnostic_questions')
-    .select('id, content, image_url, mcq_options, topic_id')
+    .select('id, content, image_url, mcq_options, question_type, topic_id')
     .in('id', questionIds)
 
   const topicIds = [...new Set((questions ?? []).map(q => q.topic_id))]
@@ -49,7 +49,8 @@ export default async function DiagnosticTakePage({
       id: q.id,
       content: q.content,
       imageUrl: q.image_url,
-      options: q.mcq_options as string[],
+      questionType: (q.question_type as 'mcq' | 'frq') ?? 'mcq',
+      options: q.mcq_options as string[] | null,
       topicId: q.topic_id,
       topicTitle: topicTitleById.get(q.topic_id) ?? 'General',
     }))
