@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
 import Link from 'next/link'
-import { getDayReport, getWeekReport, type QuestionActivity } from '@/lib/studyTracker'
+import { computeDayReport, computeWeekReport, type QuestionActivity, type DayReport, type WeekReport, type StudentInfo, type SubmissionForTracker, type QuestionMeta } from '@/lib/studyTracker'
 
 function adminDb() {
   return createSupabaseAdmin(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
@@ -75,7 +75,7 @@ export default async function TeacherDashboard({
       ? supabase.from('class_enrollments').select('student_id, class_id').in('class_id', classIds)
       : Promise.resolve({ data: [] }),
     classIds.length > 0
-      ? supabase.from('units').select('id, class_id').in('class_id', classIds)
+      ? supabase.from('units').select('id, class_id, title').in('class_id', classIds)
       : Promise.resolve({ data: [] }),
     // Used to build each student's "last activity" line and unread-help
     // flag below — needs both read and unread rows for recency, plus the
@@ -107,11 +107,24 @@ export default async function TeacherDashboard({
     ? await supabase.from('questions').select('id, topic_id, title').in('topic_id', topicIds)
     : { data: [] as { id: string; topic_id: string; title: string }[] }
 
+  const unitTitleById = new Map((units ?? []).map(u => [u.id, u.title]))
   const topicById = new Map((topics ?? []).map(t => [t.id, t]))
   const questionMeta = new Map((questions ?? []).map(q => [
     q.id,
     { title: q.title, topicTitle: topicById.get(q.topic_id)?.title ?? '' },
   ]))
+  // Study Tracker below needs unitTitle too (for "Topics studied" grouping);
+  // kept as a separate map rather than widening `questionMeta` above so the
+  // existing Classes section's shape (used in several places already) isn't
+  // disturbed.
+  const trackerQuestionMeta = new Map<string, QuestionMeta>((questions ?? []).map(q => {
+    const topic = topicById.get(q.topic_id)
+    return [q.id, {
+      title: q.title,
+      topicTitle: topic?.title ?? 'Unknown topic',
+      unitTitle: unitTitleById.get(topic?.unit_id ?? '') ?? 'Unknown unit',
+    }]
+  }))
 
   // No .in('question_id', questionIds) filter here on purpose — as the
   // question bank grows past a few hundred rows, that filter alone builds a
@@ -120,10 +133,10 @@ export default async function TeacherDashboard({
   // empty instead of surfacing the failure). Fetching all submissions
   // unfiltered is cheap at this app's scale and matching against a specific
   // question still happens downstream via questionMeta/Map lookups.
-  type Sub = { id: string; student_id: string; question_id: string; updated_at: string; canvas_data: string | null; text_answer: string | null }
+  type Sub = { id: string; student_id: string; question_id: string; created_at: string; updated_at: string; canvas_data: string | null; text_answer: string | null }
   const { data: allSubs } = await supabase
     .from('submissions')
-    .select('id, student_id, question_id, updated_at, canvas_data, text_answer')
+    .select('id, student_id, question_id, created_at, updated_at, canvas_data, text_answer')
 
   // A submission row can exist with no real content (e.g. an empty '[]'
   // canvas the grade API auto-creates before the student's drawn anything),
@@ -244,9 +257,33 @@ export default async function TeacherDashboard({
     }
   })
 
+  // Flat cross-class roster for Study Tracker below — reuses data already
+  // fetched for the Classes section above instead of querying again.
+  const classTitleById = new Map((classes ?? []).map(c => [c.id, c.title]))
+  const classIdByStudentForTracker = new Map<string, string>()
+  for (const e of classEnrollments ?? []) {
+    if (!classIdByStudentForTracker.has(e.student_id)) classIdByStudentForTracker.set(e.student_id, e.class_id)
+  }
+  const trackerRoster: StudentInfo[] = (studentProfiles ?? [])
+    .map(p => ({
+      id: p.id,
+      name: p.full_name,
+      classTitle: classTitleById.get(classIdByStudentForTracker.get(p.id) ?? '') ?? 'Unknown class',
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name))
+  const trackerSubs: SubmissionForTracker[] = (allSubs ?? [])
+    .filter(hasContent)
+    .map(s => ({ id: s.id, student_id: s.student_id, question_id: s.question_id, created_at: s.created_at, updated_at: s.updated_at }))
+
   const { mode: modeParam, date: dateParam } = await searchParams
   const trackerMode = modeParam === 'week' ? 'week' : 'day'
   const trackerDate = dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam) ? dateParam : todayISO()
+  const dayReport: DayReport | null = trackerMode === 'day'
+    ? computeDayReport(trackerDate, trackerRoster, trackerSubs, trackerQuestionMeta, gradeBySubmission)
+    : null
+  const weekReport: WeekReport | null = trackerMode === 'week'
+    ? computeWeekReport(trackerDate, trackerRoster, trackerSubs, trackerQuestionMeta)
+    : null
 
   return (
     <div className="max-w-5xl mx-auto space-y-8">
@@ -368,14 +405,13 @@ export default async function TeacherDashboard({
             </Link>
           </div>
         </div>
-        {trackerMode === 'day' ? <DayTable date={trackerDate} /> : <WeekTable date={trackerDate} />}
+        {dayReport ? <DayTable report={dayReport} date={trackerDate} /> : <WeekTable report={weekReport!} />}
       </div>
     </div>
   )
 }
 
-async function DayTable({ date }: { date: string }) {
-  const report = await getDayReport(date)
+function DayTable({ report, date }: { report: DayReport; date: string }) {
   const isToday = date === todayISO()
   const sorted = [...report.students].sort((a, b) => a.student.name.localeCompare(b.student.name))
   const active = sorted.filter(s => s.questions.length > 0)
@@ -479,8 +515,7 @@ async function DayTable({ date }: { date: string }) {
   )
 }
 
-async function WeekTable({ date }: { date: string }) {
-  const report = await getWeekReport(date)
+function WeekTable({ report }: { report: WeekReport }) {
   const isThisWeek = report.weekStartISO === mondayISOOf(todayISO())
   const sorted = [...report.students].sort((a, b) => a.student.name.localeCompare(b.student.name))
   const active = sorted.filter(s => s.totalQuestions > 0)

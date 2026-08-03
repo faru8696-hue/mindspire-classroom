@@ -1,9 +1,14 @@
-import { createAdminClient } from './supabase/server'
-
 // A day/week roll-up of "who worked on what" for the main class-content
 // system (classes -> units -> topics -> questions -> submissions). Self
 // Study (practice_attempts) and Tests (diagnostic_attempts) are separate
 // systems with their own dashboards and aren't mixed in here.
+//
+// Pure aggregation only — no Supabase I/O. This lives on the teacher
+// dashboard, which already fetches classes/enrollments/profiles/units/
+// topics/questions/submissions for its own "Classes" section; re-querying
+// all of that a second time here (as an earlier version of this file did)
+// roughly doubled the page's round-trips and made it noticeably slow to
+// load. The caller passes in what it already has.
 //
 // Important limitation: `submissions` is one row per (student, question),
 // upserted on every autosave — there's no append-only activity log. So a
@@ -19,6 +24,20 @@ export interface StudentInfo {
   id: string
   name: string
   classTitle: string
+}
+
+export interface QuestionMeta {
+  title: string
+  topicTitle: string
+  unitTitle: string
+}
+
+export interface SubmissionForTracker {
+  id: string
+  student_id: string
+  question_id: string
+  created_at: string
+  updated_at: string
 }
 
 export interface QuestionActivity {
@@ -49,20 +68,6 @@ export interface TopicCount {
   count: number
 }
 
-interface RawSubmission {
-  id: string
-  student_id: string
-  question_id: string
-  canvas_data: string | null
-  text_answer: string | null
-  created_at: string
-  updated_at: string
-}
-
-function hasContent(s: RawSubmission): boolean {
-  return (!!s.canvas_data && s.canvas_data.length > 5) || (!!s.text_answer && s.text_answer.trim().length > 0)
-}
-
 function estimateMinutes(createdAt: string, updatedAt: string): { minutes: number | null; continuedFromEarlier: boolean } {
   const start = new Date(createdAt)
   const end = new Date(updatedAt)
@@ -73,72 +78,16 @@ function estimateMinutes(createdAt: string, updatedAt: string): { minutes: numbe
   return { minutes: Math.round(minutes), continuedFromEarlier: false }
 }
 
-// Shared roster + content-tree lookup, used by both day and week views.
-async function loadRosterAndContentTree() {
-  const admin = await createAdminClient()
-
-  const { data: classes } = await admin.from('classes').select('id, title')
-  const classIds = (classes ?? []).map(c => c.id)
-  const classTitleById = new Map((classes ?? []).map(c => [c.id, c.title]))
-
-  const { data: enrollments } = classIds.length > 0
-    ? await admin.from('class_enrollments').select('student_id, class_id').in('class_id', classIds)
-    : { data: [] as { student_id: string; class_id: string }[] }
-  const classIdByStudent = new Map((enrollments ?? []).map(e => [e.student_id, e.class_id]))
-
-  const studentIds = [...new Set((enrollments ?? []).map(e => e.student_id))]
-  const { data: profiles } = studentIds.length > 0
-    ? await admin.from('profiles').select('id, full_name').in('id', studentIds)
-    : { data: [] as { id: string; full_name: string }[] }
-
-  const roster: StudentInfo[] = (profiles ?? [])
-    .map(p => ({
-      id: p.id,
-      name: p.full_name,
-      classTitle: classTitleById.get(classIdByStudent.get(p.id) ?? '') ?? 'Unknown class',
-    }))
-    .sort((a, b) => a.name.localeCompare(b.name))
-
-  const { data: units } = classIds.length > 0
-    ? await admin.from('units').select('id, title, class_id').in('class_id', classIds)
-    : { data: [] as { id: string; title: string; class_id: string }[] }
-  const unitIds = (units ?? []).map(u => u.id)
-  const { data: topics } = unitIds.length > 0
-    ? await admin.from('topics').select('id, title, unit_id').in('unit_id', unitIds)
-    : { data: [] as { id: string; title: string; unit_id: string }[] }
-  const topicIds = (topics ?? []).map(t => t.id)
-  const { data: questions } = topicIds.length > 0
-    ? await admin.from('questions').select('id, title, topic_id').in('topic_id', topicIds)
-    : { data: [] as { id: string; title: string; topic_id: string }[] }
-
-  const unitTitleById = new Map((units ?? []).map(u => [u.id, u.title]))
-  const topicById = new Map((topics ?? []).map(t => [t.id, t]))
-  const questionMeta = new Map((questions ?? []).map(q => [
-    q.id,
-    {
-      title: q.title,
-      topicTitle: topicById.get(q.topic_id)?.title ?? 'Unknown topic',
-      unitTitle: unitTitleById.get(topicById.get(q.topic_id)?.unit_id ?? '') ?? 'Unknown unit',
-    },
-  ]))
-
-  return { admin, roster, questionMeta }
+function inRange(iso: string, start: Date, end: Date): boolean {
+  const t = new Date(iso).getTime()
+  return t >= start.getTime() && t < end.getTime()
 }
 
-async function loadSubmissionsInRange(admin: Awaited<ReturnType<typeof createAdminClient>>, start: Date, end: Date) {
-  const { data } = await admin
-    .from('submissions')
-    .select('id, student_id, question_id, canvas_data, text_answer, created_at, updated_at')
-    .gte('updated_at', start.toISOString())
-    .lt('updated_at', end.toISOString())
-  return ((data ?? []) as RawSubmission[]).filter(hasContent)
-}
-
-async function loadGrades(admin: Awaited<ReturnType<typeof createAdminClient>>, submissionIds: string[]) {
-  const { data } = submissionIds.length > 0
-    ? await admin.from('feedback').select('submission_id, grade').in('submission_id', submissionIds)
-    : { data: [] as { submission_id: string; grade: string | null }[] }
-  return new Map((data ?? []).map(f => [f.submission_id, f.grade]))
+function bumpTopicCount(map: Map<string, TopicCount>, meta: QuestionMeta) {
+  const key = `${meta.unitTitle} :: ${meta.topicTitle}`
+  const existing = map.get(key) ?? { topicTitle: meta.topicTitle, unitTitle: meta.unitTitle, count: 0 }
+  existing.count += 1
+  map.set(key, existing)
 }
 
 export interface DayReport {
@@ -149,13 +98,16 @@ export interface DayReport {
   totalStudentsActive: number
 }
 
-export async function getDayReport(dateISO: string): Promise<DayReport> {
+export function computeDayReport(
+  dateISO: string,
+  roster: StudentInfo[],
+  submissions: SubmissionForTracker[],
+  questionMeta: Map<string, QuestionMeta>,
+  gradeBySubmission: Map<string, string | null>
+): DayReport {
   const dayStart = new Date(`${dateISO}T00:00:00.000Z`)
   const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000)
-
-  const { admin, roster, questionMeta } = await loadRosterAndContentTree()
-  const subs = await loadSubmissionsInRange(admin, dayStart, dayEnd)
-  const gradeBySubmission = await loadGrades(admin, subs.map(s => s.id))
+  const subs = submissions.filter(s => inRange(s.updated_at, dayStart, dayEnd))
 
   const byStudent = new Map<string, QuestionActivity[]>()
   const topicCountMap = new Map<string, TopicCount>()
@@ -176,11 +128,7 @@ export async function getDayReport(dateISO: string): Promise<DayReport> {
     }
     if (!byStudent.has(s.student_id)) byStudent.set(s.student_id, [])
     byStudent.get(s.student_id)!.push(entry)
-
-    const topicKey = `${meta.unitTitle} :: ${meta.topicTitle}`
-    const existing = topicCountMap.get(topicKey) ?? { topicTitle: meta.topicTitle, unitTitle: meta.unitTitle, count: 0 }
-    existing.count += 1
-    topicCountMap.set(topicKey, existing)
+    bumpTopicCount(topicCountMap, meta)
   }
 
   const students: StudentDayActivity[] = roster.map(student => {
@@ -189,12 +137,10 @@ export async function getDayReport(dateISO: string): Promise<DayReport> {
     return { student, questions, totalMinutes }
   }).sort((a, b) => b.questions.length - a.questions.length || a.student.name.localeCompare(b.student.name))
 
-  const topicCounts = [...topicCountMap.values()].sort((a, b) => b.count - a.count)
-
   return {
     date: dateISO,
     students,
-    topicCounts,
+    topicCounts: [...topicCountMap.values()].sort((a, b) => b.count - a.count),
     totalQuestionsAnswered: subs.length,
     totalStudentsActive: students.filter(s => s.questions.length > 0).length,
   }
@@ -229,24 +175,24 @@ function toISODate(d: Date): string {
   return d.toISOString().slice(0, 10)
 }
 
-export async function getWeekReport(anchorDateISO: string): Promise<WeekReport> {
+export function computeWeekReport(
+  anchorDateISO: string,
+  roster: StudentInfo[],
+  submissions: SubmissionForTracker[],
+  questionMeta: Map<string, QuestionMeta>
+): WeekReport {
   const weekStart = mondayOf(anchorDateISO)
   const weekEnd = new Date(weekStart.getTime() + 7 * 24 * 60 * 60 * 1000)
+  const subs = submissions.filter(s => inRange(s.updated_at, weekStart, weekEnd))
 
-  const { admin, roster, questionMeta } = await loadRosterAndContentTree()
-  const subs = await loadSubmissionsInRange(admin, weekStart, weekEnd)
-
-  const byStudent = new Map<string, RawSubmission[]>()
+  const byStudent = new Map<string, SubmissionForTracker[]>()
   const topicCountMap = new Map<string, TopicCount>()
   for (const s of subs) {
     if (!byStudent.has(s.student_id)) byStudent.set(s.student_id, [])
     byStudent.get(s.student_id)!.push(s)
     const meta = questionMeta.get(s.question_id)
     if (!meta) continue
-    const topicKey = `${meta.unitTitle} :: ${meta.topicTitle}`
-    const existing = topicCountMap.get(topicKey) ?? { topicTitle: meta.topicTitle, unitTitle: meta.unitTitle, count: 0 }
-    existing.count += 1
-    topicCountMap.set(topicKey, existing)
+    bumpTopicCount(topicCountMap, meta)
   }
 
   const students: StudentWeekActivity[] = roster.map(student => {
@@ -261,10 +207,7 @@ export async function getWeekReport(anchorDateISO: string): Promise<WeekReport> 
       if (dayIndex >= 0 && dayIndex < 7) dayCounts[dayIndex] += 1
       const meta = questionMeta.get(s.question_id)
       if (!meta) continue
-      const topicKey = `${meta.unitTitle} :: ${meta.topicTitle}`
-      const existing = topicMap.get(topicKey) ?? { topicTitle: meta.topicTitle, unitTitle: meta.unitTitle, count: 0 }
-      existing.count += 1
-      topicMap.set(topicKey, existing)
+      bumpTopicCount(topicMap, meta)
     }
     return {
       student,
