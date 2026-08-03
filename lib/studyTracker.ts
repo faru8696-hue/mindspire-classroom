@@ -30,6 +30,7 @@ export interface QuestionMeta {
   title: string
   topicTitle: string
   unitTitle: string
+  classId: string
 }
 
 export interface SubmissionForTracker {
@@ -45,6 +46,7 @@ export interface QuestionActivity {
   questionTitle: string
   topicTitle: string
   unitTitle: string
+  classId: string
   updatedAt: string
   // Minutes between first save (created_at) and last save (updated_at) on
   // this question, but ONLY when both happened on the same calendar day and
@@ -56,10 +58,16 @@ export interface QuestionActivity {
   grade: string | null
 }
 
+export interface UnitCount {
+  unitTitle: string
+  count: number
+}
+
 export interface StudentDayActivity {
   student: StudentInfo
   questions: QuestionActivity[]
   totalMinutes: number
+  unitCounts: UnitCount[]
 }
 
 export interface TopicCount {
@@ -90,6 +98,27 @@ function bumpTopicCount(map: Map<string, TopicCount>, meta: QuestionMeta) {
   map.set(key, existing)
 }
 
+function unitCountsFrom(questions: { unitTitle: string }[]): UnitCount[] {
+  const map = new Map<string, number>()
+  for (const q of questions) map.set(q.unitTitle, (map.get(q.unitTitle) ?? 0) + 1)
+  return [...map.entries()].map(([unitTitle, count]) => ({ unitTitle, count })).sort((a, b) => b.count - a.count)
+}
+
+function buildQuestionActivity(s: SubmissionForTracker, meta: QuestionMeta, gradeBySubmission?: Map<string, string | null>): QuestionActivity {
+  const { minutes, continuedFromEarlier } = estimateMinutes(s.created_at, s.updated_at)
+  return {
+    questionId: s.question_id,
+    questionTitle: meta.title,
+    topicTitle: meta.topicTitle,
+    unitTitle: meta.unitTitle,
+    classId: meta.classId,
+    updatedAt: s.updated_at,
+    estimatedMinutes: minutes,
+    continuedFromEarlier,
+    grade: gradeBySubmission?.get(s.id) ?? null,
+  }
+}
+
 export interface DayReport {
   date: string
   students: StudentDayActivity[]
@@ -115,17 +144,7 @@ export function computeDayReport(
   for (const s of subs) {
     const meta = questionMeta.get(s.question_id)
     if (!meta) continue
-    const { minutes, continuedFromEarlier } = estimateMinutes(s.created_at, s.updated_at)
-    const entry: QuestionActivity = {
-      questionId: s.question_id,
-      questionTitle: meta.title,
-      topicTitle: meta.topicTitle,
-      unitTitle: meta.unitTitle,
-      updatedAt: s.updated_at,
-      estimatedMinutes: minutes,
-      continuedFromEarlier,
-      grade: gradeBySubmission.get(s.id) ?? null,
-    }
+    const entry = buildQuestionActivity(s, meta, gradeBySubmission)
     if (!byStudent.has(s.student_id)) byStudent.set(s.student_id, [])
     byStudent.get(s.student_id)!.push(entry)
     bumpTopicCount(topicCountMap, meta)
@@ -134,7 +153,7 @@ export function computeDayReport(
   const students: StudentDayActivity[] = roster.map(student => {
     const questions = (byStudent.get(student.id) ?? []).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
     const totalMinutes = questions.reduce((sum, q) => sum + (q.estimatedMinutes ?? 0), 0)
-    return { student, questions, totalMinutes }
+    return { student, questions, totalMinutes, unitCounts: unitCountsFrom(questions) }
   }).sort((a, b) => b.questions.length - a.questions.length || a.student.name.localeCompare(b.student.name))
 
   return {
@@ -148,10 +167,11 @@ export function computeDayReport(
 
 export interface StudentWeekActivity {
   student: StudentInfo
+  questions: QuestionActivity[]
   totalQuestions: number
   activeDays: string[] // ISO dates (YYYY-MM-DD) with at least one answer, sorted
   dayCounts: number[] // length 7, Mon..Sun, count of questions per day
-  topicsTouched: TopicCount[]
+  unitCounts: UnitCount[]
 }
 
 export interface WeekReport {
@@ -185,36 +205,34 @@ export function computeWeekReport(
   const weekEnd = new Date(weekStart.getTime() + 7 * 24 * 60 * 60 * 1000)
   const subs = submissions.filter(s => inRange(s.updated_at, weekStart, weekEnd))
 
-  const byStudent = new Map<string, SubmissionForTracker[]>()
+  const byStudent = new Map<string, QuestionActivity[]>()
   const topicCountMap = new Map<string, TopicCount>()
   for (const s of subs) {
-    if (!byStudent.has(s.student_id)) byStudent.set(s.student_id, [])
-    byStudent.get(s.student_id)!.push(s)
     const meta = questionMeta.get(s.question_id)
     if (!meta) continue
+    const entry = buildQuestionActivity(s, meta)
+    if (!byStudent.has(s.student_id)) byStudent.set(s.student_id, [])
+    byStudent.get(s.student_id)!.push(entry)
     bumpTopicCount(topicCountMap, meta)
   }
 
   const students: StudentWeekActivity[] = roster.map(student => {
-    const studentSubs = byStudent.get(student.id) ?? []
+    const questions = (byStudent.get(student.id) ?? []).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
     const activeDaySet = new Set<string>()
     const dayCounts = [0, 0, 0, 0, 0, 0, 0]
-    const topicMap = new Map<string, TopicCount>()
-    for (const s of studentSubs) {
-      const d = new Date(s.updated_at)
+    for (const q of questions) {
+      const d = new Date(q.updatedAt)
       activeDaySet.add(toISODate(d))
       const dayIndex = Math.floor((d.getTime() - weekStart.getTime()) / (24 * 60 * 60 * 1000))
       if (dayIndex >= 0 && dayIndex < 7) dayCounts[dayIndex] += 1
-      const meta = questionMeta.get(s.question_id)
-      if (!meta) continue
-      bumpTopicCount(topicMap, meta)
     }
     return {
       student,
-      totalQuestions: studentSubs.length,
+      questions,
+      totalQuestions: questions.length,
       activeDays: [...activeDaySet].sort(),
       dayCounts,
-      topicsTouched: [...topicMap.values()].sort((a, b) => b.count - a.count),
+      unitCounts: unitCountsFrom(questions),
     }
   }).sort((a, b) => b.totalQuestions - a.totalQuestions || a.student.name.localeCompare(b.student.name))
 

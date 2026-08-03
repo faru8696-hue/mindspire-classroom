@@ -107,22 +107,24 @@ export default async function TeacherDashboard({
     ? await supabase.from('questions').select('id, topic_id, title').in('topic_id', topicIds)
     : { data: [] as { id: string; topic_id: string; title: string }[] }
 
-  const unitTitleById = new Map((units ?? []).map(u => [u.id, u.title]))
+  const unitById = new Map((units ?? []).map(u => [u.id, u]))
   const topicById = new Map((topics ?? []).map(t => [t.id, t]))
   const questionMeta = new Map((questions ?? []).map(q => [
     q.id,
     { title: q.title, topicTitle: topicById.get(q.topic_id)?.title ?? '' },
   ]))
-  // Study Tracker below needs unitTitle too (for "Topics studied" grouping);
-  // kept as a separate map rather than widening `questionMeta` above so the
-  // existing Classes section's shape (used in several places already) isn't
-  // disturbed.
+  // Study Tracker below needs unitTitle + classId too (for grouping and for
+  // linking a question to its live board); kept as a separate map rather
+  // than widening `questionMeta` above so the existing Classes section's
+  // shape (used in several places already) isn't disturbed.
   const trackerQuestionMeta = new Map<string, QuestionMeta>((questions ?? []).map(q => {
     const topic = topicById.get(q.topic_id)
+    const unit = unitById.get(topic?.unit_id ?? '')
     return [q.id, {
       title: q.title,
       topicTitle: topic?.title ?? 'Unknown topic',
-      unitTitle: unitTitleById.get(topic?.unit_id ?? '') ?? 'Unknown unit',
+      unitTitle: unit?.title ?? 'Unknown unit',
+      classId: unit?.class_id ?? '',
     }]
   }))
 
@@ -417,13 +419,6 @@ function DayTable({ report, date }: { report: DayReport; date: string }) {
   const active = sorted.filter(s => s.questions.length > 0)
   const inactive = sorted.filter(s => s.questions.length === 0)
 
-  const rows: { studentName: string; classTitle: string; isFirstForStudent: boolean; groupIndex: number; q: QuestionActivity }[] = []
-  active.forEach((s, si) => {
-    s.questions.forEach((q, qi) => {
-      rows.push({ studentName: s.student.name, classTitle: s.student.classTitle, isFirstForStudent: qi === 0, groupIndex: si, q })
-    })
-  })
-
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between bg-white rounded-xl border border-gray-200 px-4 py-3">
@@ -463,46 +458,66 @@ function DayTable({ report, date }: { report: DayReport; date: string }) {
         </div>
       )}
 
-      <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
-        <table className="w-full text-sm min-w-[640px]">
-          <thead>
-            <tr className="bg-gray-50 border-b border-gray-200 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
-              <th className="px-4 py-2">Student</th>
-              <th className="px-4 py-2">Question</th>
-              <th className="px-4 py-2">Topic</th>
-              <th className="px-4 py-2 whitespace-nowrap">Saved</th>
-              <th className="px-4 py-2 whitespace-nowrap">Duration</th>
-              <th className="px-4 py-2 text-right">Grade</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {rows.map(r => (
-              <tr key={`${r.studentName}:${r.q.questionId}`} className={r.groupIndex % 2 === 1 ? 'bg-gray-50/40' : ''}>
-                <td className="px-4 py-2 font-medium text-gray-800 whitespace-nowrap align-top">
-                  {r.isFirstForStudent && (
-                    <span className="flex items-center gap-2">
-                      <span className="w-6 h-6 rounded-full bg-purple-100 flex items-center justify-center text-[10px] font-bold text-purple-600 flex-shrink-0">
-                        {r.studentName.charAt(0).toUpperCase()}
-                      </span>
-                      <span>
-                        {r.studentName}
-                        <span className="block text-[11px] font-normal text-gray-400">{r.classTitle}</span>
-                      </span>
+      <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
+        {active.map(s => (
+          <details key={s.student.id} className="group">
+            <summary className="flex items-center justify-between gap-3 px-4 py-3 cursor-pointer list-none">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="w-7 h-7 rounded-full bg-purple-100 flex items-center justify-center text-xs font-bold text-purple-600 flex-shrink-0">
+                  {s.student.name.charAt(0).toUpperCase()}
+                </span>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-gray-800 truncate">{s.student.name}</p>
+                  <p className="text-xs text-gray-400 truncate">{s.student.classTitle}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <div className="hidden sm:flex flex-wrap gap-1 justify-end max-w-xs">
+                  {s.unitCounts.map(u => (
+                    <span key={u.unitTitle} className="text-[11px] font-medium bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full whitespace-nowrap">
+                      {u.unitTitle} · {u.count}
                     </span>
-                  )}
-                </td>
-                <td className="px-4 py-2 text-gray-700">{r.q.questionTitle}</td>
-                <td className="px-4 py-2 text-gray-500">{r.q.topicTitle}</td>
-                <td className="px-4 py-2 text-gray-500 whitespace-nowrap">{formatTimeOfDay(r.q.updatedAt)}</td>
-                <td className="px-4 py-2 text-gray-500 whitespace-nowrap">{durationLabel(r.q)}</td>
-                <td className="px-4 py-2 text-right">
-                  {r.q.grade && <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full ${SUB_GRADE_CLS[r.q.grade] ?? 'bg-gray-100 text-gray-500'}`}>{r.q.grade}</span>}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {rows.length === 0 && <p className="text-center text-sm text-gray-400 py-8">No activity {isToday ? 'yet today' : 'that day'}.</p>}
+                  ))}
+                </div>
+                <span className="text-xs font-semibold bg-green-100 text-green-700 px-2.5 py-1 rounded-full whitespace-nowrap">
+                  {s.questions.length} question{s.questions.length === 1 ? '' : 's'}{s.totalMinutes > 0 ? ` · ~${s.totalMinutes} min` : ''}
+                </span>
+                <span className="text-gray-300 text-xs group-open:rotate-180 transition-transform">▾</span>
+              </div>
+            </summary>
+            <div className="px-4 pb-3 overflow-x-auto">
+              <table className="w-full text-sm min-w-[560px]">
+                <thead>
+                  <tr className="border-b border-gray-100 text-left text-xs font-semibold text-gray-400 uppercase tracking-wide">
+                    <th className="py-1.5 pr-3">Question</th>
+                    <th className="py-1.5 pr-3">Unit / Topic</th>
+                    <th className="py-1.5 pr-3 whitespace-nowrap">Saved</th>
+                    <th className="py-1.5 pr-3 whitespace-nowrap">Duration</th>
+                    <th className="py-1.5 text-right">Grade</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {s.questions.map(q => (
+                    <tr key={q.questionId}>
+                      <td className="py-1.5 pr-3">
+                        <Link href={`/teacher/live/${q.classId}/${q.questionId}/${s.student.id}`} className="text-purple-600 hover:underline font-medium">
+                          {q.questionTitle}
+                        </Link>
+                      </td>
+                      <td className="py-1.5 pr-3 text-gray-500">{q.unitTitle} · {q.topicTitle}</td>
+                      <td className="py-1.5 pr-3 text-gray-500 whitespace-nowrap">{formatTimeOfDay(q.updatedAt)}</td>
+                      <td className="py-1.5 pr-3 text-gray-500 whitespace-nowrap">{durationLabel(q)}</td>
+                      <td className="py-1.5 text-right">
+                        {q.grade && <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full ${SUB_GRADE_CLS[q.grade] ?? 'bg-gray-100 text-gray-500'}`}>{q.grade}</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </details>
+        ))}
+        {active.length === 0 && <p className="text-center text-sm text-gray-400 py-8">No activity {isToday ? 'yet today' : 'that day'}.</p>}
       </div>
 
       {inactive.length > 0 && (
@@ -560,53 +575,78 @@ function WeekTable({ report }: { report: WeekReport }) {
         </div>
       )}
 
-      <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
-        <table className="w-full text-sm min-w-[640px]">
-          <thead>
-            <tr className="bg-gray-50 border-b border-gray-200 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
-              <th className="px-4 py-2">Student</th>
-              <th className="px-4 py-2 text-center whitespace-nowrap">Questions</th>
-              <th className="px-4 py-2 text-center whitespace-nowrap">Days Active</th>
-              <th className="px-4 py-2">Mon–Sun</th>
-              <th className="px-4 py-2">Topics</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {active.map((s, i) => (
-              <tr key={s.student.id} className={i % 2 === 1 ? 'bg-gray-50/40' : ''}>
-                <td className="px-4 py-2 font-medium text-gray-800 whitespace-nowrap">
-                  <span className="flex items-center gap-2">
-                    <span className="w-6 h-6 rounded-full bg-purple-100 flex items-center justify-center text-[10px] font-bold text-purple-600 flex-shrink-0">
-                      {s.student.name.charAt(0).toUpperCase()}
+      <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
+        {active.map(s => (
+          <details key={s.student.id} className="group">
+            <summary className="flex items-center justify-between gap-3 px-4 py-3 cursor-pointer list-none">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="w-7 h-7 rounded-full bg-purple-100 flex items-center justify-center text-xs font-bold text-purple-600 flex-shrink-0">
+                  {s.student.name.charAt(0).toUpperCase()}
+                </span>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-gray-800 truncate">{s.student.name}</p>
+                  <p className="text-xs text-gray-400 truncate">{s.student.classTitle}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <div className="hidden sm:flex flex-wrap gap-1 justify-end max-w-xs">
+                  {s.unitCounts.map(u => (
+                    <span key={u.unitTitle} className="text-[11px] font-medium bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full whitespace-nowrap">
+                      {u.unitTitle} · {u.count}
                     </span>
-                    <span>
-                      {s.student.name}
-                      <span className="block text-[11px] font-normal text-gray-400">{s.student.classTitle}</span>
-                    </span>
-                  </span>
-                </td>
-                <td className="px-4 py-2 text-center text-gray-700 font-semibold">{s.totalQuestions}</td>
-                <td className="px-4 py-2 text-center text-gray-500">{s.activeDays.length}/7</td>
-                <td className="px-4 py-2">
-                  <div className="flex items-center gap-1">
-                    {s.dayCounts.map((count, di) => (
-                      <div
-                        key={di}
-                        title={`${WEEKDAY_LETTERS[di]}: ${count} question${count === 1 ? '' : 's'}`}
-                        className={`w-6 h-6 rounded flex items-center justify-center text-[10px] font-bold ${
-                          count === 0 ? 'bg-gray-100 text-gray-300' : count < 3 ? 'bg-purple-200 text-purple-700' : 'bg-purple-500 text-white'
-                        }`}
-                      >
-                        {count > 0 ? count : WEEKDAY_LETTERS[di]}
-                      </div>
-                    ))}
-                  </div>
-                </td>
-                <td className="px-4 py-2 text-gray-500 max-w-xs truncate">{s.topicsTouched.map(t => t.topicTitle).join(', ')}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                  ))}
+                </div>
+                <div className="hidden md:flex items-center gap-1">
+                  {s.dayCounts.map((count, di) => (
+                    <div
+                      key={di}
+                      title={`${WEEKDAY_LETTERS[di]}: ${count} question${count === 1 ? '' : 's'}`}
+                      className={`w-5 h-5 rounded flex items-center justify-center text-[9px] font-bold ${
+                        count === 0 ? 'bg-gray-100 text-gray-300' : count < 3 ? 'bg-purple-200 text-purple-700' : 'bg-purple-500 text-white'
+                      }`}
+                    >
+                      {count > 0 ? count : WEEKDAY_LETTERS[di]}
+                    </div>
+                  ))}
+                </div>
+                <span className="text-xs font-semibold bg-green-100 text-green-700 px-2.5 py-1 rounded-full whitespace-nowrap">
+                  {s.totalQuestions} question{s.totalQuestions === 1 ? '' : 's'} · {s.activeDays.length}/7 days
+                </span>
+                <span className="text-gray-300 text-xs group-open:rotate-180 transition-transform">▾</span>
+              </div>
+            </summary>
+            <div className="px-4 pb-3 overflow-x-auto">
+              <table className="w-full text-sm min-w-[560px]">
+                <thead>
+                  <tr className="border-b border-gray-100 text-left text-xs font-semibold text-gray-400 uppercase tracking-wide">
+                    <th className="py-1.5 pr-3">Question</th>
+                    <th className="py-1.5 pr-3">Unit / Topic</th>
+                    <th className="py-1.5 pr-3 whitespace-nowrap">Saved</th>
+                    <th className="py-1.5 pr-3 whitespace-nowrap">Duration</th>
+                    <th className="py-1.5 text-right">Grade</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {s.questions.map(q => (
+                    <tr key={q.questionId}>
+                      <td className="py-1.5 pr-3">
+                        <Link href={`/teacher/live/${q.classId}/${q.questionId}/${s.student.id}`} className="text-purple-600 hover:underline font-medium">
+                          {q.questionTitle}
+                        </Link>
+                      </td>
+                      <td className="py-1.5 pr-3 text-gray-500">{q.unitTitle} · {q.topicTitle}</td>
+                      <td className="py-1.5 pr-3 text-gray-500 whitespace-nowrap">{formatTimeOfDay(q.updatedAt)}</td>
+                      <td className="py-1.5 pr-3 text-gray-500 whitespace-nowrap">{durationLabel(q)}</td>
+                      <td className="py-1.5 text-right">
+                        {q.grade && <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full ${SUB_GRADE_CLS[q.grade] ?? 'bg-gray-100 text-gray-500'}`}>{q.grade}</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </details>
+        ))}
         {active.length === 0 && <p className="text-center text-sm text-gray-400 py-8">No activity {isThisWeek ? 'yet this week' : 'that week'}.</p>}
       </div>
 
