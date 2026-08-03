@@ -1,5 +1,8 @@
+export const dynamic = 'force-dynamic'
+
 import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
 import Link from 'next/link'
+import { getDayReport, getWeekReport, type QuestionActivity } from '@/lib/studyTracker'
 
 function adminDb() {
   return createSupabaseAdmin(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
@@ -13,7 +16,54 @@ function timeAgo(iso: string): string {
   return `${Math.round(mins / 1440)}d ago`
 }
 
-export default async function TeacherDashboard() {
+function todayISO(): string {
+  return new Date().toISOString().slice(0, 10)
+}
+function addDays(iso: string, n: number): string {
+  const d = new Date(`${iso}T00:00:00.000Z`)
+  d.setUTCDate(d.getUTCDate() + n)
+  return d.toISOString().slice(0, 10)
+}
+function formatDayLabel(iso: string): string {
+  return new Date(`${iso}T00:00:00.000Z`).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
+}
+function formatShort(iso: string): string {
+  return new Date(`${iso}T00:00:00.000Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
+}
+function formatTimeOfDay(iso: string): string {
+  return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+}
+function mondayISOOf(iso: string): string {
+  const d = new Date(`${iso}T00:00:00.000Z`)
+  const day = d.getUTCDay()
+  const diff = day === 0 ? -6 : 1 - day
+  d.setUTCDate(d.getUTCDate() + diff)
+  return d.toISOString().slice(0, 10)
+}
+const WEEKDAY_LETTERS = ['M', 'T', 'W', 'T', 'F', 'S', 'S']
+
+// `estimatedMinutes` is only ever set when a question's first save and last
+// save happened on the same calendar day within a 3-hour window — anything
+// else (picked back up on a later day, or left open for hours) has no
+// honest duration to show, so this labels those cases plainly instead of
+// making up a number. See lib/studyTracker.ts for the full reasoning.
+function durationLabel(q: QuestionActivity): string {
+  if (q.estimatedMinutes !== null) return `~${q.estimatedMinutes} min`
+  if (q.continuedFromEarlier) return 'continued from earlier'
+  return 'long session (3h+)'
+}
+
+const SUB_GRADE_CLS: Record<string, string> = {
+  correct: 'bg-green-100 text-green-700',
+  partial: 'bg-amber-100 text-amber-700',
+  incorrect: 'bg-red-100 text-red-600',
+}
+
+export default async function TeacherDashboard({
+  searchParams,
+}: {
+  searchParams: Promise<{ mode?: string; date?: string }>
+}) {
   const supabase = adminDb()
 
   const { data: classes } = await supabase.from('classes').select('id, title').order('order_index')
@@ -194,8 +244,12 @@ export default async function TeacherDashboard() {
     }
   })
 
+  const { mode: modeParam, date: dateParam } = await searchParams
+  const trackerMode = modeParam === 'week' ? 'week' : 'day'
+  const trackerDate = dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam) ? dateParam : todayISO()
+
   return (
-    <div className="max-w-4xl mx-auto space-y-8">
+    <div className="max-w-5xl mx-auto space-y-8">
       <h1 className="text-2xl font-bold text-purple-900">Teacher Dashboard</h1>
 
       {/* Classes → student roster. Expand a class to see every enrolled
@@ -291,6 +345,242 @@ export default async function TeacherDashboard() {
           </div>
         )}
       </div>
+
+      {/* Study Tracker — who's been working through questions, on what
+          topics, and roughly how long, with day/week navigation. Scoped to
+          the main class-content system (submissions), not Self Study or
+          Tests, which have their own dashboards. */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-gray-800">Study Tracker</h2>
+          <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+            <Link
+              href={`?mode=day&date=${trackerDate}`}
+              className={`text-sm font-semibold px-3 py-1 rounded-md transition-colors ${trackerMode === 'day' ? 'bg-white text-purple-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+            >
+              Day
+            </Link>
+            <Link
+              href={`?mode=week&date=${trackerDate}`}
+              className={`text-sm font-semibold px-3 py-1 rounded-md transition-colors ${trackerMode === 'week' ? 'bg-white text-purple-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+            >
+              Week
+            </Link>
+          </div>
+        </div>
+        {trackerMode === 'day' ? <DayTable date={trackerDate} /> : <WeekTable date={trackerDate} />}
+      </div>
+    </div>
+  )
+}
+
+async function DayTable({ date }: { date: string }) {
+  const report = await getDayReport(date)
+  const isToday = date === todayISO()
+  const sorted = [...report.students].sort((a, b) => a.student.name.localeCompare(b.student.name))
+  const active = sorted.filter(s => s.questions.length > 0)
+  const inactive = sorted.filter(s => s.questions.length === 0)
+
+  const rows: { studentName: string; classTitle: string; isFirstForStudent: boolean; groupIndex: number; q: QuestionActivity }[] = []
+  active.forEach((s, si) => {
+    s.questions.forEach((q, qi) => {
+      rows.push({ studentName: s.student.name, classTitle: s.student.classTitle, isFirstForStudent: qi === 0, groupIndex: si, q })
+    })
+  })
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between bg-white rounded-xl border border-gray-200 px-4 py-3">
+        <Link href={`?mode=day&date=${addDays(date, -1)}`} className="text-sm font-semibold text-purple-600 hover:underline">← {formatShort(addDays(date, -1))}</Link>
+        <div className="text-center">
+          <p className="font-bold text-gray-800">{formatDayLabel(date)}</p>
+          {!isToday && <Link href={`?mode=day&date=${todayISO()}`} className="text-xs text-purple-600 hover:underline">Jump to today</Link>}
+        </div>
+        <Link href={`?mode=day&date=${addDays(date, 1)}`} className="text-sm font-semibold text-purple-600 hover:underline">{formatShort(addDays(date, 1))} →</Link>
+      </div>
+
+      <div className="grid grid-cols-3 gap-3">
+        <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
+          <div className="text-2xl font-black text-indigo-600">{report.totalStudentsActive}<span className="text-sm text-gray-400 font-normal">/{report.students.length}</span></div>
+          <div className="text-xs text-gray-500 font-medium">Students active</div>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
+          <div className="text-2xl font-black text-green-600">{report.totalQuestionsAnswered}</div>
+          <div className="text-xs text-gray-500 font-medium">Questions answered</div>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
+          <div className="text-2xl font-black text-blue-600">{report.topicCounts.length}</div>
+          <div className="text-xs text-gray-500 font-medium">Topics touched</div>
+        </div>
+      </div>
+
+      {report.topicCounts.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <h3 className="text-sm font-bold text-gray-700 mb-2">Topics studied</h3>
+          <div className="flex flex-wrap gap-2">
+            {report.topicCounts.map(t => (
+              <span key={`${t.unitTitle}:${t.topicTitle}`} className="text-xs font-medium bg-purple-50 text-purple-700 px-2.5 py-1 rounded-full">
+                {t.topicTitle} <span className="text-purple-400">×{t.count}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+        <table className="w-full text-sm min-w-[640px]">
+          <thead>
+            <tr className="bg-gray-50 border-b border-gray-200 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
+              <th className="px-4 py-2">Student</th>
+              <th className="px-4 py-2">Question</th>
+              <th className="px-4 py-2">Topic</th>
+              <th className="px-4 py-2 whitespace-nowrap">Saved</th>
+              <th className="px-4 py-2 whitespace-nowrap">Duration</th>
+              <th className="px-4 py-2 text-right">Grade</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {rows.map(r => (
+              <tr key={`${r.studentName}:${r.q.questionId}`} className={r.groupIndex % 2 === 1 ? 'bg-gray-50/40' : ''}>
+                <td className="px-4 py-2 font-medium text-gray-800 whitespace-nowrap align-top">
+                  {r.isFirstForStudent && (
+                    <span className="flex items-center gap-2">
+                      <span className="w-6 h-6 rounded-full bg-purple-100 flex items-center justify-center text-[10px] font-bold text-purple-600 flex-shrink-0">
+                        {r.studentName.charAt(0).toUpperCase()}
+                      </span>
+                      <span>
+                        {r.studentName}
+                        <span className="block text-[11px] font-normal text-gray-400">{r.classTitle}</span>
+                      </span>
+                    </span>
+                  )}
+                </td>
+                <td className="px-4 py-2 text-gray-700">{r.q.questionTitle}</td>
+                <td className="px-4 py-2 text-gray-500">{r.q.topicTitle}</td>
+                <td className="px-4 py-2 text-gray-500 whitespace-nowrap">{formatTimeOfDay(r.q.updatedAt)}</td>
+                <td className="px-4 py-2 text-gray-500 whitespace-nowrap">{durationLabel(r.q)}</td>
+                <td className="px-4 py-2 text-right">
+                  {r.q.grade && <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full ${SUB_GRADE_CLS[r.q.grade] ?? 'bg-gray-100 text-gray-500'}`}>{r.q.grade}</span>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {rows.length === 0 && <p className="text-center text-sm text-gray-400 py-8">No activity {isToday ? 'yet today' : 'that day'}.</p>}
+      </div>
+
+      {inactive.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">No activity ({inactive.length})</p>
+          <p className="text-sm text-gray-500">{inactive.map(s => s.student.name).join(', ')}</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+async function WeekTable({ date }: { date: string }) {
+  const report = await getWeekReport(date)
+  const isThisWeek = report.weekStartISO === mondayISOOf(todayISO())
+  const sorted = [...report.students].sort((a, b) => a.student.name.localeCompare(b.student.name))
+  const active = sorted.filter(s => s.totalQuestions > 0)
+  const inactive = sorted.filter(s => s.totalQuestions === 0)
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between bg-white rounded-xl border border-gray-200 px-4 py-3">
+        <Link href={`?mode=week&date=${addDays(report.weekStartISO, -7)}`} className="text-sm font-semibold text-purple-600 hover:underline">← Prev week</Link>
+        <div className="text-center">
+          <p className="font-bold text-gray-800">Week of {formatShort(report.weekStartISO)} – {formatShort(report.weekEndISO)}</p>
+          {!isThisWeek && <Link href={`?mode=week&date=${todayISO()}`} className="text-xs text-purple-600 hover:underline">Jump to this week</Link>}
+        </div>
+        <Link href={`?mode=week&date=${addDays(report.weekStartISO, 7)}`} className="text-sm font-semibold text-purple-600 hover:underline">Next week →</Link>
+      </div>
+
+      <div className="grid grid-cols-3 gap-3">
+        <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
+          <div className="text-2xl font-black text-indigo-600">{report.totalStudentsActive}<span className="text-sm text-gray-400 font-normal">/{report.students.length}</span></div>
+          <div className="text-xs text-gray-500 font-medium">Students studied</div>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
+          <div className="text-2xl font-black text-green-600">{report.totalQuestionsAnswered}</div>
+          <div className="text-xs text-gray-500 font-medium">Questions answered</div>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
+          <div className="text-2xl font-black text-blue-600">{report.topicCounts.length}</div>
+          <div className="text-xs text-gray-500 font-medium">Topics touched</div>
+        </div>
+      </div>
+
+      {report.topicCounts.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <h3 className="text-sm font-bold text-gray-700 mb-2">Topics studied this week</h3>
+          <div className="flex flex-wrap gap-2">
+            {report.topicCounts.map(t => (
+              <span key={`${t.unitTitle}:${t.topicTitle}`} className="text-xs font-medium bg-purple-50 text-purple-700 px-2.5 py-1 rounded-full">
+                {t.topicTitle} <span className="text-purple-400">×{t.count}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+        <table className="w-full text-sm min-w-[640px]">
+          <thead>
+            <tr className="bg-gray-50 border-b border-gray-200 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
+              <th className="px-4 py-2">Student</th>
+              <th className="px-4 py-2 text-center whitespace-nowrap">Questions</th>
+              <th className="px-4 py-2 text-center whitespace-nowrap">Days Active</th>
+              <th className="px-4 py-2">Mon–Sun</th>
+              <th className="px-4 py-2">Topics</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {active.map((s, i) => (
+              <tr key={s.student.id} className={i % 2 === 1 ? 'bg-gray-50/40' : ''}>
+                <td className="px-4 py-2 font-medium text-gray-800 whitespace-nowrap">
+                  <span className="flex items-center gap-2">
+                    <span className="w-6 h-6 rounded-full bg-purple-100 flex items-center justify-center text-[10px] font-bold text-purple-600 flex-shrink-0">
+                      {s.student.name.charAt(0).toUpperCase()}
+                    </span>
+                    <span>
+                      {s.student.name}
+                      <span className="block text-[11px] font-normal text-gray-400">{s.student.classTitle}</span>
+                    </span>
+                  </span>
+                </td>
+                <td className="px-4 py-2 text-center text-gray-700 font-semibold">{s.totalQuestions}</td>
+                <td className="px-4 py-2 text-center text-gray-500">{s.activeDays.length}/7</td>
+                <td className="px-4 py-2">
+                  <div className="flex items-center gap-1">
+                    {s.dayCounts.map((count, di) => (
+                      <div
+                        key={di}
+                        title={`${WEEKDAY_LETTERS[di]}: ${count} question${count === 1 ? '' : 's'}`}
+                        className={`w-6 h-6 rounded flex items-center justify-center text-[10px] font-bold ${
+                          count === 0 ? 'bg-gray-100 text-gray-300' : count < 3 ? 'bg-purple-200 text-purple-700' : 'bg-purple-500 text-white'
+                        }`}
+                      >
+                        {count > 0 ? count : WEEKDAY_LETTERS[di]}
+                      </div>
+                    ))}
+                  </div>
+                </td>
+                <td className="px-4 py-2 text-gray-500 max-w-xs truncate">{s.topicsTouched.map(t => t.topicTitle).join(', ')}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {active.length === 0 && <p className="text-center text-sm text-gray-400 py-8">No activity {isThisWeek ? 'yet this week' : 'that week'}.</p>}
+      </div>
+
+      {inactive.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">No activity ({inactive.length})</p>
+          <p className="text-sm text-gray-500">{inactive.map(s => s.student.name).join(', ')}</p>
+        </div>
+      )}
     </div>
   )
 }
