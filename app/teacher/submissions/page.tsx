@@ -498,6 +498,7 @@ export default function SubmissionsPage() {
                       </span>
                     )}
                   </div>
+                  <p className="text-xs text-gray-400 mt-0.5">🕐 Last worked on {new Date(selected.updated_at).toLocaleString()}</p>
                   {selected.text_answer && <p className="text-xs text-gray-600 mt-1 bg-gray-50 px-2 py-1 rounded">📝 {selected.text_answer}</p>}
                 </div>
                 {/* grade buttons + feedback below */}
