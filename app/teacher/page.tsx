@@ -133,18 +133,21 @@ export default async function TeacherDashboard({
   // request URL long enough for PostgREST to reject with a silent 400 (data
   // comes back null, and every downstream `allSubs ?? []` quietly renders as
   // empty instead of surfacing the failure). Fetching all submissions
-  // unfiltered is cheap at this app's scale and matching against a specific
-  // question still happens downstream via questionMeta/Map lookups.
-  type Sub = { id: string; student_id: string; question_id: string; created_at: string; updated_at: string; canvas_data: string | null; text_answer: string | null }
+  // unfiltered and matching against a specific question happens downstream
+  // via questionMeta/Map lookups.
+  //
+  // canvas_data/text_answer are deliberately NOT selected here — canvas_data
+  // is a base64-encoded PNG, and pulling every submission's full blob on
+  // every dashboard load got slow enough to time out the query outright.
+  // `has_content` is a generated column (see add-submissions-has-content.sql)
+  // that Postgres maintains automatically, so "did the student actually
+  // write/draw something, not just leave an empty '[]' placeholder canvas"
+  // (see app/api/grade/route.ts, which auto-creates those) can be filtered
+  // server-side instead of fetching every blob to check in JS.
   const { data: allSubs } = await supabase
     .from('submissions')
-    .select('id, student_id, question_id, created_at, updated_at, canvas_data, text_answer')
-
-  // A submission row can exist with no real content (e.g. an empty '[]'
-  // canvas the grade API auto-creates before the student's drawn anything),
-  // so "has written something" needs an actual content check, not just row
-  // existence.
-  const hasContent = (s: Sub) => (s.canvas_data && s.canvas_data.length > 5) || (s.text_answer && s.text_answer.trim().length > 0)
+    .select('id, student_id, question_id, created_at, updated_at')
+    .eq('has_content', true)
 
   const subIds = (allSubs ?? []).map(s => s.id)
   const { data: feedbacks } = subIds.length > 0
@@ -204,7 +207,6 @@ export default async function TeacherDashboard({
       })
     }
     for (const s of classSubs) {
-      if (!hasContent(s)) continue
       const meta = questionMeta.get(s.question_id)
       consider({
         studentId: s.student_id, type: 'writing',
@@ -229,7 +231,6 @@ export default async function TeacherDashboard({
         const subs = classSubs.filter(s => s.student_id === student.id)
         let submitted = 0, correct = 0, partial = 0, incorrect = 0
         for (const s of subs) {
-          if (!hasContent(s)) continue
           submitted++
           const grade = gradeBySubmission.get(s.id)
           if (grade === 'correct') correct++
@@ -274,7 +275,6 @@ export default async function TeacherDashboard({
     }))
     .sort((a, b) => a.name.localeCompare(b.name))
   const trackerSubs: SubmissionForTracker[] = (allSubs ?? [])
-    .filter(hasContent)
     .map(s => ({ id: s.id, student_id: s.student_id, question_id: s.question_id, created_at: s.created_at, updated_at: s.updated_at }))
 
   const { mode: modeParam, date: dateParam } = await searchParams
