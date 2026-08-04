@@ -73,7 +73,10 @@ export async function POST(req: NextRequest) {
   }
 
   // teacher_id is NOT NULL on the feedback table — set it to the grading teacher.
-  const patch: Record<string, unknown> = { submission_id: submissionId, teacher_id: caller.user.id }
+  // updated_at is set explicitly (no DB trigger keeps it current on upsert) —
+  // the live classroom grid's change-detection poll depends on this actually
+  // moving whenever the row is written, see /api/feedback-canvas.
+  const patch: Record<string, unknown> = { submission_id: submissionId, teacher_id: caller.user.id, updated_at: new Date().toISOString() }
   if (grade !== undefined) patch.grade = grade
   if (textFeedback !== undefined) patch.text_feedback = textFeedback
   if (canvasData !== undefined) patch.canvas_data = canvasData

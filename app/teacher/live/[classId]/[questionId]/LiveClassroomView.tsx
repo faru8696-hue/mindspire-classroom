@@ -383,14 +383,43 @@ export default function LiveClassroomView({
   // without opening that student's board. feedback is RLS-gated the same way
   // submissions are, so this can't rely on postgres_changes — same reasoning
   // TeacherWatchBoard already uses for polling a single student's board.
+  //
+  // Two-tier: the 5s poll only fetches {studentId: updated_at} — a few bytes
+  // per student, not their image. A student's actual canvas_data (can be
+  // hundreds of KB) is only fetched when its updated_at has actually moved
+  // since we last saw it. The old version fetched every student's full
+  // canvas_data on every single poll regardless of whether anything had
+  // changed — with a grid open for a whole class period, that alone could
+  // add up to gigabytes of wasted egress.
+  const canvasVersionRef = useRef<Map<string, string>>(new Map())
   useEffect(() => {
     let active = true
     async function poll() {
       try {
         const res = await fetch(`/api/feedback-canvas?questionId=${questionId}`)
         if (!res.ok || !active) return
-        const { canvasByStudent } = await res.json() as { canvasByStudent: Record<string, string> }
-        setFeedbackCanvasByStudent(new Map(Object.entries(canvasByStudent)))
+        const { versionByStudent } = await res.json() as { versionByStudent: Record<string, string> }
+        const changedStudentIds = Object.entries(versionByStudent)
+          .filter(([sid, v]) => canvasVersionRef.current.get(sid) !== v)
+          .map(([sid]) => sid)
+        if (changedStudentIds.length === 0) return
+        const fetched = await Promise.all(changedStudentIds.map(async sid => {
+          const r = await fetch(`/api/feedback-canvas?questionId=${questionId}&studentId=${sid}`)
+          if (!r.ok) return null
+          const { canvasData } = await r.json() as { canvasData: string | null }
+          return { sid, canvasData }
+        }))
+        if (!active) return
+        setFeedbackCanvasByStudent(prev => {
+          const next = new Map(prev)
+          for (const f of fetched) {
+            if (!f) continue
+            if (f.canvasData) next.set(f.sid, f.canvasData)
+            else next.delete(f.sid)
+          }
+          return next
+        })
+        for (const sid of changedStudentIds) canvasVersionRef.current.set(sid, versionByStudent[sid])
       } catch {}
     }
     poll()

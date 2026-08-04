@@ -7,12 +7,16 @@ const admin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-// Returns the teacher's annotation layer (feedback.canvas_data) for every
-// student's submission on a question, keyed by student_id. Used to poll the
-// live grid so a tile shows what the teacher already wrote on that board —
-// the submissions/feedback tables are RLS-gated with no working SELECT
-// policy for the teacher client, so this has to go through service role
-// rather than a direct client read or postgres_changes subscription.
+// Two modes, both keyed by question:
+//  - default: a cheap change-detection poll — {studentId: updated_at} only,
+//    no image data. The live classroom grid polls this every few seconds.
+//  - ?studentId=<id>: the actual canvas_data (a full base64 PNG, can be
+//    hundreds of KB) for exactly one student, fetched only when that
+//    student's updated_at moved since the caller last saw it.
+// Splitting these apart is the fix for a real production incident: this
+// route used to always return every student's canvas_data, polled every 5s
+// while a teacher had the grid open — for a full class period that alone
+// could be gigabytes of egress for images that hadn't even changed.
 export async function GET(req: NextRequest) {
   const caller = await getCaller()
   if (caller?.profile?.role !== 'teacher') {
@@ -23,6 +27,7 @@ export async function GET(req: NextRequest) {
   if (!questionId) {
     return NextResponse.json({ error: 'Missing questionId' }, { status: 400 })
   }
+  const studentId = req.nextUrl.searchParams.get('studentId')
 
   const { data: subs } = await admin
     .from('submissions')
@@ -30,20 +35,32 @@ export async function GET(req: NextRequest) {
     .eq('question_id', questionId)
 
   const submissionIds = (subs ?? []).map(s => s.id)
-  if (!submissionIds.length) return NextResponse.json({ canvasByStudent: {} })
+  if (!submissionIds.length) {
+    return studentId ? NextResponse.json({ canvasData: null }) : NextResponse.json({ versionByStudent: {} })
+  }
+  const studentBySubmission = new Map((subs ?? []).map(s => [s.id, s.student_id]))
+
+  if (studentId) {
+    const mySubmissionId = [...studentBySubmission.entries()].find(([, sid]) => sid === studentId)?.[0]
+    if (!mySubmissionId) return NextResponse.json({ canvasData: null })
+    const { data: feedback } = await admin
+      .from('feedback')
+      .select('canvas_data')
+      .eq('submission_id', mySubmissionId)
+      .maybeSingle()
+    return NextResponse.json({ canvasData: feedback?.canvas_data ?? null })
+  }
 
   const { data: feedback } = await admin
     .from('feedback')
-    .select('submission_id, canvas_data')
+    .select('submission_id, updated_at')
     .in('submission_id', submissionIds)
 
-  const studentBySubmission = new Map((subs ?? []).map(s => [s.id, s.student_id]))
-  const canvasByStudent: Record<string, string> = {}
+  const versionByStudent: Record<string, string> = {}
   for (const f of feedback ?? []) {
-    if (!f.canvas_data) continue
-    const studentId = studentBySubmission.get(f.submission_id)
-    if (studentId) canvasByStudent[studentId] = f.canvas_data
+    const sid = studentBySubmission.get(f.submission_id)
+    if (sid) versionByStudent[sid] = f.updated_at
   }
 
-  return NextResponse.json({ canvasByStudent })
+  return NextResponse.json({ versionByStudent })
 }
