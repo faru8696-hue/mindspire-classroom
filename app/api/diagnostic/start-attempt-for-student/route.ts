@@ -38,6 +38,28 @@ export async function POST(req: NextRequest) {
     .maybeSingle()
   if (!test) return NextResponse.json({ error: 'Test not found.' }, { status: 404 })
 
+  // Resume an already-in-progress attempt rather than starting a new one —
+  // without this, leaving mid-test and clicking "Start" again from the
+  // dashboard would silently abandon the old attempt (and its timer/
+  // autosaved work) and draw a brand new random question set.
+  const { data: myLeads } = await admin
+    .from('diagnostic_leads')
+    .select('id')
+    .eq('diagnostic_test_id', test.id)
+    .eq('student_id', user.id)
+  const myLeadIds = (myLeads ?? []).map(l => l.id)
+  if (myLeadIds.length > 0) {
+    const { data: inProgress } = await admin
+      .from('diagnostic_attempts')
+      .select('id')
+      .in('lead_id', myLeadIds)
+      .eq('status', 'in_progress')
+      .order('started_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (inProgress) return NextResponse.json({ attemptId: inProgress.id })
+  }
+
   const { data: pool } = await admin
     .from('diagnostic_questions')
     .select('id, question_type')
