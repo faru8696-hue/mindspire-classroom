@@ -51,7 +51,7 @@ export default function FrqAnnotatorModal({
           <h3 className="font-bold text-gray-800">Annotate Student&rsquo;s Work</h3>
           <span className="text-xs text-gray-400">Draw circles, checkmarks, or notes directly on their work</span>
         </div>
-        <ScratchBoard ref={boardRef} initialDataUrl={startingImage} label="✏️ Draw your feedback" />
+        <ScratchBoard ref={boardRef} initialDataUrl={startingImage} label="✏️ Draw your feedback" penColor="#dc2626" />
         {error && <p className="text-red-600 text-sm bg-red-50 p-2 rounded-lg">{error}</p>}
         <div className="flex gap-2">
           <button onClick={save} disabled={saving}
