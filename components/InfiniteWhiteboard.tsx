@@ -45,6 +45,10 @@ interface ViewState { panX: number; panY: number; zoom: number }
 
 const MIN_ZOOM = 0.1
 const MAX_ZOOM = 8
+// Floor specifically for auto/manual "fit to content" — see fitToContent().
+// Manual zoom-out via the toolbar/wheel/pinch still goes all the way to
+// MIN_ZOOM; this only stops the fit-everything view from over-shrinking.
+const FIT_MIN_ZOOM = 0.5
 const GRID = 40
 
 interface Props {
@@ -175,7 +179,12 @@ function InfiniteWhiteboardInner({
     const pad = 60
     const bw = Math.max(1, b.maxX - b.minX)
     const bh = Math.max(1, b.maxY - b.minY)
-    const zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.min(
+    // Floored well above MIN_ZOOM — a student who spread work widely across
+    // the board (e.g. answers written far apart) would otherwise shrink the
+    // whole page down until it fit, which "fits everything" but leaves the
+    // actual writing too small to read. Below this floor the teacher can
+    // still pan to reach anything just out of frame.
+    const zoom = Math.max(FIT_MIN_ZOOM, Math.min(MAX_ZOOM, Math.min(
       canvas.width / (bw + pad * 2),
       canvas.height / (bh + pad * 2),
     )))
