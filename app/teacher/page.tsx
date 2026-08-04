@@ -42,6 +42,19 @@ function mondayISOOf(iso: string): string {
 }
 const WEEKDAY_LETTERS = ['M', 'T', 'W', 'T', 'F', 'S', 'S']
 
+type SortMode = 'name' | 'high' | 'low'
+const SORT_LABEL: Record<SortMode, string> = { name: 'A–Z', high: 'Most questions', low: 'Fewest questions' }
+
+// Shared by Day/Week's active-student lists — name is always the tiebreaker
+// so a sort by count doesn't reorder itself on every reload when counts tie.
+function sortByMode<T>(list: T[], sort: SortMode, name: (t: T) => string, count: (t: T) => number): T[] {
+  return [...list].sort((a, b) => {
+    if (sort === 'high') return count(b) - count(a) || name(a).localeCompare(name(b))
+    if (sort === 'low') return count(a) - count(b) || name(a).localeCompare(name(b))
+    return name(a).localeCompare(name(b))
+  })
+}
+
 // `estimatedMinutes` is only ever set when a question's first save and last
 // save happened on the same calendar day within a 3-hour window — anything
 // else (picked back up on a later day, or left open for hours) has no
@@ -62,7 +75,7 @@ const SUB_GRADE_CLS: Record<string, string> = {
 export default async function TeacherDashboard({
   searchParams,
 }: {
-  searchParams: Promise<{ mode?: string; date?: string }>
+  searchParams: Promise<{ mode?: string; date?: string; sort?: string }>
 }) {
   const supabase = adminDb()
 
@@ -277,9 +290,10 @@ export default async function TeacherDashboard({
   const trackerSubs: SubmissionForTracker[] = (allSubs ?? [])
     .map(s => ({ id: s.id, student_id: s.student_id, question_id: s.question_id, created_at: s.created_at, updated_at: s.updated_at }))
 
-  const { mode: modeParam, date: dateParam } = await searchParams
+  const { mode: modeParam, date: dateParam, sort: sortParam } = await searchParams
   const trackerMode = modeParam === 'week' ? 'week' : 'day'
   const trackerDate = dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam) ? dateParam : todayISO()
+  const trackerSort: SortMode = sortParam === 'high' || sortParam === 'low' ? sortParam : 'name'
   const dayReport: DayReport | null = trackerMode === 'day'
     ? computeDayReport(trackerDate, trackerRoster, trackerSubs, trackerQuestionMeta, gradeBySubmission)
     : null
@@ -390,44 +404,57 @@ export default async function TeacherDashboard({
           the main class-content system (submissions), not Self Study or
           Tests, which have their own dashboards. */}
       <div className="space-y-3">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-2">
           <h2 className="text-lg font-semibold text-gray-800">Study Tracker</h2>
-          <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
-            <Link
-              href={`?mode=day&date=${trackerDate}`}
-              className={`text-sm font-semibold px-3 py-1 rounded-md transition-colors ${trackerMode === 'day' ? 'bg-white text-purple-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-            >
-              Day
-            </Link>
-            <Link
-              href={`?mode=week&date=${trackerDate}`}
-              className={`text-sm font-semibold px-3 py-1 rounded-md transition-colors ${trackerMode === 'week' ? 'bg-white text-purple-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-            >
-              Week
-            </Link>
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+              {(['name', 'high', 'low'] as SortMode[]).map(s => (
+                <Link
+                  key={s}
+                  href={`?mode=${trackerMode}&date=${trackerDate}&sort=${s}`}
+                  className={`text-xs font-semibold px-2.5 py-1 rounded-md transition-colors whitespace-nowrap ${trackerSort === s ? 'bg-white text-purple-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                >
+                  {SORT_LABEL[s]}
+                </Link>
+              ))}
+            </div>
+            <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+              <Link
+                href={`?mode=day&date=${trackerDate}&sort=${trackerSort}`}
+                className={`text-sm font-semibold px-3 py-1 rounded-md transition-colors ${trackerMode === 'day' ? 'bg-white text-purple-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                Day
+              </Link>
+              <Link
+                href={`?mode=week&date=${trackerDate}&sort=${trackerSort}`}
+                className={`text-sm font-semibold px-3 py-1 rounded-md transition-colors ${trackerMode === 'week' ? 'bg-white text-purple-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                Week
+              </Link>
+            </div>
           </div>
         </div>
-        {dayReport ? <DayTable report={dayReport} date={trackerDate} /> : <WeekTable report={weekReport!} />}
+        {dayReport ? <DayTable report={dayReport} date={trackerDate} sort={trackerSort} /> : <WeekTable report={weekReport!} sort={trackerSort} />}
       </div>
     </div>
   )
 }
 
-function DayTable({ report, date }: { report: DayReport; date: string }) {
+function DayTable({ report, date, sort }: { report: DayReport; date: string; sort: SortMode }) {
   const isToday = date === todayISO()
-  const sorted = [...report.students].sort((a, b) => a.student.name.localeCompare(b.student.name))
-  const active = sorted.filter(s => s.questions.length > 0)
-  const inactive = sorted.filter(s => s.questions.length === 0)
+  const activeOnly = report.students.filter(s => s.questions.length > 0)
+  const active = sortByMode(activeOnly, sort, s => s.student.name, s => s.questions.length)
+  const inactive = report.students.filter(s => s.questions.length === 0).sort((a, b) => a.student.name.localeCompare(b.student.name))
 
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between bg-white rounded-xl border border-gray-200 px-4 py-3">
-        <Link href={`?mode=day&date=${addDays(date, -1)}`} className="text-sm font-semibold text-purple-600 hover:underline">← {formatShort(addDays(date, -1))}</Link>
+        <Link href={`?mode=day&date=${addDays(date, -1)}&sort=${sort}`} className="text-sm font-semibold text-purple-600 hover:underline">← {formatShort(addDays(date, -1))}</Link>
         <div className="text-center">
           <p className="font-bold text-gray-800">{formatDayLabel(date)}</p>
-          {!isToday && <Link href={`?mode=day&date=${todayISO()}`} className="text-xs text-purple-600 hover:underline">Jump to today</Link>}
+          {!isToday && <Link href={`?mode=day&date=${todayISO()}&sort=${sort}`} className="text-xs text-purple-600 hover:underline">Jump to today</Link>}
         </div>
-        <Link href={`?mode=day&date=${addDays(date, 1)}`} className="text-sm font-semibold text-purple-600 hover:underline">{formatShort(addDays(date, 1))} →</Link>
+        <Link href={`?mode=day&date=${addDays(date, 1)}&sort=${sort}`} className="text-sm font-semibold text-purple-600 hover:underline">{formatShort(addDays(date, 1))} →</Link>
       </div>
 
       <div className="grid grid-cols-3 gap-3">
@@ -530,21 +557,21 @@ function DayTable({ report, date }: { report: DayReport; date: string }) {
   )
 }
 
-function WeekTable({ report }: { report: WeekReport }) {
+function WeekTable({ report, sort }: { report: WeekReport; sort: SortMode }) {
   const isThisWeek = report.weekStartISO === mondayISOOf(todayISO())
-  const sorted = [...report.students].sort((a, b) => a.student.name.localeCompare(b.student.name))
-  const active = sorted.filter(s => s.totalQuestions > 0)
-  const inactive = sorted.filter(s => s.totalQuestions === 0)
+  const activeOnly = report.students.filter(s => s.totalQuestions > 0)
+  const active = sortByMode(activeOnly, sort, s => s.student.name, s => s.totalQuestions)
+  const inactive = report.students.filter(s => s.totalQuestions === 0).sort((a, b) => a.student.name.localeCompare(b.student.name))
 
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between bg-white rounded-xl border border-gray-200 px-4 py-3">
-        <Link href={`?mode=week&date=${addDays(report.weekStartISO, -7)}`} className="text-sm font-semibold text-purple-600 hover:underline">← Prev week</Link>
+        <Link href={`?mode=week&date=${addDays(report.weekStartISO, -7)}&sort=${sort}`} className="text-sm font-semibold text-purple-600 hover:underline">← Prev week</Link>
         <div className="text-center">
           <p className="font-bold text-gray-800">Week of {formatShort(report.weekStartISO)} – {formatShort(report.weekEndISO)}</p>
-          {!isThisWeek && <Link href={`?mode=week&date=${todayISO()}`} className="text-xs text-purple-600 hover:underline">Jump to this week</Link>}
+          {!isThisWeek && <Link href={`?mode=week&date=${todayISO()}&sort=${sort}`} className="text-xs text-purple-600 hover:underline">Jump to this week</Link>}
         </div>
-        <Link href={`?mode=week&date=${addDays(report.weekStartISO, 7)}`} className="text-sm font-semibold text-purple-600 hover:underline">Next week →</Link>
+        <Link href={`?mode=week&date=${addDays(report.weekStartISO, 7)}&sort=${sort}`} className="text-sm font-semibold text-purple-600 hover:underline">Next week →</Link>
       </div>
 
       <div className="grid grid-cols-3 gap-3">
