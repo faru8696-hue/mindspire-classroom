@@ -101,6 +101,7 @@ export default async function StudentDashboard() {
     const unitId = topicByUnit.get(q.topic_id)
     return [q.id, unitId ? unitByClass.get(unitId) : undefined]
   }))
+  const topicByQuestion = new Map((questions ?? []).map(q => [q.id, q.topic_id]))
 
   const studentAssignedIds = new Set((studentAssignments ?? []).map(a => a.question_id))
   const assignedByClass = new Map<string, Set<string>>()
@@ -152,14 +153,20 @@ export default async function StudentDashboard() {
 
   const activity = (rawNotifs ?? []).map(n => {
     const questionTitle = questionTitleById.get(n.question_id) ?? 'a question'
+    const topicId = n.question_id ? topicByQuestion.get(n.question_id) : undefined
+    const unitId = topicId ? topicByUnit.get(topicId) : undefined
+    const classId = unitId ? unitByClass.get(unitId) : undefined
+    const href = classId && unitId && topicId && n.question_id
+      ? `/student/${classId}/${unitId}/${topicId}/${n.question_id}`
+      : '/student/notifications'
     if (n.type === 'assignment') {
-      return { id: n.id, icon: '📋', text: 'New question assigned', sub: questionTitle, at: n.created_at }
+      return { id: n.id, icon: '📋', text: 'New question assigned', sub: questionTitle, at: n.created_at, href }
     }
     if (n.type === 'comment') {
-      return { id: n.id, icon: '💬', text: 'Teacher left a comment', sub: n.feedback ? `"${n.feedback}"` : questionTitle, at: n.created_at }
+      return { id: n.id, icon: '💬', text: 'Teacher left a comment', sub: n.feedback ? `"${n.feedback}"` : questionTitle, at: n.created_at, href }
     }
     const g = n.grade ? GRADE_STYLE[n.grade] : null
-    return { id: n.id, icon: g?.icon ?? '📝', text: g?.label ?? 'Work reviewed', sub: questionTitle, at: n.created_at }
+    return { id: n.id, icon: g?.icon ?? '📝', text: g?.label ?? 'Work reviewed', sub: questionTitle, at: n.created_at, href }
   })
 
   return (
@@ -192,14 +199,14 @@ export default async function StudentDashboard() {
           <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Recent Activity</h2>
           <div className="bg-white border border-gray-200 rounded-xl divide-y divide-gray-100">
             {activity.map(a => (
-              <div key={a.id} className="flex items-center gap-3 px-4 py-3">
+              <Link key={a.id} href={a.href} className="flex items-center gap-3 px-4 py-3 hover:bg-purple-50 transition-colors">
                 <span className="text-lg flex-shrink-0">{a.icon}</span>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-gray-800">{a.text}</p>
                   <p className="text-xs text-gray-500 truncate">{a.sub}</p>
                 </div>
                 <span className="text-xs text-gray-400 flex-shrink-0">{timeAgo(a.at)}</span>
-              </div>
+              </Link>
             ))}
           </div>
           <Link href="/student/notifications" className="block text-center text-xs text-purple-600 hover:underline mt-2">
