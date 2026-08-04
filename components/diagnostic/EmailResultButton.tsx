@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 
 export default function EmailResultButton({
   attemptId, studentEmail, parentEmail,
@@ -9,6 +10,7 @@ export default function EmailResultButton({
   studentEmail: string
   parentEmail: string
 }) {
+  const router = useRouter()
   const [sending, setSending] = useState(false)
   const [sent, setSent] = useState(false)
   const [error, setError] = useState('')
@@ -27,6 +29,9 @@ export default function EmailResultButton({
       if (!res.ok) { setError(data.error || 'Something went wrong.'); setSending(false); return }
       setSent(true)
       setTimeout(() => setSent(false), 5000)
+      // Sending the email also releases the results (see the API route) —
+      // refresh so the release toggle next to this button picks that up.
+      router.refresh()
     } catch {
       setError('Connection error.')
     } finally {

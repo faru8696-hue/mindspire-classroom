@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import TopicBadge from './TopicBadge'
 import ProgressDots from './ProgressDots'
@@ -23,26 +23,71 @@ function formatClock(totalSeconds: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
+// Wall-clock elapsed time since the attempt started, not a plain client-side
+// countdown — a countdown that just decrements from durationMinutes on
+// mount resets to the full duration on every page load, which means closing
+// the tab (or the browser crashing) and reopening the same attempt link
+// hands the student a fresh full timer for free. Computing from started_at
+// every time closes that loophole: however long they were away still counts
+// against the clock.
+function computeSecondsLeft(startedAt: string, durationMinutes: number): number {
+  const elapsed = Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000)
+  return Math.max(0, durationMinutes * 60 - elapsed)
+}
+
+// Deterministic per-(attempt, question) shuffle — mulberry32 seeded from a
+// simple string hash, not Math.random(). Same student re-opening/navigating
+// back to a question always sees the same option order (no re-shuffle
+// flicker); a DIFFERENT student's attempt gets a different order for the
+// same question, so "the answer is B" called across the room doesn't
+// reliably point at the same option for whoever's listening. Grading is
+// untouched — this only reorders what's rendered, and `pick()` below still
+// records the option's original index, exactly as before.
+function seededShuffle<T>(arr: T[], seed: string): T[] {
+  let h = 0
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) | 0
+  let state = h >>> 0
+  function rand() {
+    state = (state + 0x6d2b79f5) | 0
+    let t = Math.imul(state ^ (state >>> 15), 1 | state)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+  const copy = [...arr]
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1))
+    ;[copy[i], copy[j]] = [copy[j], copy[i]]
+  }
+  return copy
+}
+
 export default function DiagnosticTestSession({
-  slug, attemptId, testTitle, questions, durationMinutes, studentName, studentEmail,
+  slug, attemptId, testTitle, questions, durationMinutes, startedAt, studentName, studentEmail,
+  initialAnswers, initialCanvasByQuestion,
 }: {
   slug: string
   attemptId: string
   testTitle: string
   questions: DiagnosticSessionQuestion[]
   durationMinutes: number
+  startedAt: string
   studentName: string
   studentEmail: string
+  // Autosaved progress from an earlier visit (closed tab, crashed browser,
+  // switched devices) — restored on mount so the student resumes instead of
+  // starting over. Empty on a genuinely fresh attempt.
+  initialAnswers: { questionId: string; selectedIndex: number }[]
+  initialCanvasByQuestion: { questionId: string; canvasData: string }[]
 }) {
   const router = useRouter()
   const [index, setIndex] = useState(0)
-  const [answers, setAnswers] = useState<Map<string, number>>(new Map())
+  const [answers, setAnswers] = useState<Map<string, number>>(() => new Map(initialAnswers.map(a => [a.questionId, a.selectedIndex])))
   // Scratch work for every question, not just FRQ — MCQ questions get a
   // rough-work board alongside the options so students can work out
   // calculations without needing paper. It's saved with the answer either
   // way but never affects MCQ grading (that's still purely selectedIndex).
-  const [canvasByQuestion, setCanvasByQuestion] = useState<Map<string, string | null>>(new Map())
-  const [secondsLeft, setSecondsLeft] = useState(durationMinutes * 60)
+  const [canvasByQuestion, setCanvasByQuestion] = useState<Map<string, string | null>>(() => new Map(initialCanvasByQuestion.map(c => [c.questionId, c.canvasData])))
+  const [secondsLeft, setSecondsLeft] = useState(() => computeSecondsLeft(startedAt, durationMinutes))
   const [submitting, setSubmitting] = useState(false)
   const submittingRef = useRef(false)
   const canvasRef = useRef<ScratchBoardHandle>(null)
@@ -85,6 +130,15 @@ export default function DiagnosticTestSession({
   }, [])
 
   const q = questions[index]
+
+  // { opt, originalIndex } pairs in shuffled display order — see
+  // seededShuffle() above. Recomputed when the question changes, but always
+  // yields the same order for the same (attemptId, question).
+  const shuffledOptions = useMemo(() => {
+    if (!q || q.questionType !== 'mcq' || !q.options) return []
+    return seededShuffle(q.options.map((opt, originalIndex) => ({ opt, originalIndex })), `${attemptId}:${q.id}`)
+  }, [q, attemptId])
+
   const answeredSet = new Set(
     questions
       .map((qq, i) => {
@@ -142,9 +196,53 @@ export default function DiagnosticTestSession({
 
   useEffect(() => {
     if (secondsLeft <= 0) { handleSubmit(); return }
-    const t = setTimeout(() => setSecondsLeft(s => s - 1), 1000)
+    // Recomputed from startedAt on every tick, not decremented by 1 — a
+    // backgrounded/throttled tab can't drift the countdown out of sync with
+    // real elapsed time, and it stays correct across a page reload too.
+    const t = setTimeout(() => setSecondsLeft(computeSecondsLeft(startedAt, durationMinutes)), 1000)
     return () => clearTimeout(t)
-  }, [secondsLeft, handleSubmit])
+  }, [secondsLeft, handleSubmit, startedAt, durationMinutes])
+
+  // Periodic autosave — captures the current question's scratch board plus
+  // every answer/canvas gathered so far and sends it to the server so a
+  // closed tab or crashed browser doesn't lose the student's progress (see
+  // /api/diagnostic/autosave-attempt). Fires on an interval rather than on
+  // every keystroke/stroke to avoid spamming the endpoint while drawing.
+  //
+  // The interval itself is set up once ([] deps) so it isn't torn down and
+  // restarted every second by the timer tick re-rendering this component —
+  // that would keep resetting the 20s countdown and it would never actually
+  // fire. It reads answers/canvasByQuestion/index through refs that mirror
+  // the latest state instead of closing over the values from setup time.
+  const answersRef = useRef(answers)
+  useEffect(() => { answersRef.current = answers }, [answers])
+  const canvasByQuestionRef = useRef(canvasByQuestion)
+  useEffect(() => { canvasByQuestionRef.current = canvasByQuestion }, [canvasByQuestion])
+  const indexRef = useRef(index)
+  useEffect(() => { indexRef.current = index }, [index])
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (submittingRef.current) return
+      const currentQ = questions[indexRef.current]
+      const finalCanvas = new Map(canvasByQuestionRef.current)
+      if (currentQ) finalCanvas.set(currentQ.id, canvasRef.current?.getSnapshot() ?? finalCanvas.get(currentQ.id) ?? null)
+      const payload = questions
+        .map(qq => ({
+          questionId: qq.id,
+          selectedIndex: qq.questionType === 'mcq' ? answersRef.current.get(qq.id) : undefined,
+          canvasData: finalCanvas.get(qq.id) ?? null,
+        }))
+        .filter(a => a.selectedIndex !== undefined || a.canvasData !== null)
+      if (payload.length === 0) return
+      fetch('/api/diagnostic/autosave-attempt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ attemptId, answers: payload }),
+      }).catch(() => {})
+    }, 20000)
+    return () => clearInterval(interval)
+  }, [attemptId, questions])
 
   function pick(optionIndex: number) {
     setAnswers(prev => new Map(prev).set(q.id, optionIndex))
@@ -223,12 +321,12 @@ export default function DiagnosticTestSession({
             // needing paper, saved with the answer but never graded.
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
               <div className="space-y-3 select-none" onCopy={e => e.preventDefault()} onContextMenu={e => e.preventDefault()}>
-                {(q.options ?? []).map((opt, i) => {
-                  const selected = answers.get(q.id) === i
+                {shuffledOptions.map(({ opt, originalIndex }, displayIndex) => {
+                  const selected = answers.get(q.id) === originalIndex
                   return (
                     <button
-                      key={i}
-                      onClick={() => pick(i)}
+                      key={originalIndex}
+                      onClick={() => pick(originalIndex)}
                       className={`w-full text-left px-5 py-4 border-2 rounded-xl text-gray-800 transition-transform hover:translate-x-1 ${
                         selected ? 'bg-blue-800 text-white border-blue-800' : 'border-gray-200 hover:border-blue-300'
                       }`}
@@ -236,7 +334,7 @@ export default function DiagnosticTestSession({
                       <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full font-bold mr-3 text-sm ${
                         selected ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-700'
                       }`}>
-                        {String.fromCharCode(65 + i)}
+                        {String.fromCharCode(65 + displayIndex)}
                       </span>
                       {opt}
                     </button>

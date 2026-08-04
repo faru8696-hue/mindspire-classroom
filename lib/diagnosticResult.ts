@@ -20,7 +20,7 @@ export async function getDiagnosticResult(attemptId: string): Promise<Diagnostic
 
   const { data: attempt } = await admin
     .from('diagnostic_attempts')
-    .select('id, diagnostic_test_id, lead_id, status, started_at, submitted_at, correct_count, total_count, score_pct, tab_switch_count, tab_switch_seconds')
+    .select('id, diagnostic_test_id, lead_id, status, started_at, submitted_at, correct_count, total_count, score_pct, tab_switch_count, tab_switch_seconds, results_released')
     .eq('id', attemptId)
     .maybeSingle()
   if (!attempt) return { status: 'not_found' }
@@ -136,6 +136,11 @@ export async function getDiagnosticResult(attemptId: string): Promise<Diagnostic
       // results page) — see DiagnosticTestSession's tab-switch tracking.
       tabSwitchCount: attempt.tab_switch_count ?? 0,
       tabSwitchSeconds: attempt.tab_switch_seconds ?? 0,
+      // Gates the PUBLIC results page only — the teacher's own attempt page
+      // always shows full results regardless of this flag (see
+      // app/diagnostic/[slug]/results/[attemptId]/page.tsx vs.
+      // app/teacher/diagnostics/[testId]/attempts/[attemptId]/page.tsx).
+      resultsReleased: attempt.results_released,
       topicScores,
       advice,
       questionReview,

@@ -12,7 +12,7 @@ export default async function DiagnosticTakePage({
 
   const { data: attempt } = await admin
     .from('diagnostic_attempts')
-    .select('id, diagnostic_test_id, lead_id, question_ids, status')
+    .select('id, diagnostic_test_id, lead_id, question_ids, status, started_at')
     .eq('id', attemptId)
     .maybeSingle()
   if (!attempt) notFound()
@@ -20,9 +20,14 @@ export default async function DiagnosticTakePage({
   // Already finished this attempt — send to results instead of re-taking it.
   if (attempt.status === 'completed') redirect(`/diagnostic/${slug}/results/${attemptId}`)
 
-  const [{ data: test }, { data: lead }] = await Promise.all([
+  const [{ data: test }, { data: lead }, { data: draftAnswers }] = await Promise.all([
     admin.from('diagnostic_tests').select('title, duration_minutes').eq('id', attempt.diagnostic_test_id).maybeSingle(),
     admin.from('diagnostic_leads').select('student_name, student_email').eq('id', attempt.lead_id).maybeSingle(),
+    // Autosaved progress from an earlier visit (closed tab, browser crash,
+    // etc.) — restored so re-opening the attempt resumes where the student
+    // left off instead of starting blank. Not present at all until the
+    // first autosave fires.
+    admin.from('diagnostic_attempt_answers').select('question_id, selected_index, canvas_data').eq('attempt_id', attemptId),
   ])
   if (!test) notFound()
 
@@ -61,8 +66,15 @@ export default async function DiagnosticTakePage({
       testTitle={test.title}
       questions={sessionQuestions}
       durationMinutes={test.duration_minutes}
+      startedAt={attempt.started_at}
       studentName={lead?.student_name ?? ''}
       studentEmail={lead?.student_email ?? ''}
+      initialAnswers={(draftAnswers ?? [])
+        .filter(a => a.selected_index !== null)
+        .map(a => ({ questionId: a.question_id, selectedIndex: a.selected_index as number }))}
+      initialCanvasByQuestion={(draftAnswers ?? [])
+        .filter(a => a.canvas_data !== null)
+        .map(a => ({ questionId: a.question_id, canvasData: a.canvas_data as string }))}
     />
   )
 }

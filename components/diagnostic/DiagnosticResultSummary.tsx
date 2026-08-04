@@ -43,6 +43,8 @@ export interface DiagnosticResultData {
   // never here, so it's never shown to the student.
   tabSwitchCount: number
   tabSwitchSeconds: number
+  // Gates the public results page only — see lib/diagnosticResult.ts.
+  resultsReleased: boolean
   topicScores: TopicScore[]
   advice: { topicTitle: string; prepAdvice: string }[]
   questionReview: QuestionReviewItem[]

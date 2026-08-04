@@ -79,7 +79,14 @@ export async function POST(req: NextRequest) {
     }
   })
   if (answerRows.length > 0) {
-    const { error: answersError } = await admin.from('diagnostic_attempt_answers').insert(answerRows)
+    // Upsert, not insert — autosave (see /api/diagnostic/autosave-attempt)
+    // may have already created draft rows for some of these questions while
+    // the student was mid-test; this overwrites them with the final graded
+    // values instead of colliding with the unique (attempt_id, question_id)
+    // index.
+    const { error: answersError } = await admin
+      .from('diagnostic_attempt_answers')
+      .upsert(answerRows, { onConflict: 'attempt_id,question_id' })
     if (answersError) console.error('submit-attempt answers insert error:', answersError)
   }
 

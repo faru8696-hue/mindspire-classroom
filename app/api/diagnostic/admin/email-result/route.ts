@@ -111,5 +111,12 @@ export async function POST(req: NextRequest) {
   if (sentTo.length === 0) {
     return NextResponse.json({ error: `Could not send either email. ${errors.join('; ')}` }, { status: 500 })
   }
+
+  // Emailing the result IS releasing it — the email body already contains
+  // the score, and its "View Full Results" link would otherwise land on
+  // the "your teacher will share this soon" holding page. Keep the
+  // release toggle (and the student results page) in sync with reality.
+  await admin.from('diagnostic_attempts').update({ results_released: true }).eq('id', attemptId)
+
   return NextResponse.json({ ok: true, sentTo, errors: errors.length > 0 ? errors : undefined })
 }

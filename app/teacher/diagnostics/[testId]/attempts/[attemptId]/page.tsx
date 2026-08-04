@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { getDiagnosticResult } from '@/lib/diagnosticResult'
 import DiagnosticResultSummary from '@/components/diagnostic/DiagnosticResultSummary'
 import EmailResultButton from '@/components/diagnostic/EmailResultButton'
+import ReleaseResultsToggle from '@/components/diagnostic/ReleaseResultsToggle'
 
 export default async function DiagnosticAttemptDetailPage({
   params,
@@ -37,7 +38,10 @@ export default async function DiagnosticAttemptDetailPage({
 
   return (
     <div className="max-w-2xl mx-auto">
-      <Link href={`/teacher/diagnostics/${testId}`} className="text-blue-600 text-sm hover:underline block mb-4">← Back to test dashboard</Link>
+      <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
+        <Link href={`/teacher/diagnostics/${testId}`} className="text-blue-600 text-sm hover:underline">← Back to test dashboard</Link>
+        <ReleaseResultsToggle attemptId={attemptId} released={lookup.result.resultsReleased} />
+      </div>
 
       {lead && (
         <div className="bg-white rounded-2xl border border-gray-200 p-5 mb-4">

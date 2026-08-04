@@ -19,6 +19,9 @@ export interface StudentResultRow {
   hasFrq: boolean
   timeSpentMinutes: number
   submittedAt: string | null
+  // Whether the student can see their own score yet — see
+  // ReleaseResultsToggle on the per-attempt page, which actually flips it.
+  resultsReleased: boolean
 }
 
 export default function StudentResultsTable({ testId, rows }: { testId: string; rows: StudentResultRow[] }) {
@@ -56,6 +59,7 @@ export default function StudentResultsTable({ testId, rows }: { testId: string; 
           <th className="pb-2 px-3">Score</th>
           <th className="pb-2 px-3">Time</th>
           <th className="pb-2 px-3">Date</th>
+          <th className="pb-2 px-3">Results</th>
           <th className="pb-2 px-3"></th>
         </tr>
       </thead>
@@ -78,6 +82,11 @@ export default function StudentResultsTable({ testId, rows }: { testId: string; 
               </td>
               <td className="py-3 px-3 text-gray-500 text-xs">{row.timeSpentMinutes}m</td>
               <td className="py-3 px-3 text-gray-400 text-xs">{row.submittedAt ? new Date(row.submittedAt).toLocaleDateString() : ''}</td>
+              <td className="py-3 px-3">
+                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${row.resultsReleased ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                  {row.resultsReleased ? '✓ Shared' : '🔒 Hidden'}
+                </span>
+              </td>
               <td className="py-3 px-3 whitespace-nowrap">
                 <Link href={`/teacher/diagnostics/${testId}/attempts/${row.attemptId}`} className="text-indigo-600 text-xs font-semibold hover:underline mr-3">View →</Link>
                 <button onClick={() => remove(row)} disabled={deletingId === row.leadId}

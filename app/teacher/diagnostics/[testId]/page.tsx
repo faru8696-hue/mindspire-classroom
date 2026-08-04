@@ -27,7 +27,7 @@ export default async function DiagnosticTestDashboardPage({
 
   const { data: attempts } = await admin
     .from('diagnostic_attempts')
-    .select('id, lead_id, status, started_at, submitted_at, correct_count, total_count, score_pct')
+    .select('id, lead_id, status, started_at, submitted_at, correct_count, total_count, score_pct, results_released')
     .eq('diagnostic_test_id', testId)
     .eq('status', 'completed')
     .order('submitted_at', { ascending: false })
@@ -113,6 +113,7 @@ export default async function DiagnosticTestDashboardPage({
       hasFrq: frq !== null,
       timeSpentMinutes: a.submitted_at ? Math.round((new Date(a.submitted_at).getTime() - new Date(a.started_at).getTime()) / 60000) : 0,
       submittedAt: a.submitted_at,
+      resultsReleased: a.results_released,
     }
   })
 
