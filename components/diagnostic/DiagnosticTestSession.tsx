@@ -185,7 +185,11 @@ export default function DiagnosticTestSession({
         }),
       })
       if (res.ok) {
-        router.push(`/diagnostic/${slug}/results/${attemptId}`)
+        // replace, not push — so the back button from results skips over
+        // this now-completed take page (which would otherwise still show
+        // the last question) and lands wherever the student was before
+        // starting the test.
+        router.replace(`/diagnostic/${slug}/results/${attemptId}`)
         return
       }
     } catch {}
