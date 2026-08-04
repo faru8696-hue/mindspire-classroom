@@ -1,6 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/server'
-import Link from 'next/link'
 import RefreshLayout from '@/components/RefreshLayout'
+import PracticeTestListRow from '@/components/practice/PracticeTestListRow'
 
 export default async function PracticeTestsPage() {
   const admin = await createAdminClient()
@@ -71,29 +71,23 @@ export default async function PracticeTestsPage() {
             const pct = score && score.total > 0 ? Math.round((score.earned / score.total) * 100) : null
             const scoreColor = pct === null ? '' : pct >= 80 ? 'text-green-700 bg-green-50' : pct >= 50 ? 'text-amber-700 bg-amber-50' : 'text-red-600 bg-red-50'
             return (
-              <Link
+              <PracticeTestListRow
                 key={t.id}
-                href={`/teacher/practice-tests/${t.id}`}
-                className="flex items-center justify-between bg-white rounded-xl border border-gray-200 px-4 py-3 hover:border-purple-300 transition-colors"
-              >
-                <div>
-                  <p className="text-sm font-semibold text-gray-800">{student?.nickname || student?.full_name || 'Unknown student'}</p>
-                  <p className="text-xs text-gray-400">{t.title} · {cls?.title ?? ''}</p>
-                </div>
-                <div className="text-right flex-shrink-0">
-                  <div className="flex items-center justify-end gap-2 mb-0.5">
-                    {completed && pct !== null ? (
-                      <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${scoreColor}`}>{score.earned}/{score.total} pts · {pct}%</span>
-                    ) : (
-                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-purple-50 text-purple-600">
-                        {score && score.graded > 0 ? `In progress (${score.graded}/${score.totalQuestions})` : 'Not started'}
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs text-gray-500">{t.question_ids.length} questions{t.duration_minutes ? ` · ${t.duration_minutes} min` : ''}</p>
-                  <p className="text-xs text-gray-400">{new Date(t.created_at).toLocaleString()}</p>
-                </div>
-              </Link>
+                testId={t.id}
+                studentDisplayName={student?.nickname || student?.full_name || 'Unknown student'}
+                title={t.title}
+                classTitle={cls?.title ?? ''}
+                completed={completed}
+                pct={pct}
+                scoreColor={scoreColor}
+                earned={score?.earned ?? 0}
+                total={score?.total ?? 0}
+                gradedCount={score?.graded ?? 0}
+                totalQuestions={score?.totalQuestions ?? 0}
+                questionCount={t.question_ids.length}
+                durationMinutes={t.duration_minutes}
+                createdAt={t.created_at}
+              />
             )
           })}
         </div>

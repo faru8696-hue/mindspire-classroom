@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import QuestionContent from '@/components/QuestionContent'
 import AnswerKeyText from '@/components/AnswerKeyText'
+import DeletePracticeTestButton from '@/components/practice/DeletePracticeTestButton'
 
 const GRADE_BADGE: Record<string, { label: string; cls: string }> = {
   correct:   { label: '✓ Correct',   cls: 'bg-green-100 text-green-700' },
@@ -42,7 +43,10 @@ export default async function PracticeTestDetailPage({ params }: { params: Promi
 
   return (
     <div className="max-w-3xl mx-auto space-y-4">
-      <Link href="/teacher/practice-tests" className="text-purple-600 text-sm hover:underline block">← All self-study activity</Link>
+      <div className="flex items-center justify-between">
+        <Link href="/teacher/practice-tests" className="text-purple-600 text-sm hover:underline block">← All self-study activity</Link>
+        <DeletePracticeTestButton testId={test.id} studentDisplayName={displayName} title={test.title} />
+      </div>
 
       <div className="bg-white rounded-2xl border border-gray-200 p-5">
         <p className="text-xs uppercase tracking-widest text-purple-500 font-semibold">Self-Study Test</p>
