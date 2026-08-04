@@ -88,11 +88,40 @@ export default async function MySubmissionsPage({
   const reviewCount = rows.filter(r => r.needsReview).length
   const visibleRows = filter === 'review' ? rows.filter(r => r.needsReview) : rows
 
+  // Grade-value counts for the summary strip — collapsed through GRADE_MAP
+  // so legacy grade strings (partial/discussed/needsmore) land in the
+  // right bucket alongside the current correct/incorrect/incomplete set.
+  const correctCount = rows.filter(r => r.gradeDef?.value === 'correct').length
+  const wrongCount = rows.filter(r => r.gradeDef?.value === 'incorrect').length
+  const incompleteCount = rows.filter(r => r.gradeDef?.value === 'incomplete').length
+  const awaitingCount = rows.filter(r => !r.gradeDef).length
+
   return (
     <div className="max-w-3xl mx-auto">
       <Link href={`/student/${classId}`} className="text-purple-600 text-sm hover:underline mb-4 block">← Back to {cls.title}</Link>
       <h1 className="text-2xl font-bold text-purple-900 mb-1">My Submissions</h1>
       <p className="text-sm text-gray-500 mb-4">Everything you&rsquo;ve submitted in this class, most recent first.</p>
+
+      {rows.length > 0 && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+          <div className="bg-white rounded-xl border border-gray-200 p-3 text-center">
+            <div className="text-2xl font-black text-green-600">{correctCount}</div>
+            <div className="text-xs text-gray-500 font-medium">✓ Correct</div>
+          </div>
+          <div className="bg-white rounded-xl border border-gray-200 p-3 text-center">
+            <div className="text-2xl font-black text-red-600">{wrongCount}</div>
+            <div className="text-xs text-gray-500 font-medium">✗ Wrong</div>
+          </div>
+          <div className="bg-white rounded-xl border border-gray-200 p-3 text-center">
+            <div className="text-2xl font-black text-amber-600">{incompleteCount}</div>
+            <div className="text-xs text-gray-500 font-medium">… Incomplete</div>
+          </div>
+          <div className="bg-white rounded-xl border border-gray-200 p-3 text-center">
+            <div className="text-2xl font-black text-blue-600">{awaitingCount}</div>
+            <div className="text-xs text-gray-500 font-medium">⏳ Awaiting grade</div>
+          </div>
+        </div>
+      )}
 
       <div className="flex gap-1 bg-gray-100 rounded-lg p-1 w-fit mb-6">
         <Link
