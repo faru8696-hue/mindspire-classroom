@@ -45,7 +45,7 @@ export default function StudentBoardPage({
   // been graded once it disappeared. This stays until the grade changes.
   const [grade, setGrade] = useState<string | null>(initialGrade)
   const [submissionId, setSubmissionId] = useState<string | null>(initialSubmissionId ?? null)
-  const channelRef = useRef(supabase.channel('teacher-alerts'))
+  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
   const audioRef = useRef<AudioContext | null>(null)
   const boardRef = useRef<InfiniteWhiteboardHandle>(null)
 
@@ -66,10 +66,30 @@ export default function StudentBoardPage({
     } catch {}
   }
 
-  // Subscribe the alert broadcast channel so send() works
+  // Subscribe the alert broadcast channel so send() works. The channel is
+  // created HERE, inside the effect — not via `useRef(supabase.channel(...))`,
+  // which evaluates its argument (creating a brand-new channel object) on
+  // every render even though only the first one is kept. Navigating "next
+  // question" remounts this component (fresh instance, fresh ref) while the
+  // PREVIOUS instance's channel — same fixed 'teacher-alerts' topic every
+  // time — is still being torn down asynchronously; occasionally the new
+  // subscribe() call would race that teardown and throw "tried to join
+  // multiple times," which crashed the whole question page. subscribe()
+  // throws synchronously in that case, so it's wrapped rather than left to
+  // bubble into the error boundary over what's a non-critical side channel
+  // (the teacher's bell already has a polling fallback for missed alerts).
   useEffect(() => {
-    channelRef.current.subscribe()
-    return () => { supabase.removeChannel(channelRef.current) }
+    const channel = supabase.channel('teacher-alerts')
+    channelRef.current = channel
+    try {
+      channel.subscribe()
+    } catch (err) {
+      console.error('teacher-alerts subscribe failed:', err)
+    }
+    return () => {
+      channelRef.current = null
+      supabase.removeChannel(channel)
+    }
   }, [])
 
   // Instant grade updates — the teacher's grading UI already broadcasts on
@@ -84,7 +104,11 @@ export default function StudentBoardPage({
       const { grade: newGrade } = payload as { grade: string | null; feedback?: string }
       if (newGrade) setGrade(newGrade)
     })
-    ch.subscribe()
+    try {
+      ch.subscribe()
+    } catch (err) {
+      console.error('grade-notif subscribe failed:', err)
+    }
     return () => { supabase.removeChannel(ch) }
   }, [questionId, studentId])
 
@@ -159,7 +183,7 @@ export default function StudentBoardPage({
       })
       const { id, created } = await res.json()
       if (!created) return
-      await channelRef.current.send({
+      await channelRef.current?.send({
         type: 'broadcast', event: 'student-alert',
         payload: {
           id: id ?? crypto.randomUUID(),
