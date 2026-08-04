@@ -99,17 +99,23 @@ export default async function StudentNotificationsPage() {
 
     const isComment = n.type === 'comment'
     const isKeyReleased = n.type === 'answer_key_released'
+    const isReminder = n.type === 'reminder'
     const style = isComment
       ? { icon: '💬', bg: 'border-blue-400 bg-blue-50', label: 'Teacher left a comment' }
       : isKeyReleased
       ? { icon: '🔓', bg: 'border-purple-400 bg-purple-50', label: 'Answer key released' }
+      : isReminder
+      ? { icon: '📣', bg: 'border-indigo-400 bg-indigo-50', label: 'Reminder from your teacher' }
       : GRADE_STYLE[n.grade ?? ''] ?? { icon: '📝', bg: 'border-gray-300 bg-gray-50', label: 'Update' }
     rows.push({
       id: n.id,
       icon: style.icon,
+      // Reminders are just a message — no question to caption separately,
+      // so the message itself is the headline instead of a generic title
+      // plus a repeated "Reminder from your teacher" line.
       bg: style.bg,
-      title: q?.title ?? 'Question',
-      subtitle: `${style.label}${n.feedback ? ` — ${n.feedback}` : ''}`,
+      title: isReminder ? (n.feedback ?? 'Reminder') : (q?.title ?? 'Question'),
+      subtitle: isReminder ? style.label : `${style.label}${n.feedback ? ` — ${n.feedback}` : ''}`,
       classTitle: cls?.title ?? null,
       href,
       createdAt: n.created_at,

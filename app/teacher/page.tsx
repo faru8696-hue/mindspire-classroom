@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
 import Link from 'next/link'
 import { computeDayReport, computeWeekReport, type QuestionActivity, type DayReport, type WeekReport, type StudentInfo, type SubmissionForTracker, type QuestionMeta } from '@/lib/studyTracker'
+import SendReminderForm from '@/components/SendReminderForm'
 
 function adminDb() {
   return createSupabaseAdmin(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
@@ -273,6 +274,13 @@ export default async function TeacherDashboard({
     }
   })
 
+  // Class → roster lookup for the Send Reminder form below — reuses the
+  // same per-class roster already built for the Classes section.
+  const studentsByClass: Record<string, { id: string; name: string }[]> = {}
+  for (const cls of classStats) {
+    studentsByClass[cls.id] = cls.roster.map(s => ({ id: s.id, name: s.name }))
+  }
+
   // Flat cross-class roster for Study Tracker below — reuses data already
   // fetched for the Classes section above instead of querying again.
   const classTitleById = new Map((classes ?? []).map(c => [c.id, c.title]))
@@ -397,6 +405,18 @@ export default async function TeacherDashboard({
             ))}
           </div>
         )}
+      </div>
+
+      {/* Send Reminder — a free-text notification not tied to any specific
+          question ("study for the test," "great work this week," etc.),
+          to one student, a whole class, or everyone. Lands in the same
+          notification feed as grade/comment/assignment pings. */}
+      <div className="space-y-3">
+        <h2 className="text-lg font-semibold text-gray-800">Send Reminder</h2>
+        <SendReminderForm
+          classes={(classes ?? []).map(c => ({ id: c.id, title: c.title }))}
+          studentsByClass={studentsByClass}
+        />
       </div>
 
       {/* Study Tracker — who's been working through questions, on what

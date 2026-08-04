@@ -79,7 +79,7 @@ export async function GET() {
       read: n.read,
       created_at: n.created_at,
       question_id: n.question_id,
-      question_title: q?.title ?? 'Question',
+      question_title: n.type === 'reminder' ? 'Reminder from your teacher' : (q?.title ?? 'Question'),
       class_title: cls?.title ?? null,
       topic_id: topic?.id ?? null,
       topic_title: topic?.title ?? null,
