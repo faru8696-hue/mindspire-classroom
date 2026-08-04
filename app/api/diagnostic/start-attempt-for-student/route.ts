@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
 
   const { data: test } = await admin
     .from('diagnostic_tests')
-    .select('id, question_count_per_attempt')
+    .select('id, question_count_per_attempt, duration_minutes')
     .eq('slug', slug)
     .eq('is_active', true)
     .maybeSingle()
@@ -42,6 +42,14 @@ export async function POST(req: NextRequest) {
   // without this, leaving mid-test and clicking "Start" again from the
   // dashboard would silently abandon the old attempt (and its timer/
   // autosaved work) and draw a brand new random question set.
+  //
+  // But only if it's still within its time limit. An attempt abandoned long
+  // enough ago that its clock has already run out would otherwise get
+  // "resumed" straight into a take page whose very first render computes
+  // zero seconds left, instantly force-submitting whatever was (or wasn't)
+  // autosaved — the student sees "Test submitted!" the moment they try to
+  // work, having never gotten a real shot at it. Treat it as abandoned
+  // instead and hand out a fresh attempt.
   const { data: myLeads } = await admin
     .from('diagnostic_leads')
     .select('id')
@@ -51,13 +59,17 @@ export async function POST(req: NextRequest) {
   if (myLeadIds.length > 0) {
     const { data: inProgress } = await admin
       .from('diagnostic_attempts')
-      .select('id')
+      .select('id, started_at')
       .in('lead_id', myLeadIds)
       .eq('status', 'in_progress')
       .order('started_at', { ascending: false })
       .limit(1)
       .maybeSingle()
-    if (inProgress) return NextResponse.json({ attemptId: inProgress.id })
+    if (inProgress) {
+      const elapsedMs = Date.now() - new Date(inProgress.started_at).getTime()
+      const stillHasTime = elapsedMs < test.duration_minutes * 60 * 1000
+      if (stillHasTime) return NextResponse.json({ attemptId: inProgress.id })
+    }
   }
 
   const { data: pool } = await admin
