@@ -14,6 +14,14 @@ const GRADE: Record<string, { label: string; cls: string }> = {
 export default async function StudentDetailPage({ params }: { params: Promise<{ studentId: string }> }) {
   const { studentId } = await params
   const supabase = await createAdminClient()
+
+  // Marks pending "needs help" pings as read the moment a teacher opens
+  // this student's profile — the roster's 🙋 badge (app/teacher/page.tsx)
+  // is driven by unread type='help' notifications, and nothing previously
+  // cleared it once the teacher had actually clicked in and looked, so it
+  // kept showing indefinitely even after being addressed.
+  await supabase.from('notifications').update({ read: true }).eq('student_id', studentId).eq('type', 'help').eq('read', false)
+
   const studentActivity = await getRecentActivity({ studentId, limit: 100 })
 
   // Select core fields first; extended fields (parent_name etc.) added via migration
