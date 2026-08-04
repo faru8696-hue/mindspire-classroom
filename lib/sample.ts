@@ -9,3 +9,14 @@ export function sample<T>(arr: T[], n: number): T[] {
   }
   return copy.slice(0, n)
 }
+
+// Reorders an already-drawn/shuffled set of diagnostic questions so every
+// MCQ comes before every FRQ — matching how a real exam is laid out
+// (multiple choice section, then free response section) — while keeping
+// each group's existing shuffled relative order (so the per-student
+// randomization within MCQs, and within FRQs, is untouched).
+export function mcqFirst<T extends { question_type: string }>(items: T[]): T[] {
+  const mcq = items.filter(q => q.question_type === 'mcq')
+  const frq = items.filter(q => q.question_type !== 'mcq')
+  return [...mcq, ...frq]
+}

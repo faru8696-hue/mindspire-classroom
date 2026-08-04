@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient, createClient } from '@/lib/supabase/server'
-import { sample } from '@/lib/sample'
+import { sample, mcqFirst } from '@/lib/sample'
 
 // For an already-enrolled, logged-in student starting a test published to
 // their class — skips the public lead-capture form entirely by reusing the
@@ -40,16 +40,19 @@ export async function POST(req: NextRequest) {
 
   const { data: pool } = await admin
     .from('diagnostic_questions')
-    .select('id')
+    .select('id, question_type')
     .eq('diagnostic_test_id', test.id)
     .eq('is_active', true)
-  const poolIds = (pool ?? []).map(q => q.id)
-  if (poolIds.length === 0) {
+  const poolItems = pool ?? []
+  if (poolItems.length === 0) {
     return NextResponse.json({ error: 'This test has no questions yet.' }, { status: 404 })
   }
 
-  const want = Math.min(test.question_count_per_attempt, poolIds.length)
-  const selected = sample(poolIds, want)
+  const want = Math.min(test.question_count_per_attempt, poolItems.length)
+  // Random draw + per-student shuffle first (sample), then laid out MCQ
+  // section before FRQ section (mcqFirst) — matches a real exam's format
+  // while keeping the anti-cheat randomized order within each section.
+  const selected = mcqFirst(sample(poolItems, want)).map(q => q.id)
 
   const { data: lead, error: leadError } = await admin
     .from('diagnostic_leads')
