@@ -41,8 +41,8 @@ export async function GET() {
 
   const topicIds = [...new Set((qRows ?? []).map(q => q.topic_id).filter(Boolean))]
   const { data: tRows } = topicIds.length > 0
-    ? await admin.from('topics').select('id, unit_id').in('id', topicIds)
-    : { data: [] as { id: string; unit_id: string }[] }
+    ? await admin.from('topics').select('id, title, unit_id').in('id', topicIds)
+    : { data: [] as { id: string; title: string; unit_id: string }[] }
 
   const unitIds = [...new Set((tRows ?? []).map(t => t.unit_id).filter(Boolean))]
   const { data: uRows } = unitIds.length > 0
@@ -59,7 +59,7 @@ export async function GET() {
   const unitById = new Map((uRows ?? []).map(u => [u.id, u]))
   const classById = new Map((cRows ?? []).map(c => [c.id, c]))
 
-  const notifications = (data ?? []).map(n => {
+  const resolved = (data ?? []).map(n => {
     const q = questionById.get(n.question_id)
     const topic = q ? topicById.get(q.topic_id) : undefined
     const unit = topic ? unitById.get(topic.unit_id) : undefined
@@ -67,6 +67,9 @@ export async function GET() {
     const href = cls?.id && unit?.id && topic?.id && q?.id
       ? `/student/${cls.id}/${unit.id}/${topic.id}/${q.id}`
       : '/student/assignments'
+    const topicHref = cls?.id && unit?.id && topic?.id
+      ? `/student/${cls.id}/${unit.id}/${topic.id}`
+      : href
     return {
       id: n.id,
       type: n.type,
@@ -78,9 +81,57 @@ export async function GET() {
       question_id: n.question_id,
       question_title: q?.title ?? 'Question',
       class_title: cls?.title ?? null,
+      topic_id: topic?.id ?? null,
+      topic_title: topic?.title ?? null,
       href,
+      topic_href: topicHref,
     }
   })
+
+  // "New assignment" pings are the noisiest type — a teacher adding 5
+  // questions to one topic used to show as up to 5 separate rows (or one
+  // row if they all landed within the same 2h batching window in
+  // notify-assignment, but a slower drip-feed of individual adds still
+  // produced one row each). Rolled up here by topic instead, so the
+  // student sees "Length — 7 questions assigned" once rather than the
+  // topic crowding out every other notification in a short list.
+  const assignmentGroups = new Map<string, {
+    count: number; latestCreatedAt: string; anyUnread: boolean; topicTitle: string; classTitle: string | null; href: string
+  }>()
+  const notifications: typeof resolved = []
+  for (const n of resolved) {
+    if (n.type === 'assignment' && n.topic_id) {
+      const g = assignmentGroups.get(n.topic_id) ?? {
+        count: 0, latestCreatedAt: n.created_at, anyUnread: false,
+        topicTitle: n.topic_title ?? 'a topic', classTitle: n.class_title, href: n.topic_href,
+      }
+      g.count += n.count ?? 1
+      g.anyUnread = g.anyUnread || !n.read
+      if (n.created_at > g.latestCreatedAt) g.latestCreatedAt = n.created_at
+      assignmentGroups.set(n.topic_id, g)
+    } else {
+      notifications.push(n)
+    }
+  }
+  for (const [topicId, g] of assignmentGroups) {
+    notifications.push({
+      id: `assignment-group:${topicId}`,
+      type: 'assignment',
+      grade: null,
+      feedback: `${g.count} question${g.count === 1 ? '' : 's'} assigned`,
+      count: g.count,
+      read: !g.anyUnread,
+      created_at: g.latestCreatedAt,
+      question_id: null,
+      question_title: g.topicTitle,
+      class_title: g.classTitle,
+      topic_id: topicId,
+      topic_title: g.topicTitle,
+      href: g.href,
+      topic_href: g.href,
+    })
+  }
+  notifications.sort((a, b) => b.created_at.localeCompare(a.created_at))
 
   return NextResponse.json({ notifications })
 }

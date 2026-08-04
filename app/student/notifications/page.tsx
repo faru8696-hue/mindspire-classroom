@@ -11,6 +11,18 @@ const GRADE_STYLE: Record<string, { icon: string; bg: string; label: string }> =
   needsmore: { icon: '🔄', bg: 'border-purple-400 bg-purple-50', label: 'Needs more work' },
 }
 
+interface Row {
+  id: string
+  icon: string
+  bg: string
+  title: string
+  subtitle: string
+  classTitle: string | null
+  href: string
+  createdAt: string
+  read: boolean
+}
+
 export default async function StudentNotificationsPage() {
   const supabase = await createClient()
   const { data: { session } } = await supabase.auth.getSession()
@@ -35,8 +47,8 @@ export default async function StudentNotificationsPage() {
     : { data: [] as { id: string; title: string; topic_id: string }[] }
   const topicIds = [...new Set((qRows ?? []).map(q => q.topic_id).filter(Boolean))]
   const { data: tRows } = topicIds.length > 0
-    ? await admin.from('topics').select('id, unit_id').in('id', topicIds)
-    : { data: [] as { id: string; unit_id: string }[] }
+    ? await admin.from('topics').select('id, title, unit_id').in('id', topicIds)
+    : { data: [] as { id: string; title: string; unit_id: string }[] }
   const unitIds = [...new Set((tRows ?? []).map(t => t.unit_id).filter(Boolean))]
   const { data: uRows } = unitIds.length > 0
     ? await admin.from('units').select('id, class_id').in('id', unitIds)
@@ -51,64 +63,97 @@ export default async function StudentNotificationsPage() {
   const unitById = new Map((uRows ?? []).map(u => [u.id, u]))
   const classById = new Map((cRows ?? []).map(c => [c.id, c]))
 
-  const notifs = (rawNotifs ?? []).map(n => {
+  // "New assignment" pings are the noisiest type — a teacher adding several
+  // questions to one topic used to show as one row per question (or per
+  // notify-assignment's own 2h batching window, so a slower drip-feed of
+  // adds still produced several rows). Rolled up here by topic instead: one
+  // "Topic — N questions assigned" row regardless of how many separate
+  // pings created it, so a busy topic doesn't crowd out everything else in
+  // the list.
+  const assignmentGroups = new Map<string, {
+    count: number; latestCreatedAt: string; anyUnread: boolean; topicTitle: string; classTitle: string | null; href: string
+  }>()
+  const rows: Row[] = []
+
+  for (const n of rawNotifs ?? []) {
     const q = questionById.get(n.question_id)
     const topic = q ? topicById.get(q.topic_id) : undefined
     const unit = topic ? unitById.get(topic.unit_id) : undefined
     const cls = unit ? classById.get(unit.class_id) : undefined
-    return { ...n, count: n.assignment_count, questions: q ? { ...q, topics: topic ? { ...topic, units: unit ? { ...unit, classes: cls } : undefined } : undefined } : undefined }
-  })
+    const href = cls?.id && unit?.id && topic?.id && q?.id
+      ? `/student/${cls.id}/${unit.id}/${topic.id}/${q.id}`
+      : '/student/assignments'
+
+    if (n.type === 'assignment' && topic?.id) {
+      const topicHref = cls?.id && unit?.id ? `/student/${cls.id}/${unit.id}/${topic.id}` : href
+      const g = assignmentGroups.get(topic.id) ?? {
+        count: 0, latestCreatedAt: n.created_at, anyUnread: false,
+        topicTitle: topic.title, classTitle: cls?.title ?? null, href: topicHref,
+      }
+      g.count += n.assignment_count ?? 1
+      g.anyUnread = g.anyUnread || !n.read
+      if (n.created_at > g.latestCreatedAt) g.latestCreatedAt = n.created_at
+      assignmentGroups.set(topic.id, g)
+      continue
+    }
+
+    const isComment = n.type === 'comment'
+    const isKeyReleased = n.type === 'answer_key_released'
+    const style = isComment
+      ? { icon: '💬', bg: 'border-blue-400 bg-blue-50', label: 'Teacher left a comment' }
+      : isKeyReleased
+      ? { icon: '🔓', bg: 'border-purple-400 bg-purple-50', label: 'Answer key released' }
+      : GRADE_STYLE[n.grade ?? ''] ?? { icon: '📝', bg: 'border-gray-300 bg-gray-50', label: 'Update' }
+    rows.push({
+      id: n.id,
+      icon: style.icon,
+      bg: style.bg,
+      title: q?.title ?? 'Question',
+      subtitle: `${style.label}${n.feedback ? ` — ${n.feedback}` : ''}`,
+      classTitle: cls?.title ?? null,
+      href,
+      createdAt: n.created_at,
+      read: n.read,
+    })
+  }
+
+  for (const g of assignmentGroups.values()) {
+    rows.push({
+      id: `assignment-group:${g.topicTitle}:${g.latestCreatedAt}`,
+      icon: '📋',
+      bg: 'border-purple-400 bg-purple-50',
+      title: g.topicTitle,
+      subtitle: `${g.count} question${g.count === 1 ? '' : 's'} assigned`,
+      classTitle: g.classTitle,
+      href: g.href,
+      createdAt: g.latestCreatedAt,
+      read: !g.anyUnread,
+    })
+  }
+
+  rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 
   return (
     <div className="max-w-2xl mx-auto">
       <h1 className="text-2xl font-bold text-purple-900 mb-6">🔔 Notifications</h1>
 
-      {!notifs?.length ? (
+      {rows.length === 0 ? (
         <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
           <div className="text-4xl mb-3">📭</div>
           <p className="text-gray-500">No notifications yet. Your teacher will send feedback here when they grade your work.</p>
         </div>
       ) : (
         <div className="space-y-3">
-          {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-          {(notifs as any[]).map(n => {
-            const q = Array.isArray(n.questions) ? n.questions[0] : n.questions
-            const topic = Array.isArray(q?.topics) ? q.topics[0] : q?.topics
-            const unit = Array.isArray(topic?.units) ? topic.units[0] : topic?.units
-            const cls = Array.isArray(unit?.classes) ? unit.classes[0] : unit?.classes
-            const isAssignment = n.type === 'assignment'
-            const isComment = n.type === 'comment'
-            const isKeyReleased = n.type === 'answer_key_released'
-            const style = isAssignment
-              ? { icon: '📋', bg: 'border-purple-400 bg-purple-50', label: n.count && n.count > 1 ? `${n.count} new questions assigned` : 'New question assigned' }
-              : isComment
-              ? { icon: '💬', bg: 'border-blue-400 bg-blue-50', label: 'Teacher left a comment' }
-              : isKeyReleased
-              ? { icon: '🔓', bg: 'border-purple-400 bg-purple-50', label: 'Answer key released' }
-              : GRADE_STYLE[n.grade] ?? { icon: '📝', bg: 'border-gray-300 bg-gray-50', label: 'Update' }
-            const href = cls?.id && unit?.id && topic?.id && q?.id
-              ? `/student/${cls.id}/${unit.id}/${topic.id}/${q.id}`
-              : '/student/assignments'
-            const mins = Math.round((Date.now() - new Date(n.created_at).getTime()) / 60000)
+          {rows.map(row => {
+            const mins = Math.round((Date.now() - new Date(row.createdAt).getTime()) / 60000)
             const timeAgo = mins < 60 ? `${mins}m ago` : mins < 1440 ? `${Math.round(mins / 60)}h ago` : `${Math.round(mins / 1440)}d ago`
             return (
-              <Link key={n.id} href={href} className={`flex items-center gap-4 border-l-4 rounded-xl px-5 py-4 hover:opacity-80 transition-opacity ${style.bg} ${!n.read ? 'ring-2 ring-purple-300' : ''}`}>
-                <span className="text-2xl flex-shrink-0">{style.icon}</span>
+              <Link key={row.id} href={row.href} className={`flex items-center gap-4 border-l-4 rounded-xl px-5 py-4 hover:opacity-80 transition-opacity ${row.bg} ${!row.read ? 'ring-2 ring-purple-300' : ''}`}>
+                <span className="text-2xl flex-shrink-0">{row.icon}</span>
                 <div className="flex-1 min-w-0">
-                  {isAssignment ? (
-                    <>
-                      <p className="font-semibold text-gray-800 truncate">{style.label}</p>
-                      <p className="text-sm text-gray-600 truncate">
-                        {n.count && n.count > 1 ? `Latest: ${q?.title ?? 'Question'}` : (q?.title ?? 'Question')}
-                      </p>
-                    </>
-                  ) : (
-                    <>
-                      <p className="font-semibold text-gray-800 truncate">{q?.title ?? 'Question'}</p>
-                      <p className="text-sm text-gray-600 truncate">{style.label}{n.feedback ? ` — ${n.feedback}` : ''}</p>
-                    </>
-                  )}
-                  {cls?.title && <p className="text-xs text-gray-400 mt-0.5">{cls.title}</p>}
+                  <p className="font-semibold text-gray-800 truncate">{row.title}</p>
+                  <p className="text-sm text-gray-600 truncate">{row.subtitle}</p>
+                  {row.classTitle && <p className="text-xs text-gray-400 mt-0.5">{row.classTitle}</p>}
                 </div>
                 <span className="text-xs text-gray-400 flex-shrink-0">{timeAgo}</span>
               </Link>
