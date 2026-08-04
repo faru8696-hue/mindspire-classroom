@@ -129,7 +129,7 @@ export default function DiagnosticResultSummary({
           topics yet. */}
       {result.advice.length > 0 && (
         <div className="bg-white rounded-2xl shadow p-6">
-          <h3 className="text-lg font-bold text-gray-800 mb-4">Before You Start AP Chemistry</h3>
+          <h3 className="text-lg font-bold text-gray-800 mb-4">What You Need to Work On</h3>
           <div className="space-y-3">
             {result.advice.map((a, i) => (
               <div key={i} className="bg-amber-50 border border-amber-100 rounded-xl p-3">

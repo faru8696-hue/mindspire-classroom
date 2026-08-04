@@ -119,7 +119,7 @@ export async function downloadDiagnosticPdf(data: DiagnosticPdfData): Promise<vo
     doc.setFontSize(12)
     doc.setFont('helvetica', 'bold')
     doc.setTextColor(0, 0, 0)
-    doc.text('Before You Start AP Chemistry', lm, y)
+    doc.text('What You Need to Work On', lm, y)
     y += 6
     doc.line(lm, y, lm + pw, y)
     y += 6
