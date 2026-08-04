@@ -11,9 +11,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
   }
 
-  const { classId, studentId, message } = await req.json() as {
+  const { classId, studentIds: pickedStudentIds, message } = await req.json() as {
     classId?: string
-    studentId?: string
+    studentIds?: string[]
     message?: string
   }
   const trimmed = message?.trim()
@@ -23,11 +23,11 @@ export async function POST(req: NextRequest) {
 
   const admin = await createAdminClient()
 
-  // Resolve the target student list: one specific student, everyone in one
-  // class, or everyone enrolled anywhere (neither filter given).
+  // Resolve the target student list: one or more specific students,
+  // everyone in one class, or everyone enrolled anywhere (neither given).
   let studentIds: string[]
-  if (studentId) {
-    studentIds = [studentId]
+  if (pickedStudentIds && pickedStudentIds.length > 0) {
+    studentIds = [...new Set(pickedStudentIds)]
   } else if (classId) {
     const { data: enrollments } = await admin.from('class_enrollments').select('student_id').eq('class_id', classId)
     studentIds = [...new Set((enrollments ?? []).map(e => e.student_id))]

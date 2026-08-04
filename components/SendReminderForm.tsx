@@ -12,7 +12,8 @@ export default function SendReminderForm({
   studentsByClass: Record<string, StudentOption[]>
 }) {
   const [classId, setClassId] = useState('')
-  const [studentId, setStudentId] = useState('')
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [pickerOpen, setPickerOpen] = useState(false)
   const [message, setMessage] = useState('')
   const [sending, setSending] = useState(false)
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null)
@@ -21,12 +22,26 @@ export default function SendReminderForm({
 
   function selectClass(id: string) {
     setClassId(id)
-    setStudentId('') // changing class invalidates any specific-student pick
+    setSelectedIds([]) // changing class invalidates any specific-student picks
   }
 
+  function toggleStudent(id: string) {
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+  }
+
+  const pickerLabel = !classId
+    ? 'All classes — every student'
+    : selectedIds.length === 0
+    ? 'Everyone in this class'
+    : selectedIds.length === 1
+    ? studentsInClass.find(s => s.id === selectedIds[0])?.name ?? '1 student'
+    : `${selectedIds.length} students selected`
+
   async function send() {
-    const targetLabel = studentId
-      ? studentsInClass.find(s => s.id === studentId)?.name ?? 'this student'
+    const targetLabel = selectedIds.length > 0
+      ? selectedIds.length === 1
+        ? studentsInClass.find(s => s.id === selectedIds[0])?.name ?? 'this student'
+        : `${selectedIds.length} students`
       : classId
       ? `everyone in ${classes.find(c => c.id === classId)?.title ?? 'this class'}`
       : 'every student in every class'
@@ -38,7 +53,7 @@ export default function SendReminderForm({
       const res = await fetch('/api/teacher/send-reminder', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ classId: classId || undefined, studentId: studentId || undefined, message }),
+        body: JSON.stringify({ classId: classId || undefined, studentIds: selectedIds.length > 0 ? selectedIds : undefined, message }),
       })
       const data = await res.json()
       if (!res.ok) { setResult({ ok: false, text: data.error || 'Something went wrong.' }); return }
@@ -62,15 +77,50 @@ export default function SendReminderForm({
           <option value="">All classes</option>
           {classes.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}
         </select>
-        <select
-          value={studentId}
-          onChange={e => setStudentId(e.target.value)}
-          disabled={!classId}
-          className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-purple-400 disabled:opacity-50 disabled:bg-gray-50"
-        >
-          <option value="">{classId ? 'Everyone in this class' : 'Pick a class to target one student'}</option>
-          {studentsInClass.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-        </select>
+
+        {/* Custom multi-select — a native <select multiple> needs ctrl/cmd-click
+            to pick more than one, which isn't discoverable. This is checkboxes
+            in a dropdown instead: click a name to toggle it, leave everything
+            unchecked to mean "everyone in this class." */}
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setPickerOpen(o => !o)}
+            disabled={!classId}
+            className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-purple-400 disabled:opacity-50 disabled:bg-gray-50 bg-white text-left min-w-[180px] flex items-center justify-between gap-2"
+          >
+            <span className="truncate">{pickerLabel}</span>
+            <span className="text-gray-400 flex-shrink-0">▾</span>
+          </button>
+          {pickerOpen && classId && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setPickerOpen(false)} />
+              <div className="absolute left-0 top-full mt-1 w-64 bg-white rounded-xl shadow-xl border border-gray-200 z-50 overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setSelectedIds([])}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 border-b border-gray-100 font-medium"
+                >
+                  <span className="w-4 flex-shrink-0">{selectedIds.length === 0 ? '✓' : ''}</span>
+                  Everyone in this class
+                </button>
+                <div className="max-h-56 overflow-y-auto">
+                  {studentsInClass.map(s => (
+                    <button
+                      type="button"
+                      key={s.id}
+                      onClick={() => toggleStudent(s.id)}
+                      className={`w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 ${selectedIds.includes(s.id) ? 'bg-purple-50 text-purple-700' : ''}`}
+                    >
+                      <span className="w-4 flex-shrink-0">{selectedIds.includes(s.id) ? '✓' : ''}</span>
+                      {s.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
       </div>
       <textarea
         value={message}
