@@ -5,7 +5,25 @@ import { computeTotalScore } from '@/lib/diagnosticGrading'
 import { sendEmail } from '@/lib/email'
 import type { DiagnosticResultData } from '@/components/diagnostic/DiagnosticResultSummary'
 
-function resultEmailHtml(result: DiagnosticResultData, greetingName: string, resultsUrl: string): string {
+// Parent copy only — the "left the tab" count is a weak, high-false-positive
+// signal (a notification, a calculator app, an accidental alt-tab all
+// trigger it too, same reasoning as the teacher attempt page), so the
+// student's own copy never gets this note. Worded as a possibility, not an
+// accusation, so a parent reading it doesn't treat a false positive as proof.
+function integrityNoteHtml(result: DiagnosticResultData): string {
+  if (result.tabSwitchCount <= 0) return ''
+  return `
+    <div style="padding:14px 16px; background:#fff7ed; border:1px solid #fed7aa; border-radius:8px; margin:16px 0;">
+      <p style="margin:0 0 4px; font-weight:700; color:#9a3412; font-size:13px;">⚠️ Test Integrity Note</p>
+      <p style="margin:0; font-size:13px; color:#7c2d12;">
+        ${result.studentName} left the test window <strong>${result.tabSwitchCount}</strong> time${result.tabSwitchCount === 1 ? '' : 's'}${result.tabSwitchSeconds > 0 ? `, totaling <strong>${result.tabSwitchSeconds}s</strong> away` : ''} while the test was in progress.
+        This can happen for innocent reasons (a notification, an accidental click), but it can also indicate a chance of cheating — for example, looking up answers elsewhere.
+      </p>
+    </div>
+  `
+}
+
+function resultEmailHtml(result: DiagnosticResultData, greetingName: string, resultsUrl: string, audience: 'student' | 'parent'): string {
   const frq = result.frqScore
   const total = computeTotalScore(result.correctCount, result.totalCount, frq)
 
@@ -45,6 +63,8 @@ function resultEmailHtml(result: DiagnosticResultData, greetingName: string, res
       <p style="font-weight:600; margin-bottom:4px;">Performance by Topic</p>
       <table style="width:100%; border-collapse:collapse; margin-bottom:16px;">${topicRows}</table>
       ` : ''}
+
+      ${audience === 'parent' ? integrityNoteHtml(result) : ''}
 
       <a href="${resultsUrl}" style="display:inline-block; background:#4f46e5; color:#fff; text-decoration:none; padding:10px 18px; border-radius:8px; font-weight:600; font-size:14px;">View Full Results</a>
 
@@ -95,14 +115,14 @@ export async function POST(req: NextRequest) {
   const errors: string[] = []
 
   try {
-    await sendEmail({ to: lead.student_email, subject, html: resultEmailHtml(lookup.result, lead.student_name, resultsUrl) })
+    await sendEmail({ to: lead.student_email, subject, html: resultEmailHtml(lookup.result, lead.student_name, resultsUrl, 'student') })
     sentTo.push(lead.student_email)
   } catch (e) {
     errors.push(`student (${lead.student_email}): ${e instanceof Error ? e.message : 'failed'}`)
   }
 
   try {
-    await sendEmail({ to: lead.parent_email, subject, html: resultEmailHtml(lookup.result, lead.parent_name, resultsUrl) })
+    await sendEmail({ to: lead.parent_email, subject, html: resultEmailHtml(lookup.result, lead.parent_name, resultsUrl, 'parent') })
     sentTo.push(lead.parent_email)
   } catch (e) {
     errors.push(`parent (${lead.parent_email}): ${e instanceof Error ? e.message : 'failed'}`)
