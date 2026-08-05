@@ -5,11 +5,10 @@ import { computeTotalScore } from '@/lib/diagnosticGrading'
 import { sendEmail } from '@/lib/email'
 import type { DiagnosticResultData } from '@/components/diagnostic/DiagnosticResultSummary'
 
-// Parent copy only — the "left the tab" count is a weak, high-false-positive
-// signal (a notification, a calculator app, an accidental alt-tab all
-// trigger it too, same reasoning as the teacher attempt page), so the
-// student's own copy never gets this note. Worded as a possibility, not an
-// accusation, so a parent reading it doesn't treat a false positive as proof.
+// Sent in both the student's and parent's copy. The "left the tab" count is
+// a weak, high-false-positive signal (a notification, a calculator app, an
+// accidental alt-tab all trigger it too, same reasoning as the teacher
+// attempt page), so it's worded as a possibility, not an accusation.
 function integrityNoteHtml(result: DiagnosticResultData): string {
   if (result.tabSwitchCount <= 0) return ''
   return `
@@ -23,7 +22,7 @@ function integrityNoteHtml(result: DiagnosticResultData): string {
   `
 }
 
-function resultEmailHtml(result: DiagnosticResultData, greetingName: string, resultsUrl: string, audience: 'student' | 'parent'): string {
+function resultEmailHtml(result: DiagnosticResultData, greetingName: string, resultsUrl: string): string {
   const frq = result.frqScore
   const total = computeTotalScore(result.correctCount, result.totalCount, frq)
 
@@ -64,7 +63,7 @@ function resultEmailHtml(result: DiagnosticResultData, greetingName: string, res
       <table style="width:100%; border-collapse:collapse; margin-bottom:16px;">${topicRows}</table>
       ` : ''}
 
-      ${audience === 'parent' ? integrityNoteHtml(result) : ''}
+      ${integrityNoteHtml(result)}
 
       <a href="${resultsUrl}" style="display:inline-block; background:#4f46e5; color:#fff; text-decoration:none; padding:10px 18px; border-radius:8px; font-weight:600; font-size:14px;">View Full Results</a>
 
@@ -115,14 +114,14 @@ export async function POST(req: NextRequest) {
   const errors: string[] = []
 
   try {
-    await sendEmail({ to: lead.student_email, subject, html: resultEmailHtml(lookup.result, lead.student_name, resultsUrl, 'student') })
+    await sendEmail({ to: lead.student_email, subject, html: resultEmailHtml(lookup.result, lead.student_name, resultsUrl) })
     sentTo.push(lead.student_email)
   } catch (e) {
     errors.push(`student (${lead.student_email}): ${e instanceof Error ? e.message : 'failed'}`)
   }
 
   try {
-    await sendEmail({ to: lead.parent_email, subject, html: resultEmailHtml(lookup.result, lead.parent_name, resultsUrl, 'parent') })
+    await sendEmail({ to: lead.parent_email, subject, html: resultEmailHtml(lookup.result, lead.parent_name, resultsUrl) })
     sentTo.push(lead.parent_email)
   } catch (e) {
     errors.push(`parent (${lead.parent_email}): ${e instanceof Error ? e.message : 'failed'}`)
