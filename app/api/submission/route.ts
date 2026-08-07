@@ -28,6 +28,23 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
+  // Cheap change-detection mode for TeacherWatchBoard's poll — just the
+  // timestamp, no canvas_data. The old version returned the student's full
+  // board (and a second query for the teacher's own annotation layer) on
+  // every single poll tick regardless of whether anything had changed; at a
+  // 4s interval with a page left open for a class period, that was a real
+  // source of wasted egress — the same shape of bug already fixed for the
+  // live grid's /api/feedback-canvas poll.
+  if (req.nextUrl.searchParams.get('versionOnly') === '1') {
+    const { data: versionRow } = await admin
+      .from('submissions')
+      .select('updated_at')
+      .eq('question_id', questionId)
+      .eq('student_id', studentId)
+      .maybeSingle()
+    return NextResponse.json({ updatedAt: versionRow?.updated_at ?? null })
+  }
+
   const { data, error } = await admin
     .from('submissions')
     .select('id, canvas_data, updated_at')

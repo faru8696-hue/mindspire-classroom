@@ -93,22 +93,30 @@ export default function TeacherWatchBoard({
   // Polling the service-role endpoint reliably surfaces saved work even when the
   // student isn't actively drawing. Remount the board (boardKey) only when the data
   // actually changed so the teacher's in-progress feedback isn't disrupted.
+  //
+  // Two-tier, same fix as the live grid's feedback-canvas poll: the 4s tick
+  // only asks for {updatedAt} (a few bytes), and only fetches the actual
+  // (potentially large) canvas_data when that timestamp has actually moved
+  // since the last poll — not on every single tick regardless of change.
   useEffect(() => {
     let active = true
-    let last = studentData
+    let lastUpdatedAt: string | null = null
     async function poll() {
       try {
-        const res = await fetch(`/api/submission?questionId=${questionId}&studentId=${studentId}`)
+        const res = await fetch(`/api/submission?questionId=${questionId}&studentId=${studentId}&versionOnly=1`)
         if (!res.ok || !active) return
-        const { canvasData } = await res.json() as { canvasData: string | null }
-        if (canvasData && canvasData !== last) {
-          last = canvasData
-          // Update the data prop only — InfiniteWhiteboard refreshes the student
-          // layer in place, so the teacher's own annotations are never reset.
-          setStudentData(canvasData)
-        }
+        const { updatedAt } = await res.json() as { updatedAt: string | null }
+        if (!updatedAt || updatedAt === lastUpdatedAt) return
+        lastUpdatedAt = updatedAt
+        const full = await fetch(`/api/submission?questionId=${questionId}&studentId=${studentId}`)
+        if (!full.ok || !active) return
+        const { canvasData } = await full.json() as { canvasData: string | null }
+        // Update the data prop only — InfiniteWhiteboard refreshes the student
+        // layer in place, so the teacher's own annotations are never reset.
+        if (canvasData) setStudentData(canvasData)
       } catch {}
     }
+    poll()
     const interval = setInterval(poll, 4000)
     return () => { active = false; clearInterval(interval) }
   }, [questionId, studentId])

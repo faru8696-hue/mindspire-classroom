@@ -1232,26 +1232,41 @@ function InfiniteWhiteboardInner({
     broadcastTimer.current = setTimeout(sendBroadcast, 60)
   }, [broadcastTick, sendBroadcast])
 
-  // Heartbeat: re-broadcast the full snapshot every 3s. With merge-by-id this
-  // is idempotent — but it guarantees that any peer who missed an earlier
-  // broadcast recovers within 3 seconds. This is the structural fix for the
-  // "writing comes and goes" symptom: even if individual messages drop, the
-  // peer's state can't stay wrong for long.
+  // Heartbeat: re-broadcast the full snapshot periodically. With merge-by-id
+  // this is idempotent — it guarantees that any peer who missed an earlier
+  // broadcast eventually recovers, bounding how long "writing comes and
+  // goes" (a dropped message) can leave a peer's state wrong. This runs
+  // unconditionally whenever a board has any content — including totally
+  // normal, unwatched student homework, not just an actively-watched live
+  // view — so the interval trades recovery latency directly against
+  // realtime egress. 20s still recovers well within what a teacher glancing
+  // at a board would notice, at ~1/7th the traffic of the original 3s.
   useEffect(() => {
     const id = setInterval(() => {
       if (objsRef.current.length > 0 || recentDeletes.current.size > 0) sendBroadcast()
-    }, 3000)
+    }, 20000)
     return () => clearInterval(id)
   }, [sendBroadcast])
 
   // ── Auto-save ─────────────────────────────────────────────────
+  // Tracks the JSON actually written last, so the silent 8s timer (below)
+  // can skip re-upserting identical data — previously it wrote on every
+  // tick regardless of whether anything had changed since the last save,
+  // which meant a student who stopped drawing and just left the tab open
+  // kept re-saving the same board every 8s indefinitely. The explicit 💾
+  // Save button and the unmount-flush call onSaveStudent/onSaveTeacher
+  // directly (not through doSave), so they're intentionally unaffected —
+  // this guard is silent-autosave-only, same as the empty-board guard below.
+  const lastSavedJsonRef = useRef<string | null>(null)
   const doSave = useCallback(async () => {
     if (!onSaveStudent && !onSaveTeacher) return
+    const json = JSON.stringify(objsRef.current)
+    if (json === lastSavedJsonRef.current) return
     setSaveStatus('saving')
     try {
-      const json = JSON.stringify(objsRef.current)
       if (role === 'student' && onSaveStudent) await onSaveStudent(json)
       else if (role === 'teacher' && onSaveTeacher) await onSaveTeacher(json)
+      lastSavedJsonRef.current = json
       setSaveStatus('saved')
       setTimeout(() => setSaveStatus('idle'), 2000)
     } catch (err) {
