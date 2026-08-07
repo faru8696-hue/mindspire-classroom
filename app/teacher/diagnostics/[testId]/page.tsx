@@ -165,10 +165,14 @@ export default async function DiagnosticTestDashboardPage({
             <p className="text-green-600 font-medium">🎉 No class-wide struggles detected!</p>
           ) : (
             classStruggles.map(t => (
-              <div key={t.topicId} className="flex justify-between border-b py-2 text-sm">
+              <Link
+                key={t.topicId}
+                href={`/teacher/diagnostics/${testId}/topics/${t.topicId}`}
+                className="flex justify-between border-b py-2 text-sm hover:bg-gray-50 -mx-2 px-2 rounded-lg transition-colors"
+              >
                 <span className="font-medium text-gray-700">{t.topicTitle}</span>
                 <span className="text-red-600 font-bold">{t.pct}%</span>
-              </div>
+              </Link>
             ))
           )}
         </div>
