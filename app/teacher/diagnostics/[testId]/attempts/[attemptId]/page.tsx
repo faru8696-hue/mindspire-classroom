@@ -56,6 +56,7 @@ export default async function DiagnosticAttemptDetailPage({
               studentName={lead.student_name}
               weakTopics={lookup.result.advice.map(a => a.topicTitle)}
               hasFrq={!!lookup.result.frqScore}
+              tabSwitchCount={lookup.result.tabSwitchCount}
             />
           </div>
         </div>

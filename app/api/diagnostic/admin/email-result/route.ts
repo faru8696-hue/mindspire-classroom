@@ -54,7 +54,7 @@ function teacherNoteHtml(note: string | null): string {
 
 function resultEmailHtml(
   result: DiagnosticResultData, greetingName: string, resultsUrl: string, teacherNote: string | null,
-  includeMcq: boolean, includeFrq: boolean,
+  includeMcq: boolean, includeFrq: boolean, includeIntegrityNote: boolean,
 ): string {
   const frq = includeFrq ? result.frqScore : null
   const isPartial = !(includeMcq && (result.frqScore ? includeFrq : true))
@@ -129,7 +129,7 @@ function resultEmailHtml(
 
       ${teacherNoteHtml(teacherNote)}
 
-      ${integrityNoteHtml(result, rawTotalForNotes.pct, adjustedTotalForNotes.pct)}
+      ${includeIntegrityNote ? integrityNoteHtml(result, rawTotalForNotes.pct, adjustedTotalForNotes.pct) : ''}
 
       ${lowScoreReasonHtml(result, adjustedTotalForNotes.pct)}
 
@@ -154,11 +154,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
   }
 
-  const { attemptId, teacherNote, includeMcq = true, includeFrq = true } = await req.json() as {
+  const { attemptId, teacherNote, includeMcq = true, includeFrq = true, includeIntegrityNote = true } = await req.json() as {
     attemptId?: string
     teacherNote?: string | null
     includeMcq?: boolean
     includeFrq?: boolean
+    includeIntegrityNote?: boolean
   }
   if (!attemptId) return NextResponse.json({ error: 'attemptId is required.' }, { status: 400 })
   if (!includeMcq && !includeFrq) return NextResponse.json({ error: 'Include at least one of Multiple Choice or Free Response.' }, { status: 400 })
@@ -192,14 +193,14 @@ export async function POST(req: NextRequest) {
   const note = teacherNote?.trim() || null
 
   try {
-    await sendEmail({ to: lead.student_email, subject, html: resultEmailHtml(lookup.result, lead.student_name, resultsUrl, note, includeMcq, includeFrq) })
+    await sendEmail({ to: lead.student_email, subject, html: resultEmailHtml(lookup.result, lead.student_name, resultsUrl, note, includeMcq, includeFrq, includeIntegrityNote) })
     sentTo.push(lead.student_email)
   } catch (e) {
     errors.push(`student (${lead.student_email}): ${e instanceof Error ? e.message : 'failed'}`)
   }
 
   try {
-    await sendEmail({ to: lead.parent_email, subject, html: resultEmailHtml(lookup.result, lead.parent_name, resultsUrl, note, includeMcq, includeFrq) })
+    await sendEmail({ to: lead.parent_email, subject, html: resultEmailHtml(lookup.result, lead.parent_name, resultsUrl, note, includeMcq, includeFrq, includeIntegrityNote) })
     sentTo.push(lead.parent_email)
   } catch (e) {
     errors.push(`parent (${lead.parent_email}): ${e instanceof Error ? e.message : 'failed'}`)

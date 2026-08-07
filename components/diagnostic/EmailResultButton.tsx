@@ -5,26 +5,60 @@ import { useRouter } from 'next/navigation'
 
 // A curated starting point, not an exhaustive taxonomy — a teacher can
 // always fall back to the free-text note for anything not covered here.
-const COMMON_ISSUES = [
-  'Struggled to show work clearly on free-response questions',
-  'Did not show any work',
-  'Rushed through questions — answers seem incomplete',
-  'Left several questions unanswered (time management)',
-  'Correct final answers but reasoning/work not shown',
-  'Difficulty with multiple-choice reasoning / process of elimination',
-  'Careless errors — understood the concept but made a calculation mistake',
-  'Answer missing units',
-  'Struggled with units or significant figures',
-  'Misread or misunderstood what the question was asking',
-  'Confused similar concepts or formulas',
-  'Guessed on several multiple-choice questions rather than working through them',
-  'Would benefit from reviewing class notes/practice problems before the next test',
-  'Recommend a short one-on-one review session to go over missed topics',
-  'Strong effort and consistent performance — keep it up',
+// Grouped rather than one flat list since it's grown long: process/
+// test-taking issues apply to any subject, while the chemistry group maps
+// onto this app's actual AP Chem unit structure (atomic structure through
+// electrochemistry) so it's specific enough to be genuinely useful rather
+// than generic filler.
+const ISSUE_GROUPS: { label: string; issues: string[] }[] = [
+  {
+    label: 'Process & Test-Taking',
+    issues: [
+      'Struggled to show work clearly on free-response questions',
+      'Did not show any work',
+      'Rushed through questions — answers seem incomplete',
+      'Left several questions unanswered (time management)',
+      'Correct final answers but reasoning/work not shown',
+      'Difficulty with multiple-choice reasoning / process of elimination',
+      'Careless errors — understood the concept but made a calculation mistake',
+      'Answer missing units',
+      'Struggled with units or significant figures',
+      'Misread or misunderstood what the question was asking',
+      'Confused similar concepts or formulas',
+      'Guessed on several multiple-choice questions rather than working through them',
+      'Would benefit from reviewing class notes/practice problems before the next test',
+      'Recommend a short one-on-one review session to go over missed topics',
+      'Strong effort and consistent performance — keep it up',
+    ],
+  },
+  {
+    label: 'Chemistry Concept Gaps',
+    issues: [
+      'Mole concept / stoichiometry calculations',
+      'Balancing chemical equations',
+      'Limiting reactant / percent yield problems',
+      'Molarity and solution concentration calculations',
+      'Dimensional analysis / unit conversions',
+      'Electron configuration and orbital notation',
+      'Periodic trends (electronegativity, atomic radius, ionization energy)',
+      'Distinguishing ionic vs. covalent bonding',
+      'Molecular geometry / VSEPR theory',
+      'Intermolecular forces (hydrogen bonding, dipole-dipole, London dispersion)',
+      'Gas laws (Boyle’s, Charles’s, ideal gas law)',
+      'Reaction kinetics — rate laws and reaction order',
+      'Thermochemistry — enthalpy, calorimetry, heat calculations',
+      'Equilibrium concepts (Le Chatelier’s principle, Keq)',
+      'Acid-base chemistry / pH and pOH calculations',
+      'Titration calculations',
+      'Oxidation-reduction (redox) reactions',
+      'Thermodynamics — entropy and Gibbs free energy',
+      'Interpreting graphs, spectra, or experimental data',
+    ],
+  },
 ]
 
 export default function EmailResultButton({
-  attemptId, studentEmail, parentEmail, studentName, weakTopics, hasFrq,
+  attemptId, studentEmail, parentEmail, studentName, weakTopics, hasFrq, tabSwitchCount,
 }: {
   attemptId: string
   studentEmail: string
@@ -37,6 +71,9 @@ export default function EmailResultButton({
   // Whether this attempt has any FRQ questions at all — the MCQ/FRQ scope
   // picker only makes sense to show when there's actually a choice.
   hasFrq: boolean
+  // Only worth asking about sharing the integrity note when there's
+  // actually something to report — 0 means the student never left the tab.
+  tabSwitchCount: number
 }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
@@ -44,12 +81,18 @@ export default function EmailResultButton({
   const [customNote, setCustomNote] = useState('')
   const [includeMcq, setIncludeMcq] = useState(true)
   const [includeFrq, setIncludeFrq] = useState(true)
+  // Defaults to shared (matches prior behavior) — the teacher can opt out
+  // per-send for a case they'd rather not raise with this parent, e.g. a
+  // single brief, clearly-innocent trip away from the tab.
+  const [includeIntegrityNote, setIncludeIntegrityNote] = useState(true)
   const [sending, setSending] = useState(false)
   const [sent, setSent] = useState(false)
   const [error, setError] = useState('')
 
   const topicIssues = weakTopics.map(t => `Needs more practice with ${t}`)
-  const allIssues = [...COMMON_ISSUES, ...topicIssues]
+  const issueGroups = topicIssues.length > 0
+    ? [...ISSUE_GROUPS, { label: 'This Attempt’s Weak Topics', issues: topicIssues }]
+    : ISSUE_GROUPS
 
   function toggle(issue: string) {
     setSelected(prev => {
@@ -73,7 +116,13 @@ export default function EmailResultButton({
       const res = await fetch('/api/diagnostic/admin/email-result', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ attemptId, teacherNote: composedNote || null, includeMcq, includeFrq: hasFrq ? includeFrq : false }),
+        body: JSON.stringify({
+          attemptId,
+          teacherNote: composedNote || null,
+          includeMcq,
+          includeFrq: hasFrq ? includeFrq : false,
+          includeIntegrityNote: tabSwitchCount > 0 ? includeIntegrityNote : false,
+        }),
       })
       const data = await res.json()
       if (!res.ok) { setError(data.error || 'Something went wrong.'); setSending(false); return }
@@ -141,13 +190,30 @@ export default function EmailResultButton({
               </div>
             )}
 
-            {allIssues.length > 0 && (
+            {tabSwitchCount > 0 && (
               <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Test Integrity Note</p>
+                <label className="flex items-start gap-2 text-xs text-gray-600 bg-amber-50 border border-amber-100 rounded-lg p-2.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={includeIntegrityNote}
+                    onChange={e => setIncludeIntegrityNote(e.target.checked)}
+                    className="mt-0.5"
+                  />
+                  <span>
+                    Share that {studentName} left the test window {tabSwitchCount} time{tabSwitchCount === 1 ? '' : 's'} while testing, including any grade deduction and the possible-cheating note.
+                  </span>
+                </label>
+              </div>
+            )}
+
+            {issueGroups.map(group => (
+              <div key={group.label}>
                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                  Common issues <span className="normal-case font-normal text-gray-400">— click any that apply, optional</span>
+                  {group.label} <span className="normal-case font-normal text-gray-400">— click any that apply, optional</span>
                 </p>
                 <div className="flex flex-wrap gap-2">
-                  {allIssues.map(issue => (
+                  {group.issues.map(issue => (
                     <button
                       key={issue}
                       type="button"
@@ -163,7 +229,7 @@ export default function EmailResultButton({
                   ))}
                 </div>
               </div>
-            )}
+            ))}
 
             <div>
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Additional note (optional)</p>
