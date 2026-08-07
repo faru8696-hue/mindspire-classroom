@@ -4,17 +4,19 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 
 export default function TestTimingEditor({
-  testId, title, durationMinutes, allowOvertime,
+  testId, title, durationMinutes, allowOvertime, instantResults,
 }: {
   testId: string
   title: string
   durationMinutes: number
   allowOvertime: boolean
+  instantResults: boolean
 }) {
   const router = useRouter()
   const [editing, setEditing] = useState(false)
   const [draftMinutes, setDraftMinutes] = useState(String(durationMinutes))
   const [draftOvertime, setDraftOvertime] = useState(allowOvertime)
+  const [draftInstant, setDraftInstant] = useState(instantResults)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -27,7 +29,7 @@ export default function TestTimingEditor({
       const res = await fetch('/api/diagnostic/admin/update-test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ testId, title, durationMinutes: minutes, allowOvertime: draftOvertime }),
+        body: JSON.stringify({ testId, title, durationMinutes: minutes, allowOvertime: draftOvertime, instantResults: draftInstant }),
       })
       const data = await res.json()
       if (!res.ok) { setError(data.error || 'Something went wrong.'); setSaving(false); return }
@@ -43,6 +45,7 @@ export default function TestTimingEditor({
   function cancel() {
     setDraftMinutes(String(durationMinutes))
     setDraftOvertime(allowOvertime)
+    setDraftInstant(instantResults)
     setError('')
     setEditing(false)
   }
@@ -69,6 +72,15 @@ export default function TestTimingEditor({
             </span>
           </span>
         </label>
+        <label className="flex items-start gap-2 text-sm text-gray-700 cursor-pointer">
+          <input type="checkbox" checked={draftInstant} onChange={e => setDraftInstant(e.target.checked)} className="mt-0.5" />
+          <span>
+            Share results instantly when a student finishes
+            <span className="block text-xs text-gray-400 mt-0.5">
+              On by default for the public diagnostic link. Turn this off if you&rsquo;d rather review each attempt yourself before the student/parent can see their score (same toggle as Release Results on an attempt page).
+            </span>
+          </span>
+        </label>
         {error && <p className="text-red-600 text-sm bg-red-50 p-2 rounded-lg">{error}</p>}
         <div className="flex gap-2">
           <button onClick={save} disabled={saving}
@@ -86,7 +98,7 @@ export default function TestTimingEditor({
 
   return (
     <div className="flex items-center gap-2 text-sm text-gray-500">
-      <span>⏱ {durationMinutes} min{allowOvertime ? ' · overtime allowed' : ''}</span>
+      <span>⏱ {durationMinutes} min{allowOvertime ? ' · overtime allowed' : ''}{instantResults ? '' : ' · results held for review'}</span>
       <button onClick={() => setEditing(true)} className="text-xs font-semibold text-blue-600 hover:text-blue-800">
         ✏️ Edit timing
       </button>

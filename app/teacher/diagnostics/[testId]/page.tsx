@@ -30,6 +30,11 @@ export default async function DiagnosticTestDashboardPage({
   // must never depend on a column that might not exist yet).
   const { data: overtimeRow } = await admin.from('diagnostic_tests').select('allow_overtime').eq('id', testId).maybeSingle()
 
+  // Same defensive pattern, for add-diagnostic-instant-results.sql —
+  // defaults to true on error (matches the DB column's own default) since
+  // every test on this public route is a lead-magnet quiz.
+  const { data: instantRow } = await admin.from('diagnostic_tests').select('instant_results').eq('id', testId).maybeSingle()
+
   const { data: classes } = await admin.from('classes').select('id, title').order('order_index')
 
   const { data: attempts } = await admin
@@ -139,7 +144,7 @@ export default async function DiagnosticTestDashboardPage({
         </div>
       </div>
       <div className="mb-3">
-        <TestTimingEditor testId={testId} title={test.title} durationMinutes={test.duration_minutes} allowOvertime={overtimeRow?.allow_overtime ?? false} />
+        <TestTimingEditor testId={testId} title={test.title} durationMinutes={test.duration_minutes} allowOvertime={overtimeRow?.allow_overtime ?? false} instantResults={instantRow?.instant_results ?? true} />
       </div>
       <p className="text-sm text-gray-500 mb-4">
         Public link: <a href={`/diagnostic/${test.slug}`} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">/diagnostic/{test.slug}</a>

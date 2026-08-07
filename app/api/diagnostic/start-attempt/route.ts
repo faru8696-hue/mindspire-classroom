@@ -41,6 +41,19 @@ export async function POST(req: NextRequest) {
     .maybeSingle()
   if (!test) return NextResponse.json({ error: 'Diagnostic test not found.' }, { status: 404 })
 
+  // Defensive: instant_results is a new column (see
+  // add-diagnostic-instant-results.sql) — defaults to true either way (the
+  // DB column's own default matches this fallback), since every test on
+  // this public route is a lead-magnet quiz. A teacher can turn this off
+  // per test from the test dashboard (TestTimingEditor) to hold results for
+  // manual review instead, same as a real class test.
+  const { data: instantRow } = await admin
+    .from('diagnostic_tests')
+    .select('instant_results')
+    .eq('id', test.id)
+    .maybeSingle()
+  const instantResults = instantRow?.instant_results ?? true
+
   const { data: pool } = await admin
     .from('diagnostic_questions')
     .select('id, question_type')
@@ -87,8 +100,8 @@ export async function POST(req: NextRequest) {
   // enrolled student's graded test before showing them the score — see
   // app/api/diagnostic/admin/release-results/route.ts. This route is the
   // sole entry point for the public, anonymous lead-magnet quiz (enrolled
-  // students go through start-attempt-for-student instead), which promises
-  // "Instant results" on its landing page, so it's explicitly released here.
+  // students go through start-attempt-for-student instead), so it's seeded
+  // from the per-test instant_results toggle instead of the shared default.
   const { data: attempt, error: attemptError } = await admin
     .from('diagnostic_attempts')
     .insert({
@@ -96,7 +109,7 @@ export async function POST(req: NextRequest) {
       lead_id: lead.id,
       question_ids: selected,
       status: 'in_progress',
-      results_released: true,
+      results_released: instantResults,
     })
     .select('id')
     .single()

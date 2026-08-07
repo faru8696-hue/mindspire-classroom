@@ -7,12 +7,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
   }
 
-  const { testId, title, description, durationMinutes, allowOvertime } = await req.json() as {
+  const { testId, title, description, durationMinutes, allowOvertime, instantResults } = await req.json() as {
     testId?: string
     title?: string
     description?: string
     durationMinutes?: number
     allowOvertime?: boolean
+    instantResults?: boolean
   }
   if (!testId || !title) {
     return NextResponse.json({ error: 'testId and title are required.' }, { status: 400 })
@@ -43,6 +44,15 @@ export async function POST(req: NextRequest) {
       .update({ allow_overtime: allowOvertime })
       .eq('id', testId)
     if (overtimeError) console.error('update-test allow_overtime error (migration likely not run yet):', overtimeError)
+  }
+
+  // Same defensive pattern, for add-diagnostic-instant-results.sql.
+  if (instantResults !== undefined) {
+    const { error: instantError } = await admin
+      .from('diagnostic_tests')
+      .update({ instant_results: instantResults })
+      .eq('id', testId)
+    if (instantError) console.error('update-test instant_results error (migration likely not run yet):', instantError)
   }
 
   return NextResponse.json({ ok: true })
