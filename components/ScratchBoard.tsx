@@ -242,6 +242,14 @@ const ScratchBoard = forwardRef<ScratchBoardHandle, { initialDataUrl?: string | 
   }
 
   function start(e: React.PointerEvent<HTMLCanvasElement>) {
+    // Without pointer capture, a stroke silently cuts off the instant the
+    // cursor drifts even 1px outside the canvas mid-drag (onPointerLeave
+    // fires and, worse, further pointermove/pointerup events stop reaching
+    // this element entirely until the pointer re-enters) — exactly what
+    // "can't continuously write" looks like when writing near an edge.
+    // Capturing routes every event for this pointer here regardless of
+    // where it physically is until pointerup, so a drag never gets cut off.
+    e.currentTarget.setPointerCapture(e.pointerId)
     if (toolRef.current === 'pan') {
       const p = toWorld(e)
       panStart.current = { x: p.px, y: p.py, panX: viewRef.current.panX, panY: viewRef.current.panY }
@@ -265,7 +273,8 @@ const ScratchBoard = forwardRef<ScratchBoardHandle, { initialDataUrl?: string | 
     redraw()
   }
 
-  function end() {
+  function end(e: React.PointerEvent<HTMLCanvasElement>) {
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId)
     if (panStart.current) { panStart.current = null; return }
     if (drawing.current && currentPath.current.length > 1) {
       const t = toolRef.current === 'pan' ? 'pen' : toolRef.current
