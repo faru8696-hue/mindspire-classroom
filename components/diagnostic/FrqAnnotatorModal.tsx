@@ -46,12 +46,17 @@ export default function FrqAnnotatorModal({
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={() => !saving && onClose()}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl p-5 space-y-3" onClick={e => e.stopPropagation()}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl p-5 space-y-3" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between">
           <h3 className="font-bold text-gray-800">Annotate Student&rsquo;s Work</h3>
           <span className="text-xs text-gray-400">Draw circles, checkmarks, or notes directly on their work</span>
         </div>
-        <ScratchBoard ref={boardRef} initialDataUrl={startingImage} label="✏️ Draw your feedback" penColor="#dc2626" />
+        {/* Wider modal + a larger canvas (same 2:1 ratio as the student's
+            board, so their original work isn't stretched/distorted when
+            loaded as the background) — the default 640x320 in a max-w-3xl
+            modal was too small and short to comfortably write real
+            feedback text with a mouse/trackpad. */}
+        <ScratchBoard ref={boardRef} initialDataUrl={startingImage} label="✏️ Draw your feedback" penColor="#dc2626" width={1040} height={520} />
         {error && <p className="text-red-600 text-sm bg-red-50 p-2 rounded-lg">{error}</p>}
         <div className="flex gap-2">
           <button onClick={save} disabled={saving}

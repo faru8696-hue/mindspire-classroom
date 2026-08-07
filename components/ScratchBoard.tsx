@@ -14,8 +14,8 @@ type Tool = 'pen' | 'highlighter' | 'eraser'
 // board; reusing it here would collide with that same student's actual
 // submission for this question). Pen/highlighter/eraser + clear, entirely
 // local state, exported as a PNG data URL on demand via the ref.
-const ScratchBoard = forwardRef<ScratchBoardHandle, { initialDataUrl?: string | null; label?: string; penColor?: string }>(function ScratchBoard(
-  { initialDataUrl, label = '✏️ Work it out here', penColor = '#111827' }, ref
+const ScratchBoard = forwardRef<ScratchBoardHandle, { initialDataUrl?: string | null; label?: string; penColor?: string; width?: number; height?: number }>(function ScratchBoard(
+  { initialDataUrl, label = '✏️ Work it out here', penColor = '#111827', width = 640, height = 320 }, ref
 ) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const drawing = useRef(false)
@@ -50,12 +50,13 @@ const ScratchBoard = forwardRef<ScratchBoardHandle, { initialDataUrl?: string | 
     },
   }), [hasStrokes])
 
-  // The canvas has a fixed internal resolution (640x320) but is displayed
-  // at whatever CSS width its container gives it (w-full) — without
-  // rescaling by that ratio, drawing coordinates land wherever the pointer
-  // is on SCREEN rather than the corresponding point in the canvas's own
-  // pixel grid, which drifts further from the cursor the more the
-  // displayed size differs from 640x320 (e.g. in a narrower half-column).
+  // The canvas has a fixed internal resolution (width x height) but is
+  // displayed at whatever CSS width its container gives it (w-full) —
+  // without rescaling by that ratio, drawing coordinates land wherever the
+  // pointer is on SCREEN rather than the corresponding point in the
+  // canvas's own pixel grid, which drifts further from the cursor the more
+  // the displayed size differs from the internal resolution (e.g. in a
+  // narrower half-column).
   function pos(e: React.PointerEvent<HTMLCanvasElement>) {
     const canvas = e.currentTarget
     const rect = canvas.getBoundingClientRect()
@@ -133,8 +134,8 @@ const ScratchBoard = forwardRef<ScratchBoardHandle, { initialDataUrl?: string | 
       </div>
       <canvas
         ref={canvasRef}
-        width={640}
-        height={320}
+        width={width}
+        height={height}
         className="w-full h-auto touch-none cursor-crosshair"
         onPointerDown={start}
         onPointerMove={move}
