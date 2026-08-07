@@ -91,8 +91,16 @@ const ScratchBoard = forwardRef<ScratchBoardHandle, { initialDataUrl?: string | 
   const currentPath = useRef<{ x: number; y: number }[]>([])
   const panStart = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null)
 
+  // No copying needed: every mutation site below REASSIGNS objectsRef.current
+  // to a brand-new array (spread or []) rather than mutating the existing
+  // one in place, so the reference captured here stays valid forever — same
+  // assumption undo()/redo() already rely on. Deep-cloning every stroke's
+  // points array here used to cost O(total points across the whole board)
+  // on every single new stroke (called from start(), the hottest path of
+  // all), which on iPad was slow enough to visibly stall the start of the
+  // next stroke as a test's scratch work accumulated content.
   const pushHistory = useCallback(() => {
-    history.current.push(objectsRef.current.map(o => o.kind === 'stroke' ? { ...o, points: [...o.points] } : { ...o }))
+    history.current.push(objectsRef.current)
     if (history.current.length > 50) history.current.shift()
     redoStack.current = []
     syncUndoRedo()
@@ -241,6 +249,36 @@ const ScratchBoard = forwardRef<ScratchBoardHandle, { initialDataUrl?: string | 
     return { x: (px - v.panX) / v.zoom, y: (py - v.panY) / v.zoom, px, py }
   }
 
+  // Paints just the one new segment on top of whatever's already rendered —
+  // O(1) regardless of how much the board already holds. move() used to call
+  // the full redraw() (clear + repaint every object) on every single
+  // pointermove, which is O(total board complexity) per event; as a test's
+  // scratch work accumulated strokes over the session, that stopped keeping
+  // up with iPad's touch event rate and drawing visibly stuttered. Safe to
+  // paint additively here because nothing else repaints the canvas from
+  // scratch between one full redraw() and the next (view/objects don't
+  // change mid-stroke — panning and drawing are mutually exclusive tools).
+  function drawSegment(p1: { x: number; y: number }, p2: { x: number; y: number }) {
+    const ctx = canvasRef.current?.getContext('2d')
+    if (!ctx) return
+    const v = viewRef.current
+    const t = toolRef.current === 'pan' ? 'pen' : toolRef.current
+    ctx.save()
+    ctx.translate(v.panX, v.panY)
+    ctx.scale(v.zoom, v.zoom)
+    if (t === 'highlighter') { ctx.globalAlpha = 0.4; ctx.globalCompositeOperation = 'multiply' }
+    else { ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over' }
+    ctx.strokeStyle = t === 'eraser' ? '#ffffff' : t === 'highlighter' ? '#fde047' : penColor
+    ctx.lineWidth = t === 'eraser' ? 22 : t === 'highlighter' ? 14 : 2.5
+    ctx.lineCap = 'round'
+    ctx.lineJoin = 'round'
+    ctx.beginPath()
+    ctx.moveTo(p1.x, p1.y)
+    ctx.lineTo(p2.x, p2.y)
+    ctx.stroke()
+    ctx.restore()
+  }
+
   function start(e: React.PointerEvent<HTMLCanvasElement>) {
     // Without pointer capture, a stroke silently cuts off the instant the
     // cursor drifts even 1px outside the canvas mid-drag (onPointerLeave
@@ -255,7 +293,10 @@ const ScratchBoard = forwardRef<ScratchBoardHandle, { initialDataUrl?: string | 
       panStart.current = { x: p.px, y: p.py, panX: viewRef.current.panX, panY: viewRef.current.panY }
       return
     }
-    pushHistory()
+    // pushHistory() is deferred to end() (once the stroke is confirmed real,
+    // see below) rather than called here — this used to run on every single
+    // pointerdown, including the two setState calls inside it, right at the
+    // start of the most latency-sensitive moment of a touch gesture.
     drawing.current = true
     const p = toWorld(e)
     currentPath.current = [{ x: p.x, y: p.y }]
@@ -269,14 +310,16 @@ const ScratchBoard = forwardRef<ScratchBoardHandle, { initialDataUrl?: string | 
     }
     if (!drawing.current) return
     const p = toWorld(e)
+    const last = currentPath.current[currentPath.current.length - 1]
     currentPath.current = [...currentPath.current, { x: p.x, y: p.y }]
-    redraw()
+    if (last) drawSegment(last, p)
   }
 
   function end(e: React.PointerEvent<HTMLCanvasElement>) {
     if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId)
     if (panStart.current) { panStart.current = null; return }
     if (drawing.current && currentPath.current.length > 1) {
+      pushHistory()
       const t = toolRef.current === 'pan' ? 'pen' : toolRef.current
       objectsRef.current = [...objectsRef.current, {
         kind: 'stroke',
@@ -286,11 +329,6 @@ const ScratchBoard = forwardRef<ScratchBoardHandle, { initialDataUrl?: string | 
         points: currentPath.current,
       }]
       setObjVersion(v => v + 1)
-    } else if (drawing.current) {
-      // A click with no real drag — nothing was actually drawn, so drop the
-      // history entry pushed on pointerdown rather than leaving a no-op undo step.
-      history.current.pop()
-      syncUndoRedo()
     }
     drawing.current = false
     currentPath.current = []
