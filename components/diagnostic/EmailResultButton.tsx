@@ -5,57 +5,93 @@ import { useRouter } from 'next/navigation'
 
 // A curated starting point, not an exhaustive taxonomy — a teacher can
 // always fall back to the free-text note for anything not covered here.
-// Grouped rather than one flat list since it's grown long: process/
-// test-taking issues apply to any subject, while the chemistry group maps
-// onto this app's actual AP Chem unit structure (atomic structure through
-// electrochemistry) so it's specific enough to be genuinely useful rather
-// than generic filler.
-const ISSUE_GROUPS: { label: string; issues: string[] }[] = [
+//
+// Each entry has both a `label` (short, for the clickable pill — optimized
+// for fast scanning) and a `clause` (a grammatically composable fragment —
+// optimized for reading naturally once stitched together, see
+// composeNote()). `kind` controls HOW it gets stitched in:
+//   struggle       -> joined after "During this test, {name} ..."
+//   topic          -> joined after "{name} could use more practice with ..."
+//   recommendation -> its own full sentence, used as-is
+//   positive       -> its own full sentence, {first} substituted with name
+// This produces an actual paragraph instead of a bullet list — deterministic
+// templating, no AI call involved.
+type IssueKind = 'struggle' | 'topic' | 'recommendation' | 'positive'
+interface Issue { label: string; clause: string; kind: IssueKind }
+
+const ISSUE_GROUPS: { label: string; issues: Issue[] }[] = [
   {
     label: 'Process & Test-Taking',
     issues: [
-      'Struggled to show work clearly on free-response questions',
-      'Did not show any work',
-      'Rushed through questions — answers seem incomplete',
-      'Left several questions unanswered (time management)',
-      'Correct final answers but reasoning/work not shown',
-      'Difficulty with multiple-choice reasoning / process of elimination',
-      'Careless errors — understood the concept but made a calculation mistake',
-      'Answer missing units',
-      'Struggled with units or significant figures',
-      'Misread or misunderstood what the question was asking',
-      'Confused similar concepts or formulas',
-      'Guessed on several multiple-choice questions rather than working through them',
-      'Would benefit from reviewing class notes/practice problems before the next test',
-      'Recommend a short one-on-one review session to go over missed topics',
-      'Strong effort and consistent performance — keep it up',
+      { kind: 'struggle', label: 'Struggled to show work clearly on free-response questions', clause: 'struggled to show their work clearly on the free-response questions' },
+      { kind: 'struggle', label: 'Did not show any work', clause: 'did not show any work on the free-response questions' },
+      { kind: 'struggle', label: 'Rushed through questions — answers seem incomplete', clause: 'seemed to rush through several questions, leaving some answers incomplete' },
+      { kind: 'struggle', label: 'Left several questions unanswered (time management)', clause: 'left several questions unanswered, which may point to a time-management issue' },
+      { kind: 'struggle', label: 'Correct final answers but reasoning/work not shown', clause: 'got the correct final answers on several questions but didn’t show the reasoning behind them' },
+      { kind: 'struggle', label: 'Difficulty with multiple-choice reasoning / process of elimination', clause: 'had some difficulty reasoning through the multiple-choice questions' },
+      { kind: 'struggle', label: 'Careless errors — understood the concept but made a calculation mistake', clause: 'understood the underlying concepts but made a few careless calculation errors' },
+      { kind: 'struggle', label: 'Answer missing units', clause: 'left the units off of some numerical answers' },
+      { kind: 'struggle', label: 'Struggled with units or significant figures', clause: 'struggled with units or significant figures in places' },
+      { kind: 'struggle', label: 'Misread or misunderstood what the question was asking', clause: 'seems to have misread or misunderstood what a few questions were asking' },
+      { kind: 'struggle', label: 'Confused similar concepts or formulas', clause: 'mixed up a few similar concepts or formulas' },
+      { kind: 'struggle', label: 'Guessed on several multiple-choice questions rather than working through them', clause: 'appears to have guessed on a few multiple-choice questions rather than working through them' },
+      { kind: 'recommendation', label: 'Would benefit from reviewing class notes/practice problems before the next test', clause: 'I’d recommend reviewing class notes and practice problems together before the next test.' },
+      { kind: 'recommendation', label: 'Recommend a short one-on-one review session to go over missed topics', clause: 'I’d also recommend a short one-on-one review session to go over the topics missed.' },
+      { kind: 'positive', label: 'Strong effort and consistent performance — keep it up', clause: 'Overall, {first} showed strong effort and consistent performance — keep it up!' },
     ],
   },
   {
     label: 'Chemistry Concept Gaps',
     issues: [
-      'Mole concept / stoichiometry calculations',
-      'Balancing chemical equations',
-      'Limiting reactant / percent yield problems',
-      'Molarity and solution concentration calculations',
-      'Dimensional analysis / unit conversions',
-      'Electron configuration and orbital notation',
-      'Periodic trends (electronegativity, atomic radius, ionization energy)',
-      'Distinguishing ionic vs. covalent bonding',
-      'Molecular geometry / VSEPR theory',
-      'Intermolecular forces (hydrogen bonding, dipole-dipole, London dispersion)',
-      'Gas laws (Boyle’s, Charles’s, ideal gas law)',
-      'Reaction kinetics — rate laws and reaction order',
-      'Thermochemistry — enthalpy, calorimetry, heat calculations',
-      'Equilibrium concepts (Le Chatelier’s principle, Keq)',
-      'Acid-base chemistry / pH and pOH calculations',
-      'Titration calculations',
-      'Oxidation-reduction (redox) reactions',
-      'Thermodynamics — entropy and Gibbs free energy',
-      'Interpreting graphs, spectra, or experimental data',
+      { kind: 'topic', label: 'Mole concept / stoichiometry calculations', clause: 'the mole concept and stoichiometry calculations' },
+      { kind: 'topic', label: 'Balancing chemical equations', clause: 'balancing chemical equations' },
+      { kind: 'topic', label: 'Limiting reactant / percent yield problems', clause: 'limiting reactant and percent yield problems' },
+      { kind: 'topic', label: 'Molarity and solution concentration calculations', clause: 'molarity and solution concentration calculations' },
+      { kind: 'topic', label: 'Dimensional analysis / unit conversions', clause: 'dimensional analysis and unit conversions' },
+      { kind: 'topic', label: 'Electron configuration and orbital notation', clause: 'electron configuration and orbital notation' },
+      { kind: 'topic', label: 'Periodic trends (electronegativity, atomic radius, ionization energy)', clause: 'periodic trends like electronegativity, atomic radius, and ionization energy' },
+      { kind: 'topic', label: 'Distinguishing ionic vs. covalent bonding', clause: 'distinguishing ionic from covalent bonding' },
+      { kind: 'topic', label: 'Molecular geometry / VSEPR theory', clause: 'molecular geometry and VSEPR theory' },
+      { kind: 'topic', label: 'Intermolecular forces (hydrogen bonding, dipole-dipole, London dispersion)', clause: 'intermolecular forces like hydrogen bonding, dipole-dipole interactions, and London dispersion forces' },
+      { kind: 'topic', label: 'Gas laws (Boyle’s, Charles’s, ideal gas law)', clause: 'the gas laws — Boyle’s, Charles’s, and the ideal gas law' },
+      { kind: 'topic', label: 'Reaction kinetics — rate laws and reaction order', clause: 'reaction kinetics, including rate laws and reaction order' },
+      { kind: 'topic', label: 'Thermochemistry — enthalpy, calorimetry, heat calculations', clause: 'thermochemistry, including enthalpy, calorimetry, and heat calculations' },
+      { kind: 'topic', label: 'Equilibrium concepts (Le Chatelier’s principle, Keq)', clause: 'equilibrium concepts like Le Chatelier’s principle and Keq' },
+      { kind: 'topic', label: 'Acid-base chemistry / pH and pOH calculations', clause: 'acid-base chemistry and pH/pOH calculations' },
+      { kind: 'topic', label: 'Titration calculations', clause: 'titration calculations' },
+      { kind: 'topic', label: 'Oxidation-reduction (redox) reactions', clause: 'oxidation-reduction (redox) reactions' },
+      { kind: 'topic', label: 'Thermodynamics — entropy and Gibbs free energy', clause: 'thermodynamics, including entropy and Gibbs free energy' },
+      { kind: 'topic', label: 'Interpreting graphs, spectra, or experimental data', clause: 'interpreting graphs, spectra, and experimental data' },
     ],
   },
 ]
+
+// Joins a list into natural English: "a", "a and b", "a, b, and c".
+function joinNaturally(items: string[]): string {
+  if (items.length === 0) return ''
+  if (items.length === 1) return items[0]
+  if (items.length === 2) return `${items[0]} and ${items[1]}`
+  return `${items.slice(0, -1).join(', ')}, and ${items[items.length - 1]}`
+}
+
+// Deterministic sentence composer — no AI call. Groups selected issues by
+// kind and stitches each group into one natural sentence, so five clicked
+// pills read as a real paragraph instead of a bulleted list.
+function composeNote(selected: Issue[], customNote: string, studentName: string): string {
+  const firstName = studentName.trim().split(/\s+/)[0] || studentName
+  const struggles = selected.filter(i => i.kind === 'struggle').map(i => i.clause)
+  const topics = selected.filter(i => i.kind === 'topic').map(i => i.clause)
+  const standalone = selected
+    .filter(i => i.kind === 'recommendation' || i.kind === 'positive')
+    .map(i => i.clause.replace('{first}', firstName))
+
+  const sentences: string[] = []
+  if (struggles.length > 0) sentences.push(`During this test, ${firstName} ${joinNaturally(struggles)}.`)
+  if (topics.length > 0) sentences.push(`${firstName} could use more practice with ${joinNaturally(topics)}.`)
+  sentences.push(...standalone)
+
+  return [sentences.join(' '), customNote.trim()].filter(Boolean).join('\n\n')
+}
 
 export default function EmailResultButton({
   attemptId, studentEmail, parentEmail, studentName, weakTopics, hasFrq, tabSwitchCount,
@@ -89,24 +125,33 @@ export default function EmailResultButton({
   const [sent, setSent] = useState(false)
   const [error, setError] = useState('')
 
-  const topicIssues = weakTopics.map(t => `Needs more practice with ${t}`)
+  // weakTopics turned into Issues the same shape as the static ones — label
+  // for the pill, clause (just the bare topic name) for the composer, kind
+  // 'topic' so it joins into the "could use more practice with ..." sentence.
+  const topicIssues: Issue[] = weakTopics.map(t => ({ kind: 'topic', label: `Needs more practice with ${t}`, clause: t }))
   const issueGroups = topicIssues.length > 0
     ? [...ISSUE_GROUPS, { label: 'This Attempt’s Weak Topics', issues: topicIssues }]
     : ISSUE_GROUPS
+  // Keyed by label (stable and unique) rather than object identity — the
+  // weakTopics-derived Issues above are recreated fresh every render, so
+  // using them directly as Set/Map keys would silently break equality
+  // checks across re-renders.
+  const issuesByLabel = new Map(issueGroups.flatMap(g => g.issues).map(i => [i.label, i]))
 
-  function toggle(issue: string) {
+  function toggle(label: string) {
     setSelected(prev => {
       const next = new Set(prev)
-      if (next.has(issue)) next.delete(issue)
-      else next.add(issue)
+      if (next.has(label)) next.delete(label)
+      else next.add(label)
       return next
     })
   }
 
-  const composedNote = [
-    [...selected].map(s => `• ${s}`).join('\n'),
-    customNote.trim(),
-  ].filter(Boolean).join('\n\n')
+  const composedNote = composeNote(
+    [...selected].map(label => issuesByLabel.get(label)).filter((i): i is Issue => !!i),
+    customNote,
+    studentName,
+  )
 
   async function send() {
     if (!includeMcq && !includeFrq) { setError('Include at least Multiple Choice or Free Response.'); return }
@@ -215,16 +260,16 @@ export default function EmailResultButton({
                 <div className="flex flex-wrap gap-2">
                   {group.issues.map(issue => (
                     <button
-                      key={issue}
+                      key={issue.label}
                       type="button"
-                      onClick={() => toggle(issue)}
+                      onClick={() => toggle(issue.label)}
                       className={`text-xs px-3 py-1.5 rounded-full border transition-colors text-left ${
-                        selected.has(issue)
+                        selected.has(issue.label)
                           ? 'bg-indigo-600 border-indigo-600 text-white'
                           : 'bg-white border-gray-200 text-gray-600 hover:border-indigo-300'
                       }`}
                     >
-                      {issue}
+                      {issue.label}
                     </button>
                   ))}
                 </div>
