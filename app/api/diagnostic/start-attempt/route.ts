@@ -11,25 +11,17 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null) as {
     slug?: string
-    studentName?: string
-    studentEmail?: string
-    parentName?: string
     parentEmail?: string
-    parentPhone?: string
   } | null
 
   const slug = body?.slug?.trim()
-  const studentName = body?.studentName?.trim()
-  const studentEmail = body?.studentEmail?.trim()
-  const parentName = body?.parentName?.trim()
   const parentEmail = body?.parentEmail?.trim()
-  const parentPhone = body?.parentPhone?.trim()
 
-  if (!slug || !studentName || !studentEmail || !parentName || !parentEmail || !parentPhone) {
-    return NextResponse.json({ error: 'All fields are required.' }, { status: 400 })
+  if (!slug || !parentEmail) {
+    return NextResponse.json({ error: 'Parent/guardian email is required.' }, { status: 400 })
   }
-  if (!EMAIL_RE.test(studentEmail) || !EMAIL_RE.test(parentEmail)) {
-    return NextResponse.json({ error: 'Please enter valid email addresses.' }, { status: 400 })
+  if (!EMAIL_RE.test(parentEmail)) {
+    return NextResponse.json({ error: 'Please enter a valid email address.' }, { status: 400 })
   }
 
   // If the student is taking this test while logged in (e.g. clicked it
@@ -67,15 +59,20 @@ export async function POST(req: NextRequest) {
   // while keeping the anti-cheat randomized order within each section.
   const selected = mcqFirst(sample(poolItems, want)).map(q => q.id)
 
+  // Name/phone/student-email are deliberately not collected here — asking
+  // for 5 fields before someone can even start a free quiz was killing
+  // completions (most people who asked for the link never finished the
+  // form). They're captured later, after the student sees real value (their
+  // results) — see CompleteLeadProfileForm on the results page.
   const { data: lead, error: leadError } = await admin
     .from('diagnostic_leads')
     .insert({
       diagnostic_test_id: test.id,
-      student_name: studentName,
-      student_email: studentEmail,
-      parent_name: parentName,
+      student_name: '',
+      student_email: '',
+      parent_name: '',
       parent_email: parentEmail,
-      parent_phone: parentPhone,
+      parent_phone: '',
       student_id: user?.id ?? null,
     })
     .select('id')
@@ -85,6 +82,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Could not start the test. Please try again.' }, { status: 500 })
   }
 
+  // results_released defaults to false everywhere else (see
+  // add-diagnostic-results-release.sql) so a teacher can review a real,
+  // enrolled student's graded test before showing them the score — see
+  // app/api/diagnostic/admin/release-results/route.ts. This route is the
+  // sole entry point for the public, anonymous lead-magnet quiz (enrolled
+  // students go through start-attempt-for-student instead), which promises
+  // "Instant results" on its landing page, so it's explicitly released here.
   const { data: attempt, error: attemptError } = await admin
     .from('diagnostic_attempts')
     .insert({
@@ -92,6 +96,7 @@ export async function POST(req: NextRequest) {
       lead_id: lead.id,
       question_ids: selected,
       status: 'in_progress',
+      results_released: true,
     })
     .select('id')
     .single()

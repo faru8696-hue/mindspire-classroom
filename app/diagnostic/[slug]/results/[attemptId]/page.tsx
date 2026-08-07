@@ -1,6 +1,7 @@
 import { notFound, redirect } from 'next/navigation'
 import { getDiagnosticResult } from '@/lib/diagnosticResult'
 import DiagnosticResultSummary from '@/components/diagnostic/DiagnosticResultSummary'
+import CompleteLeadProfileForm from '@/components/diagnostic/CompleteLeadProfileForm'
 
 export const dynamic = 'force-dynamic'
 
@@ -33,6 +34,7 @@ export default async function DiagnosticResultsPage({
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 p-4 py-10">
+      {!lookup.result.studentName && <CompleteLeadProfileForm attemptId={attemptId} />}
       <DiagnosticResultSummary result={lookup.result} />
     </div>
   )
