@@ -20,11 +20,22 @@ export async function getDiagnosticResult(attemptId: string): Promise<Diagnostic
 
   const { data: attempt } = await admin
     .from('diagnostic_attempts')
-    .select('id, diagnostic_test_id, lead_id, status, started_at, submitted_at, correct_count, total_count, score_pct, tab_switch_count, tab_switch_seconds, results_released, integrity_deduction_pct, integrity_likely_cheating')
+    .select('id, diagnostic_test_id, lead_id, status, started_at, submitted_at, correct_count, total_count, score_pct, tab_switch_count, tab_switch_seconds, results_released')
     .eq('id', attemptId)
     .maybeSingle()
   if (!attempt) return { status: 'not_found' }
   if (attempt.status !== 'completed') return { status: 'in_progress' }
+
+  // Fetched separately, defaulting to "no deduction" on any error — these
+  // columns only exist once add-diagnostic-integrity-deduction.sql has been
+  // run. Selecting them in the main query above would make an unrun
+  // migration silently break every result lookup site-wide (a real
+  // incident: it did, briefly) instead of just leaving deductions off.
+  const { data: integrityRow } = await admin
+    .from('diagnostic_attempts')
+    .select('integrity_deduction_pct, integrity_likely_cheating')
+    .eq('id', attemptId)
+    .maybeSingle()
 
   const [{ data: test }, { data: lead }, { data: answers }] = await Promise.all([
     admin.from('diagnostic_tests').select('title').eq('id', attempt.diagnostic_test_id).maybeSingle(),
@@ -146,8 +157,8 @@ export async function getDiagnosticResult(attemptId: string): Promise<Diagnostic
       tabSwitchSeconds: attempt.tab_switch_seconds ?? 0,
       // Frozen at submit time (see assessTestIntegrity) — shown to both
       // student and parent, unlike the raw tab-switch counter above.
-      integrityDeductionPct: attempt.integrity_deduction_pct ?? 0,
-      integrityLikelyCheating: attempt.integrity_likely_cheating ?? false,
+      integrityDeductionPct: integrityRow?.integrity_deduction_pct ?? 0,
+      integrityLikelyCheating: integrityRow?.integrity_likely_cheating ?? false,
       unansweredCount,
       totalQuestionCount: questionReview.length,
       // Gates the PUBLIC results page only — the teacher's own attempt page

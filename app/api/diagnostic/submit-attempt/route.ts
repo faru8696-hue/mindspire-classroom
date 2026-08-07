@@ -108,6 +108,13 @@ export async function POST(req: NextRequest) {
   // Frozen at submit time — topic scores AND advice text, so a later edit to
   // a topic's prep_advice or a question's topic assignment can never
   // retroactively rewrite a student's historical results/PDF.
+  //
+  // This core update must never depend on integrity_deduction_pct/
+  // integrity_likely_cheating existing — those columns only exist once
+  // add-diagnostic-integrity-deduction.sql has been run, and including them
+  // here would fail the ENTIRE update (blocking every test submission
+  // app-wide) whenever that migration hasn't run yet. The integrity fields
+  // are written in a separate, best-effort call right after.
   const { error: updateError } = await admin
     .from('diagnostic_attempts')
     .update({
@@ -121,10 +128,17 @@ export async function POST(req: NextRequest) {
       // just visibilitychange/blur tracking (see DiagnosticTestSession).
       tab_switch_count: body?.tabSwitchCount ?? 0,
       tab_switch_seconds: body?.tabSwitchSeconds ?? 0,
+    })
+    .eq('id', attempt.id)
+
+  const { error: integrityUpdateError } = await admin
+    .from('diagnostic_attempts')
+    .update({
       integrity_deduction_pct: integrity.deductionPct,
       integrity_likely_cheating: integrity.likelyCheating,
     })
     .eq('id', attempt.id)
+  if (integrityUpdateError) console.error('submit-attempt integrity update error (migration likely not run yet):', integrityUpdateError)
 
   if (updateError) {
     console.error('submit-attempt update error:', updateError)
