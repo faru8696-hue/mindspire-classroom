@@ -52,42 +52,75 @@ function teacherNoteHtml(note: string | null): string {
   `
 }
 
-function resultEmailHtml(result: DiagnosticResultData, greetingName: string, resultsUrl: string, teacherNote: string | null): string {
-  const frq = result.frqScore
-  const rawTotal = computeTotalScore(result.correctCount, result.totalCount, frq)
-  const total = applyIntegrityDeduction(rawTotal, result.integrityDeductionPct)
+function resultEmailHtml(
+  result: DiagnosticResultData, greetingName: string, resultsUrl: string, teacherNote: string | null,
+  includeMcq: boolean, includeFrq: boolean,
+): string {
+  const frq = includeFrq ? result.frqScore : null
+  const isPartial = !(includeMcq && (result.frqScore ? includeFrq : true))
 
-  const topicRows = result.topicScores.map(t => `
+  // The headline is whichever single score was chosen when only one is
+  // included — there's no honest "combined total" to show when the other
+  // half was deliberately left out. The topic-by-topic table is skipped
+  // for a partial release since mastery bars blend MCQ+FRQ within a topic
+  // and can't be cleanly split into "MCQ-only" without re-querying per
+  // question — not worth the complexity for what's meant to be a quick
+  // partial update.
+  let headlinePct: number, headlineLine: string
+  if (includeMcq && includeFrq && result.frqScore) {
+    const rawTotal = computeTotalScore(result.correctCount, result.totalCount, result.frqScore)
+    const total = applyIntegrityDeduction(rawTotal, result.integrityDeductionPct)
+    headlinePct = total.pct
+    headlineLine = `${total.earned}/${total.possible} total${!total.fullyGraded ? ' — provisional, FRQ review still in progress' : ''}`
+  } else if (includeMcq) {
+    const rawTotal = computeTotalScore(result.correctCount, result.totalCount, null)
+    const total = applyIntegrityDeduction(rawTotal, result.integrityDeductionPct)
+    headlinePct = total.pct
+    headlineLine = `${total.earned}/${total.possible} — Multiple Choice`
+  } else {
+    // FRQ only
+    const fq = result.frqScore
+    headlinePct = fq && fq.gradedPoints > 0 ? Math.round((fq.earnedPoints / fq.gradedPoints) * 100) : 0
+    headlineLine = fq
+      ? `${fq.gradedCount === 0 ? `${fq.totalPoints} pts` : `${fq.earnedPoints}/${fq.gradedCount === fq.totalCount ? fq.totalPoints : fq.gradedPoints} pts`} — Free Response${fq.gradedCount < fq.totalCount ? ` (${fq.gradedCount}/${fq.totalCount} graded)` : ''}`
+      : ''
+  }
+
+  const rawTotalForNotes = computeTotalScore(result.correctCount, result.totalCount, result.frqScore)
+  const adjustedTotalForNotes = applyIntegrityDeduction(rawTotalForNotes, result.integrityDeductionPct)
+
+  const topicRows = !isPartial ? result.topicScores.map(t => `
     <tr>
       <td style="padding:6px 0; font-size:13px; color:#374151;">${t.topicTitle}</td>
       <td style="padding:6px 0; font-size:13px; color:#374151; text-align:right; font-weight:600;">${t.correct}/${t.total} (${t.pct}%)</td>
     </tr>
-  `).join('')
+  `).join('') : ''
 
   return `
     <div style="font-family: -apple-system, sans-serif; max-width: 520px; color:#111827;">
       <p>Hi ${greetingName},</p>
-      <p>Here are ${result.studentName}&rsquo;s results for <strong>${result.testTitle}</strong>, taken on ${result.dateTaken}.</p>
+      <p>Here are ${result.studentName}&rsquo;s results for <strong>${result.testTitle}</strong>, taken on ${result.dateTaken}.${isPartial ? ' This is a partial update — more will follow.' : ''}</p>
 
       <div style="padding:16px; background:#eef2ff; border-radius:8px; text-align:center; margin:16px 0;">
-        <div style="font-size:34px; font-weight:800; color:#4338ca;">${total.pct}%</div>
-        <div style="font-size:13px; color:#6b7280;">${total.earned}/${total.possible} total${!total.fullyGraded ? ' — provisional, FRQ review still in progress' : ''}</div>
+        <div style="font-size:34px; font-weight:800; color:#4338ca;">${headlinePct}%</div>
+        <div style="font-size:13px; color:#6b7280;">${headlineLine}</div>
       </div>
 
+      ${includeMcq && includeFrq && frq ? `
       <table style="width:100%; margin:0 0 16px;">
         <tr>
           <td style="padding:12px; background:#f9fafb; border-radius:8px; text-align:center;">
             <div style="font-size:22px; font-weight:800; color:#1d4ed8;">${result.scorePct}%</div>
             <div style="font-size:12px; color:#6b7280;">Multiple Choice — ${result.correctCount}/${result.totalCount}</div>
           </td>
-          ${frq ? `
           <td style="width:12px;"></td>
           <td style="padding:12px; background:#faf5ff; border-radius:8px; text-align:center;">
             <div style="font-size:22px; font-weight:800; color:#7e22ce;">${frq.gradedCount === 0 ? `${frq.totalPoints} pts` : `${frq.earnedPoints}/${frq.gradedCount === frq.totalCount ? frq.totalPoints : frq.gradedPoints} pts`}</div>
             <div style="font-size:12px; color:#6b7280;">Free Response${frq.gradedCount < frq.totalCount ? ` (${frq.gradedCount}/${frq.totalCount} graded)` : ''}</div>
-          </td>` : ''}
+          </td>
         </tr>
       </table>
+      ` : ''}
 
       ${topicRows ? `
       <p style="font-weight:600; margin-bottom:4px;">Performance by Topic</p>
@@ -96,11 +129,13 @@ function resultEmailHtml(result: DiagnosticResultData, greetingName: string, res
 
       ${teacherNoteHtml(teacherNote)}
 
-      ${integrityNoteHtml(result, rawTotal.pct, total.pct)}
+      ${integrityNoteHtml(result, rawTotalForNotes.pct, adjustedTotalForNotes.pct)}
 
-      ${lowScoreReasonHtml(result, total.pct)}
+      ${lowScoreReasonHtml(result, adjustedTotalForNotes.pct)}
 
-      <a href="${resultsUrl}" style="display:inline-block; background:#4f46e5; color:#fff; text-decoration:none; padding:10px 18px; border-radius:8px; font-weight:600; font-size:14px;">View Full Results</a>
+      ${isPartial
+        ? `<p style="font-size:13px; color:#6b7280;">Your teacher will share the complete breakdown separately.</p>`
+        : `<a href="${resultsUrl}" style="display:inline-block; background:#4f46e5; color:#fff; text-decoration:none; padding:10px 18px; border-radius:8px; font-weight:600; font-size:14px;">View Full Results</a>`}
 
       <p style="color:#9ca3af; font-size:12px; margin-top:24px;">Sent by Mindspire Lab.</p>
     </div>
@@ -119,8 +154,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
   }
 
-  const { attemptId, teacherNote } = await req.json() as { attemptId?: string; teacherNote?: string | null }
+  const { attemptId, teacherNote, includeMcq = true, includeFrq = true } = await req.json() as {
+    attemptId?: string
+    teacherNote?: string | null
+    includeMcq?: boolean
+    includeFrq?: boolean
+  }
   if (!attemptId) return NextResponse.json({ error: 'attemptId is required.' }, { status: 400 })
+  if (!includeMcq && !includeFrq) return NextResponse.json({ error: 'Include at least one of Multiple Choice or Free Response.' }, { status: 400 })
 
   const admin = await createAdminClient()
   const { data: attempt } = await admin
@@ -151,14 +192,14 @@ export async function POST(req: NextRequest) {
   const note = teacherNote?.trim() || null
 
   try {
-    await sendEmail({ to: lead.student_email, subject, html: resultEmailHtml(lookup.result, lead.student_name, resultsUrl, note) })
+    await sendEmail({ to: lead.student_email, subject, html: resultEmailHtml(lookup.result, lead.student_name, resultsUrl, note, includeMcq, includeFrq) })
     sentTo.push(lead.student_email)
   } catch (e) {
     errors.push(`student (${lead.student_email}): ${e instanceof Error ? e.message : 'failed'}`)
   }
 
   try {
-    await sendEmail({ to: lead.parent_email, subject, html: resultEmailHtml(lookup.result, lead.parent_name, resultsUrl, note) })
+    await sendEmail({ to: lead.parent_email, subject, html: resultEmailHtml(lookup.result, lead.parent_name, resultsUrl, note, includeMcq, includeFrq) })
     sentTo.push(lead.parent_email)
   } catch (e) {
     errors.push(`parent (${lead.parent_email}): ${e instanceof Error ? e.message : 'failed'}`)
@@ -168,11 +209,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `Could not send either email. ${errors.join('; ')}` }, { status: 500 })
   }
 
-  // Emailing the result IS releasing it — the email body already contains
-  // the score, and its "View Full Results" link would otherwise land on
-  // the "your teacher will share this soon" holding page. Keep the
-  // release toggle (and the student results page) in sync with reality.
-  await admin.from('diagnostic_attempts').update({ results_released: true }).eq('id', attemptId)
+  // Emailing the FULL result IS releasing it — the email body already
+  // contains the complete score, and its "View Full Results" link would
+  // otherwise land on the "your teacher will share this soon" holding
+  // page. A partial send (MCQ-only or FRQ-only) deliberately withholds the
+  // other half, so it must NOT flip this — the in-app page (which shows
+  // everything once released) would otherwise leak what was held back.
+  const isFullRelease = includeMcq && (lookup.result.frqScore ? includeFrq : true)
+  if (isFullRelease) {
+    await admin.from('diagnostic_attempts').update({ results_released: true }).eq('id', attemptId)
+  }
 
   return NextResponse.json({ ok: true, sentTo, errors: errors.length > 0 ? errors : undefined })
 }

@@ -14,7 +14,7 @@ const COMMON_ISSUES = [
 ]
 
 export default function EmailResultButton({
-  attemptId, studentEmail, parentEmail, studentName, weakTopics,
+  attemptId, studentEmail, parentEmail, studentName, weakTopics, hasFrq,
 }: {
   attemptId: string
   studentEmail: string
@@ -24,11 +24,16 @@ export default function EmailResultButton({
   // turned into one extra clickable option per topic so the teacher isn't
   // stuck re-typing "needs more practice with X" from scratch.
   weakTopics: string[]
+  // Whether this attempt has any FRQ questions at all — the MCQ/FRQ scope
+  // picker only makes sense to show when there's actually a choice.
+  hasFrq: boolean
 }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [customNote, setCustomNote] = useState('')
+  const [includeMcq, setIncludeMcq] = useState(true)
+  const [includeFrq, setIncludeFrq] = useState(true)
   const [sending, setSending] = useState(false)
   const [sent, setSent] = useState(false)
   const [error, setError] = useState('')
@@ -51,13 +56,14 @@ export default function EmailResultButton({
   ].filter(Boolean).join('\n\n')
 
   async function send() {
+    if (!includeMcq && !includeFrq) { setError('Include at least Multiple Choice or Free Response.'); return }
     setError('')
     setSending(true)
     try {
       const res = await fetch('/api/diagnostic/admin/email-result', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ attemptId, teacherNote: composedNote || null }),
+        body: JSON.stringify({ attemptId, teacherNote: composedNote || null, includeMcq, includeFrq: hasFrq ? includeFrq : false }),
       })
       const data = await res.json()
       if (!res.ok) { setError(data.error || 'Something went wrong.'); setSending(false); return }
@@ -93,6 +99,37 @@ export default function EmailResultButton({
               <h3 className="font-bold text-gray-800">Review Before Sending</h3>
               <p className="text-xs text-gray-500 mt-1">To {studentEmail} and {parentEmail}</p>
             </div>
+
+            {hasFrq && (
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">What to share</p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIncludeMcq(v => !v)}
+                    className={`flex-1 text-xs px-3 py-2 rounded-lg border font-semibold transition-colors ${
+                      includeMcq ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-gray-200 text-gray-500 hover:border-blue-300'
+                    }`}
+                  >
+                    {includeMcq ? '✓ ' : ''}Multiple Choice score
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIncludeFrq(v => !v)}
+                    className={`flex-1 text-xs px-3 py-2 rounded-lg border font-semibold transition-colors ${
+                      includeFrq ? 'bg-purple-600 border-purple-600 text-white' : 'bg-white border-gray-200 text-gray-500 hover:border-purple-300'
+                    }`}
+                  >
+                    {includeFrq ? '✓ ' : ''}Free Response score
+                  </button>
+                </div>
+                {!(includeMcq && includeFrq) && (
+                  <p className="text-xs text-amber-600 mt-1.5">
+                    Partial send — only the selected score{includeMcq || includeFrq ? '' : 's'} will be shared, and the full in-app results page will stay hidden until you send both (or release it separately).
+                  </p>
+                )}
+              </div>
+            )}
 
             {allIssues.length > 0 && (
               <div>
@@ -139,7 +176,7 @@ export default function EmailResultButton({
             <div className="flex gap-2 pt-2 border-t border-gray-100">
               <button
                 onClick={send}
-                disabled={sending}
+                disabled={sending || (!includeMcq && !includeFrq)}
                 className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl disabled:opacity-50"
               >
                 {sending ? 'Sending…' : 'Send to Student & Parent'}

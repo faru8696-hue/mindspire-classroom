@@ -55,6 +55,7 @@ export default async function DiagnosticAttemptDetailPage({
               parentEmail={lead.parent_email}
               studentName={lead.student_name}
               weakTopics={lookup.result.advice.map(a => a.topicTitle)}
+              hasFrq={!!lookup.result.frqScore}
             />
           </div>
         </div>
