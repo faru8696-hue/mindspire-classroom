@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCaller, createAdminClient } from '@/lib/supabase/server'
 import { getDiagnosticResult } from '@/lib/diagnosticResult'
-import { computeTotalScore } from '@/lib/diagnosticGrading'
+import { computeTotalScore, applyIntegrityDeduction } from '@/lib/diagnosticGrading'
 import { sendEmail } from '@/lib/email'
 import type { DiagnosticResultData } from '@/components/diagnostic/DiagnosticResultSummary'
 
@@ -9,22 +9,53 @@ import type { DiagnosticResultData } from '@/components/diagnostic/DiagnosticRes
 // a weak, high-false-positive signal (a notification, a calculator app, an
 // accidental alt-tab all trigger it too, same reasoning as the teacher
 // attempt page), so it's worded as a possibility, not an accusation.
-function integrityNoteHtml(result: DiagnosticResultData): string {
+function integrityNoteHtml(result: DiagnosticResultData, rawPct: number, adjustedPct: number): string {
   if (result.tabSwitchCount <= 0) return ''
+  const hasDeduction = result.integrityDeductionPct > 0
   return `
     <div style="padding:14px 16px; background:#fff7ed; border:1px solid #fed7aa; border-radius:8px; margin:16px 0;">
       <p style="margin:0 0 4px; font-weight:700; color:#9a3412; font-size:13px;">⚠️ Test Integrity Note</p>
+      ${hasDeduction ? `
+      <p style="margin:0 0 6px; font-size:13px; color:#7c2d12;">
+        Score before deduction: <strong>${rawPct}%</strong> &nbsp;→&nbsp; after deduction: <strong>${adjustedPct}%</strong> (&minus;${result.integrityDeductionPct}%)
+      </p>` : ''}
       <p style="margin:0; font-size:13px; color:#7c2d12;">
         ${result.studentName} left the test window <strong>${result.tabSwitchCount}</strong> time${result.tabSwitchCount === 1 ? '' : 's'}${result.tabSwitchSeconds > 0 ? `, totaling <strong>${result.tabSwitchSeconds}s</strong> away` : ''} while the test was in progress.
-        This can happen for innocent reasons (a notification, an accidental click), but it can also indicate a chance of cheating — for example, looking up answers elsewhere.
+        ${result.integrityLikelyCheating
+          ? 'This pattern is hard to explain as innocent (a long time away, or leaving very frequently) and has been flagged for teacher review.'
+          : 'This can happen for innocent reasons (a notification, an accidental click), but it can also indicate a chance of cheating — for example, looking up answers elsewhere.'}
       </p>
     </div>
   `
 }
 
-function resultEmailHtml(result: DiagnosticResultData, greetingName: string, resultsUrl: string): string {
+// Only shown once a meaningful share of the test was actually left blank,
+// so it reads as a real observation rather than a blanket excuse for a low
+// score — same threshold as the in-app results page and the PDF.
+function lowScoreReasonHtml(result: DiagnosticResultData, adjustedPct: number): string {
+  const unansweredPct = result.totalQuestionCount > 0 ? result.unansweredCount / result.totalQuestionCount : 0
+  if (adjustedPct >= 70 || unansweredPct < 0.15) return ''
+  return `
+    <div style="padding:12px 14px; background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px; margin:16px 0; font-size:13px; color:#1e3a8a;">
+      ℹ️ ${result.unansweredCount} of ${result.totalQuestionCount} questions were left unanswered, which may reflect the test time running out rather than the material not being understood.
+    </div>
+  `
+}
+
+function teacherNoteHtml(note: string | null): string {
+  if (!note) return ''
+  return `
+    <div style="padding:14px 16px; background:#f5f3ff; border:1px solid #ddd6fe; border-radius:8px; margin:16px 0;">
+      <p style="margin:0 0 4px; font-weight:700; color:#5b21b6; font-size:13px;">📝 Note from the Teacher</p>
+      <p style="margin:0; font-size:13px; color:#4c1d95; white-space:pre-wrap;">${note}</p>
+    </div>
+  `
+}
+
+function resultEmailHtml(result: DiagnosticResultData, greetingName: string, resultsUrl: string, teacherNote: string | null): string {
   const frq = result.frqScore
-  const total = computeTotalScore(result.correctCount, result.totalCount, frq)
+  const rawTotal = computeTotalScore(result.correctCount, result.totalCount, frq)
+  const total = applyIntegrityDeduction(rawTotal, result.integrityDeductionPct)
 
   const topicRows = result.topicScores.map(t => `
     <tr>
@@ -63,7 +94,11 @@ function resultEmailHtml(result: DiagnosticResultData, greetingName: string, res
       <table style="width:100%; border-collapse:collapse; margin-bottom:16px;">${topicRows}</table>
       ` : ''}
 
-      ${integrityNoteHtml(result)}
+      ${teacherNoteHtml(teacherNote)}
+
+      ${integrityNoteHtml(result, rawTotal.pct, total.pct)}
+
+      ${lowScoreReasonHtml(result, total.pct)}
 
       <a href="${resultsUrl}" style="display:inline-block; background:#4f46e5; color:#fff; text-decoration:none; padding:10px 18px; border-radius:8px; font-weight:600; font-size:14px;">View Full Results</a>
 
@@ -84,7 +119,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
   }
 
-  const { attemptId } = await req.json() as { attemptId?: string }
+  const { attemptId, teacherNote } = await req.json() as { attemptId?: string; teacherNote?: string | null }
   if (!attemptId) return NextResponse.json({ error: 'attemptId is required.' }, { status: 400 })
 
   const admin = await createAdminClient()
@@ -113,15 +148,17 @@ export async function POST(req: NextRequest) {
   const sentTo: string[] = []
   const errors: string[] = []
 
+  const note = teacherNote?.trim() || null
+
   try {
-    await sendEmail({ to: lead.student_email, subject, html: resultEmailHtml(lookup.result, lead.student_name, resultsUrl) })
+    await sendEmail({ to: lead.student_email, subject, html: resultEmailHtml(lookup.result, lead.student_name, resultsUrl, note) })
     sentTo.push(lead.student_email)
   } catch (e) {
     errors.push(`student (${lead.student_email}): ${e instanceof Error ? e.message : 'failed'}`)
   }
 
   try {
-    await sendEmail({ to: lead.parent_email, subject, html: resultEmailHtml(lookup.result, lead.parent_name, resultsUrl) })
+    await sendEmail({ to: lead.parent_email, subject, html: resultEmailHtml(lookup.result, lead.parent_name, resultsUrl, note) })
     sentTo.push(lead.parent_email)
   } catch (e) {
     errors.push(`parent (${lead.parent_email}): ${e instanceof Error ? e.message : 'failed'}`)

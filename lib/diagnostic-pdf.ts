@@ -1,4 +1,4 @@
-import { computeTotalScore, type TopicScore } from './diagnosticGrading'
+import { computeTotalScore, applyIntegrityDeduction, type TopicScore } from './diagnosticGrading'
 
 export interface DiagnosticPdfFrqScore {
   totalCount: number
@@ -18,6 +18,12 @@ export interface DiagnosticPdfData {
   frqScore: DiagnosticPdfFrqScore | null
   topicScores: TopicScore[]
   advice: { topicTitle: string; prepAdvice: string }[]
+  integrityDeductionPct: number
+  integrityLikelyCheating: boolean
+  tabSwitchCount: number
+  tabSwitchSeconds: number
+  unansweredCount: number
+  totalQuestionCount: number
 }
 
 function performanceLabel(pct: number): string {
@@ -57,7 +63,9 @@ export async function downloadDiagnosticPdf(data: DiagnosticPdfData): Promise<vo
   doc.text(`Student: ${data.studentName}`, lm, 24)
   doc.text(`Date: ${data.dateTaken}`, lm, 31)
 
-  const total = computeTotalScore(data.correctCount, data.totalCount, data.frqScore)
+  const rawTotal = computeTotalScore(data.correctCount, data.totalCount, data.frqScore)
+  const total = applyIntegrityDeduction(rawTotal, data.integrityDeductionPct)
+  const hasDeduction = data.integrityDeductionPct > 0
   const perf = performanceLabel(total.pct)
   const boxHeight = data.frqScore ? 30 : 22
 
@@ -85,6 +93,47 @@ export async function downloadDiagnosticPdf(data: DiagnosticPdfData): Promise<vo
   }
 
   y += boxHeight + 8
+
+  // Test Integrity — raw vs. adjusted score, same reasoning shown on the
+  // in-app results page and in the parent/student email: this directly
+  // changed the grade, so it's shown, not buried.
+  if (hasDeduction) {
+    const boxH = 22
+    doc.setFillColor(255, 247, 237)
+    doc.rect(lm, y, pw, boxH, 'F')
+    doc.setDrawColor(253, 186, 116)
+    doc.rect(lm, y, pw, boxH)
+    doc.setFontSize(11)
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(154, 52, 18)
+    doc.text('Test Integrity: Score Adjusted', lm + 4, y + 7)
+    doc.setFontSize(9)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(124, 45, 18)
+    doc.text(`Before deduction: ${rawTotal.pct}%   →   After deduction: ${total.pct}%   (−${data.integrityDeductionPct}%)`, lm + 4, y + 14)
+    const reasonLines = doc.splitTextToSize(
+      `${data.tabSwitchCount} time${data.tabSwitchCount === 1 ? '' : 's'} away from the test window, ${data.tabSwitchSeconds}s total.` +
+      (data.integrityLikelyCheating ? ' Flagged for teacher review — hard to explain as innocent.' : ' Reflected in the grade; can also happen for innocent reasons.'),
+      pw - 8
+    )
+    doc.text(reasonLines, lm + 4, y + 19)
+    y += boxH + 6
+  }
+
+  // Reason for a low score — only when a meaningful share of the test was
+  // actually left blank, so this doesn't read as an excuse for wrong answers.
+  const unansweredPct = data.totalQuestionCount > 0 ? data.unansweredCount / data.totalQuestionCount : 0
+  if (total.pct < 70 && unansweredPct >= 0.15) {
+    doc.setFontSize(9)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(30, 64, 175)
+    const lines = doc.splitTextToSize(
+      `Note: ${data.unansweredCount} of ${data.totalQuestionCount} questions were left unanswered, which may reflect the test time running out rather than the material not being understood.`,
+      pw
+    )
+    doc.text(lines, lm, y + 4)
+    y += lines.length * 4.5 + 8
+  }
 
   doc.setFontSize(12)
   doc.setFont('helvetica', 'bold')

@@ -49,7 +49,13 @@ export default async function DiagnosticAttemptDetailPage({
           <p className="text-sm text-gray-700"><span className="font-semibold">Student:</span> {lead.student_name} · {lead.student_email}</p>
           <p className="text-sm text-gray-700"><span className="font-semibold">Parent/Guardian:</span> {lead.parent_name} · {lead.parent_email} · {lead.parent_phone}</p>
           <div className="mt-3">
-            <EmailResultButton attemptId={attemptId} studentEmail={lead.student_email} parentEmail={lead.parent_email} />
+            <EmailResultButton
+              attemptId={attemptId}
+              studentEmail={lead.student_email}
+              parentEmail={lead.parent_email}
+              studentName={lead.student_name}
+              weakTopics={lookup.result.advice.map(a => a.topicTitle)}
+            />
           </div>
         </div>
       )}

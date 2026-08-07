@@ -132,3 +132,73 @@ export function computeTotalScore(
   const fullyGraded = !frq || frq.gradedCount === frq.totalCount
   return { earned, possible, pct, fullyGraded }
 }
+
+export type IntegrityTier = 'none' | 'mild' | 'moderate' | 'severe'
+
+export interface IntegrityAssessment {
+  awaySeconds: number
+  awayCount: number
+  // awaySeconds as a fraction of the test's total duration, clamped to
+  // [0, 1] — the primary signal, since "90 seconds away" means something
+  // very different on a 10-minute quiz vs. a 2-hour exam.
+  awayFraction: number
+  deductionPct: number
+  tier: IntegrityTier
+  // Only true for 'severe' — a pattern hard to explain as innocent
+  // (a large share of the test spent away, or a high number of trips).
+  // Surfaced as a flag for teacher review, not an automatic zero.
+  likelyCheating: boolean
+}
+
+// Tuning constants for the deduction curve below. Individual away-events
+// under 5s are already filtered out entirely at the source (see
+// DiagnosticTestSession's AWAY_GRACE_SECONDS) — these thresholds are about
+// the AGGREGATE pattern across the whole attempt.
+const GRACE_SECONDS = 20     // total away-time at/under this, with few trips: no deduction
+const GRACE_COUNT = 2        // trip count at/under this, with little time: no deduction
+const SEVERE_FRACTION = 0.25 // away for more than a quarter of the test: severe
+const SEVERE_COUNT = 10      // more than this many trips away: severe, regardless of duration
+const MIN_DEDUCTION_PCT = 5  // deduction just above the grace zone
+const SEVERE_DEDUCTION_PCT = 50 // deduction ceiling for the severe tier
+
+// Deducts points from a test score based on how much of the test was spent
+// away from the tab. This is a judgment call, not a certainty — a couple of
+// short, spaced-out trips barely register, while spending a large share of
+// the test away, or leaving very frequently, is flagged as likely cheating
+// (a pattern that's hard to explain as innocent) rather than just quietly
+// docking a few points. Not auto-zeroed even then — a teacher reviews it.
+export function assessTestIntegrity(awaySeconds: number, awayCount: number, durationMinutes: number): IntegrityAssessment {
+  const durationSeconds = Math.max(1, durationMinutes * 60)
+  const awayFraction = Math.min(1, awaySeconds / durationSeconds)
+
+  if (awaySeconds <= GRACE_SECONDS && awayCount <= GRACE_COUNT) {
+    return { awaySeconds, awayCount, awayFraction, deductionPct: 0, tier: 'none', likelyCheating: false }
+  }
+
+  if (awayFraction > SEVERE_FRACTION || awayCount > SEVERE_COUNT) {
+    return { awaySeconds, awayCount, awayFraction, deductionPct: SEVERE_DEDUCTION_PCT, tier: 'severe', likelyCheating: true }
+  }
+
+  // Linear ramp from MIN_DEDUCTION_PCT (just past the grace zone) up to
+  // SEVERE_DEDUCTION_PCT (at the severe-fraction boundary).
+  const deductionPct = Math.round(
+    MIN_DEDUCTION_PCT + (awayFraction / SEVERE_FRACTION) * (SEVERE_DEDUCTION_PCT - MIN_DEDUCTION_PCT)
+  )
+  const tier: IntegrityTier = deductionPct < 20 ? 'mild' : 'moderate'
+  return { awaySeconds, awayCount, awayFraction, deductionPct, tier, likelyCheating: false }
+}
+
+// Applies a percentage deduction (from assessTestIntegrity) to an
+// already-computed total score. `possible` (the denominator) is left
+// untouched — the test wasn't worth fewer points, the student's earned
+// score was docked — so "X/Y" displays stay meaningful before and after.
+export function applyIntegrityDeduction(
+  total: { earned: number; possible: number; pct: number; fullyGraded: boolean },
+  deductionPct: number
+): { earned: number; possible: number; pct: number; fullyGraded: boolean } {
+  if (deductionPct <= 0) return total
+  const factor = 1 - deductionPct / 100
+  const earned = Math.round(total.earned * factor)
+  const pct = total.possible > 0 ? Math.round((earned / total.possible) * 100) : 0
+  return { earned, possible: total.possible, pct, fullyGraded: total.fullyGraded }
+}

@@ -20,7 +20,7 @@ export async function getDiagnosticResult(attemptId: string): Promise<Diagnostic
 
   const { data: attempt } = await admin
     .from('diagnostic_attempts')
-    .select('id, diagnostic_test_id, lead_id, status, started_at, submitted_at, correct_count, total_count, score_pct, tab_switch_count, tab_switch_seconds, results_released')
+    .select('id, diagnostic_test_id, lead_id, status, started_at, submitted_at, correct_count, total_count, score_pct, tab_switch_count, tab_switch_seconds, results_released, integrity_deduction_pct, integrity_likely_cheating')
     .eq('id', attemptId)
     .maybeSingle()
   if (!attempt) return { status: 'not_found' }
@@ -121,6 +121,14 @@ export async function getDiagnosticResult(attemptId: string): Promise<Diagnostic
     ? Math.round((new Date(attempt.submitted_at).getTime() - new Date(attempt.started_at).getTime()) / 1000)
     : null
 
+  // How many questions were left blank — surfaced so a low score can be
+  // read correctly as "ran out of time" rather than "didn't know the
+  // material" when that's the more likely explanation (see
+  // DiagnosticResultSummary's low-score note).
+  const unansweredCount = questionReview.filter(q =>
+    q.questionType === 'mcq' ? (q.selectedIndex === null || q.selectedIndex === -1) : !q.canvasData
+  ).length
+
   return {
     status: 'completed',
     result: {
@@ -136,6 +144,12 @@ export async function getDiagnosticResult(attemptId: string): Promise<Diagnostic
       // results page) — see DiagnosticTestSession's tab-switch tracking.
       tabSwitchCount: attempt.tab_switch_count ?? 0,
       tabSwitchSeconds: attempt.tab_switch_seconds ?? 0,
+      // Frozen at submit time (see assessTestIntegrity) — shown to both
+      // student and parent, unlike the raw tab-switch counter above.
+      integrityDeductionPct: attempt.integrity_deduction_pct ?? 0,
+      integrityLikelyCheating: attempt.integrity_likely_cheating ?? false,
+      unansweredCount,
+      totalQuestionCount: questionReview.length,
       // Gates the PUBLIC results page only — the teacher's own attempt page
       // always shows full results regardless of this flag (see
       // app/diagnostic/[slug]/results/[attemptId]/page.tsx vs.

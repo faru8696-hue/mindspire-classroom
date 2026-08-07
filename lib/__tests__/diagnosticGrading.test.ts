@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { tierFor, aggregateTopicScores, gradeDiagnosticAttempt, computeTotalScore, MASTERY_THRESHOLDS } from '../diagnosticGrading'
+import { tierFor, aggregateTopicScores, gradeDiagnosticAttempt, computeTotalScore, MASTERY_THRESHOLDS, assessTestIntegrity, applyIntegrityDeduction } from '../diagnosticGrading'
 
 describe('tierFor', () => {
   it('is "mastered" at and above the mastered threshold', () => {
@@ -136,5 +136,73 @@ describe('computeTotalScore', () => {
     expect(result.earned).toBe(21) // 15 + 6
     expect(result.possible).toBe(27) // 19 + 8
     expect(result.fullyGraded).toBe(true)
+  })
+})
+
+describe('assessTestIntegrity', () => {
+  it('applies no deduction within the grace zone (short, infrequent trips)', () => {
+    const result = assessTestIntegrity(15, 1, 60)
+    expect(result).toEqual({ awaySeconds: 15, awayCount: 1, awayFraction: 15 / 3600, deductionPct: 0, tier: 'none', likelyCheating: false })
+  })
+
+  it('still grants no deduction right at the grace boundary', () => {
+    const result = assessTestIntegrity(20, 2, 60)
+    expect(result.deductionPct).toBe(0)
+    expect(result.tier).toBe('none')
+  })
+
+  it('applies a small deduction just past the grace zone', () => {
+    const result = assessTestIntegrity(25, 3, 60) // 25s of 3600s = ~0.7%
+    expect(result.tier).toBe('mild')
+    expect(result.deductionPct).toBeGreaterThanOrEqual(5)
+    expect(result.deductionPct).toBeLessThan(20)
+    expect(result.likelyCheating).toBe(false)
+  })
+
+  it('scales deduction up toward the severe ceiling as away-fraction increases', () => {
+    // 25% of a 60-minute (3600s) test = 900s, right at the severe boundary
+    const result = assessTestIntegrity(900, 4, 60)
+    expect(result.deductionPct).toBe(50)
+    expect(result.tier).toBe('moderate') // boundary itself isn't flagged severe
+  })
+
+  it('flags severe (likely cheating) when away for more than a quarter of the test', () => {
+    const result = assessTestIntegrity(901, 4, 60)
+    expect(result.tier).toBe('severe')
+    expect(result.deductionPct).toBe(50)
+    expect(result.likelyCheating).toBe(true)
+  })
+
+  it('flags severe on trip count alone, even with modest total time away', () => {
+    const result = assessTestIntegrity(60, 11, 60)
+    expect(result.tier).toBe('severe')
+    expect(result.likelyCheating).toBe(true)
+  })
+
+  it('clamps awayFraction at 1 even if away-time somehow exceeds the test duration', () => {
+    const result = assessTestIntegrity(10000, 3, 10)
+    expect(result.awayFraction).toBe(1)
+    expect(result.tier).toBe('severe')
+  })
+})
+
+describe('applyIntegrityDeduction', () => {
+  it('is a no-op at 0% deduction', () => {
+    const total = { earned: 18, possible: 20, pct: 90, fullyGraded: true }
+    expect(applyIntegrityDeduction(total, 0)).toEqual(total)
+  })
+
+  it('reduces earned and pct but leaves possible untouched', () => {
+    const total = { earned: 18, possible: 20, pct: 90, fullyGraded: true }
+    const result = applyIntegrityDeduction(total, 50)
+    expect(result.possible).toBe(20)
+    expect(result.earned).toBe(9) // 18 * 0.5
+    expect(result.pct).toBe(45) // 9/20
+  })
+
+  it('preserves fullyGraded from the input', () => {
+    const total = { earned: 10, possible: 20, pct: 50, fullyGraded: false }
+    const result = applyIntegrityDeduction(total, 20)
+    expect(result.fullyGraded).toBe(false)
   })
 })

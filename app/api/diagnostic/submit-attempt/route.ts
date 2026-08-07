@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
-import { gradeDiagnosticAttempt, type DiagnosticQuestionForGrading } from '@/lib/diagnosticGrading'
+import { gradeDiagnosticAttempt, assessTestIntegrity, type DiagnosticQuestionForGrading } from '@/lib/diagnosticGrading'
 
 // Public endpoint, no session — grading always happens server-side from the
 // stored mcq_correct_index, never trusting a client-submitted "isCorrect".
@@ -31,6 +31,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ attemptId: attempt.id, alreadyCompleted: true })
   }
 
+  const { data: test } = await admin
+    .from('diagnostic_tests')
+    .select('duration_minutes, class_id')
+    .eq('id', attempt.diagnostic_test_id)
+    .maybeSingle()
+
   const questionIds = attempt.question_ids as string[]
   const { data: questions } = await admin
     .from('diagnostic_questions')
@@ -56,6 +62,15 @@ export async function POST(req: NextRequest) {
   })
 
   const graded = gradeDiagnosticAttempt(answers, gradingQuestions)
+
+  // Frozen at submit time, same reasoning as topic_breakdown below — a later
+  // tuning of the deduction curve must never retroactively change a
+  // historical attempt's grade.
+  const integrity = assessTestIntegrity(
+    body?.tabSwitchSeconds ?? 0,
+    body?.tabSwitchCount ?? 0,
+    test?.duration_minutes ?? 60,
+  )
 
   const answerRows = graded.perQuestion.map(pq => {
     const submitted = answers.find(a => a.questionId === pq.questionId)
@@ -106,6 +121,8 @@ export async function POST(req: NextRequest) {
       // just visibilitychange/blur tracking (see DiagnosticTestSession).
       tab_switch_count: body?.tabSwitchCount ?? 0,
       tab_switch_seconds: body?.tabSwitchSeconds ?? 0,
+      integrity_deduction_pct: integrity.deductionPct,
+      integrity_likely_cheating: integrity.likelyCheating,
     })
     .eq('id', attempt.id)
 
@@ -120,10 +137,7 @@ export async function POST(req: NextRequest) {
   // anonymous start-attempt) and the test is published to a class (a
   // notification has to belong to some class for the bell's mute-by-class
   // and roster grouping to work).
-  const [{ data: lead }, { data: test }] = await Promise.all([
-    admin.from('diagnostic_leads').select('student_id').eq('id', attempt.lead_id).maybeSingle(),
-    admin.from('diagnostic_tests').select('class_id').eq('id', attempt.diagnostic_test_id).maybeSingle(),
-  ])
+  const { data: lead } = await admin.from('diagnostic_leads').select('student_id').eq('id', attempt.lead_id).maybeSingle()
   if (lead?.student_id && test?.class_id) {
     const { error: notifError } = await admin.from('notifications').insert({
       type: 'test_completed',

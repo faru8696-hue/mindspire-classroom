@@ -95,9 +95,16 @@ export default function DiagnosticTestSession({
 
   // Neutral "left the test tab" counter — not a screenshot detector (no such
   // thing exists on the web), just visibilitychange/blur tracking, shown to
-  // the teacher later as a plain fact ("left the tab N times, Xs total"),
-  // never as an accusation. Refs, not state, since nothing here needs to
+  // the teacher (and, with the integrity deduction below, the student and
+  // parent) later as a plain fact ("left the tab N times, Xs total"), never
+  // as an outright accusation. Refs, not state, since nothing here needs to
   // re-render — it's only read once, at submit time.
+  //
+  // A single away-event under AWAY_GRACE_SECONDS isn't counted at all — a
+  // quick glance away (checking a periodic table on the wall, a stray
+  // notification) is common and innocent, and penalizing it would make the
+  // integrity deduction below fire on students who never actually cheated.
+  const AWAY_GRACE_SECONDS = 5
   const tabSwitchCountRef = useRef(0)
   const tabSwitchSecondsRef = useRef(0)
   const awayRef = useRef(false)
@@ -108,14 +115,17 @@ export default function DiagnosticTestSession({
       if (awayRef.current) return
       awayRef.current = true
       awaySinceRef.current = Date.now()
-      tabSwitchCountRef.current += 1
     }
     function markBack() {
       if (!awayRef.current) return
       awayRef.current = false
       if (awaySinceRef.current) {
-        tabSwitchSecondsRef.current += Math.round((Date.now() - awaySinceRef.current) / 1000)
+        const seconds = Math.round((Date.now() - awaySinceRef.current) / 1000)
         awaySinceRef.current = null
+        if (seconds >= AWAY_GRACE_SECONDS) {
+          tabSwitchCountRef.current += 1
+          tabSwitchSecondsRef.current += seconds
+        }
       }
     }
     function onVisibility() { if (document.hidden) markAway(); else markBack() }
