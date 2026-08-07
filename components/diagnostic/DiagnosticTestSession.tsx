@@ -30,9 +30,15 @@ function formatClock(totalSeconds: number): string {
 // hands the student a fresh full timer for free. Computing from started_at
 // every time closes that loophole: however long they were away still counts
 // against the clock.
-function computeSecondsLeft(startedAt: string, durationMinutes: number): number {
+//
+// overtimeSeconds is display-only — whether an attempt actually counts as
+// late, and by how much, is decided authoritatively server-side in
+// submit-attempt (comparing submitted_at to started_at), never trusting
+// this client value, same reasoning MCQ grading already follows.
+function computeTimer(startedAt: string, durationMinutes: number): { secondsLeft: number; overtimeSeconds: number } {
   const elapsed = Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000)
-  return Math.max(0, durationMinutes * 60 - elapsed)
+  const total = durationMinutes * 60
+  return { secondsLeft: Math.max(0, total - elapsed), overtimeSeconds: Math.max(0, elapsed - total) }
 }
 
 // Deterministic per-(attempt, question) shuffle — mulberry32 seeded from a
@@ -63,7 +69,7 @@ function seededShuffle<T>(arr: T[], seed: string): T[] {
 
 export default function DiagnosticTestSession({
   slug, attemptId, testTitle, questions, durationMinutes, startedAt, studentName, studentEmail,
-  initialAnswers, initialCanvasByQuestion,
+  initialAnswers, initialCanvasByQuestion, allowOvertime = false,
 }: {
   slug: string
   attemptId: string
@@ -78,6 +84,12 @@ export default function DiagnosticTestSession({
   // starting over. Empty on a genuinely fresh attempt.
   initialAnswers: { questionId: string; selectedIndex: number }[]
   initialCanvasByQuestion: { questionId: string; canvasData: string }[]
+  // Teacher-controlled per-test setting: when true, reaching 0:00 does NOT
+  // auto-submit — the student can keep answering. Whatever's submitted past
+  // the limit is flagged for the teacher to explicitly accept or reject
+  // before it can ever be released (see submit-attempt and
+  // OvertimeReviewPanel) — this never silently grants extra credit.
+  allowOvertime?: boolean
 }) {
   const router = useRouter()
   const [index, setIndex] = useState(0)
@@ -87,7 +99,8 @@ export default function DiagnosticTestSession({
   // calculations without needing paper. It's saved with the answer either
   // way but never affects MCQ grading (that's still purely selectedIndex).
   const [canvasByQuestion, setCanvasByQuestion] = useState<Map<string, string | null>>(() => new Map(initialCanvasByQuestion.map(c => [c.questionId, c.canvasData])))
-  const [secondsLeft, setSecondsLeft] = useState(() => computeSecondsLeft(startedAt, durationMinutes))
+  const [timer, setTimer] = useState(() => computeTimer(startedAt, durationMinutes))
+  const { secondsLeft, overtimeSeconds } = timer
   const [submitting, setSubmitting] = useState(false)
   const submittingRef = useRef(false)
   const canvasRef = useRef<ScratchBoardHandle>(null)
@@ -209,13 +222,16 @@ export default function DiagnosticTestSession({
   }, [answers, canvasByQuestion, questions, attemptId, slug, router])
 
   useEffect(() => {
-    if (secondsLeft <= 0) { handleSubmit(); return }
+    if (secondsLeft <= 0 && !allowOvertime) { handleSubmit(); return }
     // Recomputed from startedAt on every tick, not decremented by 1 — a
     // backgrounded/throttled tab can't drift the countdown out of sync with
     // real elapsed time, and it stays correct across a page reload too.
-    const t = setTimeout(() => setSecondsLeft(computeSecondsLeft(startedAt, durationMinutes)), 1000)
+    // Depends on the whole `timer` object (not just secondsLeft) so ticking
+    // keeps going once secondsLeft is pinned at 0 in overtime — only
+    // overtimeSeconds is still changing at that point.
+    const t = setTimeout(() => setTimer(computeTimer(startedAt, durationMinutes)), 1000)
     return () => clearTimeout(t)
-  }, [secondsLeft, handleSubmit, startedAt, durationMinutes])
+  }, [timer, secondsLeft, allowOvertime, handleSubmit, startedAt, durationMinutes])
 
   // Periodic autosave — captures the current question's scratch board plus
   // every answer/canvas gathered so far and sends it to the server so a
@@ -286,9 +302,15 @@ export default function DiagnosticTestSession({
             <span className="font-bold text-gray-800 text-sm">{testTitle}</span>
           </div>
           <div className="flex items-center gap-4">
-            <span className={`text-sm font-mono px-2 py-1 rounded-full ${secondsLeft < 300 ? 'bg-red-100 text-red-600' : 'text-gray-500'}`}>
-              ⏱ {formatClock(secondsLeft)}
-            </span>
+            {overtimeSeconds > 0 ? (
+              <span className="text-sm font-mono px-2 py-1 rounded-full bg-orange-100 text-orange-700 animate-pulse" title="Time's up, but your teacher has allowed extra time. Anything you answer now will be flagged for them to review.">
+                ⏰ +{formatClock(overtimeSeconds)} overtime
+              </span>
+            ) : (
+              <span className={`text-sm font-mono px-2 py-1 rounded-full ${secondsLeft < 300 ? 'bg-red-100 text-red-600' : 'text-gray-500'}`}>
+                ⏱ {formatClock(secondsLeft)}
+              </span>
+            )}
             <span className="text-sm font-semibold text-gray-600">{index + 1} / {questions.length}</span>
           </div>
         </div>

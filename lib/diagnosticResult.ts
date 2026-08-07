@@ -37,6 +37,14 @@ export async function getDiagnosticResult(attemptId: string): Promise<Diagnostic
     .eq('id', attemptId)
     .maybeSingle()
 
+  // Same defensive pattern, for add-diagnostic-overtime.sql — an
+  // independent migration from the integrity one above.
+  const { data: overtimeRow } = await admin
+    .from('diagnostic_attempts')
+    .select('submitted_late, overtime_seconds, overtime_accepted')
+    .eq('id', attemptId)
+    .maybeSingle()
+
   const [{ data: test }, { data: lead }, { data: answers }] = await Promise.all([
     admin.from('diagnostic_tests').select('title').eq('id', attempt.diagnostic_test_id).maybeSingle(),
     admin.from('diagnostic_leads').select('student_name').eq('id', attempt.lead_id).maybeSingle(),
@@ -159,6 +167,13 @@ export async function getDiagnosticResult(attemptId: string): Promise<Diagnostic
       // student and parent, unlike the raw tab-switch counter above.
       integrityDeductionPct: integrityRow?.integrity_deduction_pct ?? 0,
       integrityLikelyCheating: integrityRow?.integrity_likely_cheating ?? false,
+      // Whether this attempt was submitted after the time limit (only
+      // possible when the test's allow_overtime was on), how far past, and
+      // whether the teacher has explicitly accepted it — release-results
+      // and email-result both refuse to release a late+unaccepted attempt.
+      submittedLate: overtimeRow?.submitted_late ?? false,
+      overtimeSeconds: overtimeRow?.overtime_seconds ?? 0,
+      overtimeAccepted: overtimeRow?.overtime_accepted ?? null,
       unansweredCount,
       totalQuestionCount: questionReview.length,
       // Gates the PUBLIC results page only — the teacher's own attempt page

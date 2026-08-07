@@ -5,6 +5,7 @@ import { getDiagnosticResult } from '@/lib/diagnosticResult'
 import DiagnosticResultSummary from '@/components/diagnostic/DiagnosticResultSummary'
 import EmailResultButton from '@/components/diagnostic/EmailResultButton'
 import ReleaseResultsToggle from '@/components/diagnostic/ReleaseResultsToggle'
+import OvertimeReviewPanel from '@/components/diagnostic/OvertimeReviewPanel'
 
 export default async function DiagnosticAttemptDetailPage({
   params,
@@ -42,6 +43,14 @@ export default async function DiagnosticAttemptDetailPage({
         <Link href={`/teacher/diagnostics/${testId}`} className="text-blue-600 text-sm hover:underline">← Back to test dashboard</Link>
         <ReleaseResultsToggle attemptId={attemptId} released={lookup.result.resultsReleased} />
       </div>
+
+      {lookup.result.submittedLate && (
+        <OvertimeReviewPanel
+          attemptId={attemptId}
+          overtimeSeconds={lookup.result.overtimeSeconds}
+          overtimeAccepted={lookup.result.overtimeAccepted}
+        />
+      )}
 
       {lead && (
         <div className="bg-white rounded-2xl border border-gray-200 p-5 mb-4">

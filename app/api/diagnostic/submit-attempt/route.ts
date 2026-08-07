@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
 
   const { data: attempt } = await admin
     .from('diagnostic_attempts')
-    .select('id, diagnostic_test_id, lead_id, question_ids, status')
+    .select('id, diagnostic_test_id, lead_id, question_ids, status, started_at')
     .eq('id', attemptId)
     .maybeSingle()
   if (!attempt) return NextResponse.json({ error: 'Attempt not found.' }, { status: 404 })
@@ -71,6 +71,15 @@ export async function POST(req: NextRequest) {
     body?.tabSwitchCount ?? 0,
     test?.duration_minutes ?? 60,
   )
+
+  // Whether this submission landed after the time limit, and by how much —
+  // computed from the attempt's own started_at, never from anything the
+  // client sent, same "don't trust the client" rule grading follows. Only
+  // meaningful for a test with allow_overtime on (see DiagnosticTestSession)
+  // — everything else auto-submits at 0:00 and can never actually be late.
+  const elapsedSeconds = Math.floor((Date.now() - new Date(attempt.started_at).getTime()) / 1000)
+  const overtimeSeconds = Math.max(0, elapsedSeconds - (test?.duration_minutes ?? 60) * 60)
+  const submittedLate = overtimeSeconds > 0
 
   const answerRows = graded.perQuestion.map(pq => {
     const submitted = answers.find(a => a.questionId === pq.questionId)
@@ -139,6 +148,15 @@ export async function POST(req: NextRequest) {
     })
     .eq('id', attempt.id)
   if (integrityUpdateError) console.error('submit-attempt integrity update error (migration likely not run yet):', integrityUpdateError)
+
+  // Separate, best-effort — same reasoning as the integrity update above,
+  // but for add-diagnostic-overtime.sql specifically, which is an
+  // independent migration a teacher may or may not have run yet.
+  const { error: overtimeUpdateError } = await admin
+    .from('diagnostic_attempts')
+    .update({ submitted_late: submittedLate, overtime_seconds: overtimeSeconds })
+    .eq('id', attempt.id)
+  if (overtimeUpdateError) console.error('submit-attempt overtime update error (migration likely not run yet):', overtimeUpdateError)
 
   if (updateError) {
     console.error('submit-attempt update error:', updateError)

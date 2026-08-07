@@ -18,6 +18,23 @@ export async function POST(req: NextRequest) {
   }
 
   const admin = await createAdminClient()
+
+  // A late (overtime) submission can't be released until the teacher has
+  // explicitly accepted it (see OvertimeReviewPanel) — fetched separately,
+  // defaulting to "not late" on error since add-diagnostic-overtime.sql may
+  // not have been run yet, same defensive pattern used throughout this
+  // feature. Only blocks turning release ON; hiding is always allowed.
+  if (released) {
+    const { data: overtimeRow } = await admin
+      .from('diagnostic_attempts')
+      .select('submitted_late, overtime_accepted')
+      .eq('id', attemptId)
+      .maybeSingle()
+    if (overtimeRow?.submitted_late && overtimeRow.overtime_accepted !== true) {
+      return NextResponse.json({ error: 'This attempt was submitted after the time limit — accept or reject the overtime score first.' }, { status: 400 })
+    }
+  }
+
   const { error } = await admin
     .from('diagnostic_attempts')
     .update({ results_released: released })

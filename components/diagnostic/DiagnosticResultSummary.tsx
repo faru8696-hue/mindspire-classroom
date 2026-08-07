@@ -52,6 +52,14 @@ export interface DiagnosticResultData {
   // more likely explained by running out of time than by wrong answers.
   unansweredCount: number
   totalQuestionCount: number
+  // Only ever true when the test's allow_overtime was on (see
+  // DiagnosticTestSession) — otherwise the timer auto-submits at 0:00 and a
+  // late submission can't happen at all. overtimeAccepted is null until the
+  // teacher explicitly decides; release-results/email-result both refuse to
+  // release a late+unaccepted attempt (see OvertimeReviewPanel).
+  submittedLate: boolean
+  overtimeSeconds: number
+  overtimeAccepted: boolean | null
   // Gates the public results page only — see lib/diagnosticResult.ts.
   resultsReleased: boolean
   topicScores: TopicScore[]

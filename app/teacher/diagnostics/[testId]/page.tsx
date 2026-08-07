@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { aggregateTopicScores, computeTotalScore } from '@/lib/diagnosticGrading'
 import TestTitleEditor from '@/components/diagnostic/TestTitleEditor'
+import TestTimingEditor from '@/components/diagnostic/TestTimingEditor'
 import StudentResultsTable, { type StudentResultRow } from '@/components/diagnostic/StudentResultsTable'
 import PublishToClass from '@/components/diagnostic/PublishToClass'
 import DeleteTestButton from '@/components/diagnostic/DeleteTestButton'
@@ -22,6 +23,12 @@ export default async function DiagnosticTestDashboardPage({
     .eq('id', testId)
     .maybeSingle()
   if (!test) notFound()
+
+  // Fetched separately, defaulting to "off" on error — allow_overtime only
+  // exists once add-diagnostic-overtime.sql has been run (same defensive
+  // pattern as the integrity-deduction fields: the main test query above
+  // must never depend on a column that might not exist yet).
+  const { data: overtimeRow } = await admin.from('diagnostic_tests').select('allow_overtime').eq('id', testId).maybeSingle()
 
   const { data: classes } = await admin.from('classes').select('id, title').order('order_index')
 
@@ -130,6 +137,9 @@ export default async function DiagnosticTestDashboardPage({
           <Link href={`/teacher/diagnostics/${testId}/questions`} className="text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg font-semibold transition">Manage Questions</Link>
           <DeleteTestButton testId={testId} title={test.title} />
         </div>
+      </div>
+      <div className="mb-3">
+        <TestTimingEditor testId={testId} title={test.title} durationMinutes={test.duration_minutes} allowOvertime={overtimeRow?.allow_overtime ?? false} />
       </div>
       <p className="text-sm text-gray-500 mb-4">
         Public link: <a href={`/diagnostic/${test.slug}`} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">/diagnostic/{test.slug}</a>

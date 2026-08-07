@@ -31,6 +31,12 @@ export default async function DiagnosticTakePage({
   ])
   if (!test) notFound()
 
+  // Fetched separately, defaulting to "off" on error — allow_overtime only
+  // exists once add-diagnostic-overtime.sql has been run, and the core test
+  // fetch above must never depend on that (same defensive pattern used for
+  // the integrity-deduction fields).
+  const { data: overtimeRow } = await admin.from('diagnostic_tests').select('allow_overtime').eq('id', attempt.diagnostic_test_id).maybeSingle()
+
   const questionIds = attempt.question_ids as string[]
   const { data: questions } = await admin
     .from('diagnostic_questions')
@@ -67,6 +73,7 @@ export default async function DiagnosticTakePage({
       questions={sessionQuestions}
       durationMinutes={test.duration_minutes}
       startedAt={attempt.started_at}
+      allowOvertime={overtimeRow?.allow_overtime ?? false}
       studentName={lead?.student_name ?? ''}
       studentEmail={lead?.student_email ?? ''}
       initialAnswers={(draftAnswers ?? [])

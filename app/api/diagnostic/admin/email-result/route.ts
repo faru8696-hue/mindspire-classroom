@@ -182,6 +182,14 @@ export async function POST(req: NextRequest) {
   const lookup = await getDiagnosticResult(attemptId)
   if (lookup.status !== 'completed') return NextResponse.json({ error: 'This attempt is not completed yet.' }, { status: 400 })
 
+  // Same rule as release-results: a late (overtime) submission can't be
+  // emailed — even a partial MCQ-only send — until the teacher has
+  // explicitly accepted it via OvertimeReviewPanel, since any send reveals
+  // a score computed from not-yet-validated overtime work.
+  if (lookup.result.submittedLate && lookup.result.overtimeAccepted !== true) {
+    return NextResponse.json({ error: 'This attempt was submitted after the time limit — accept or reject the overtime score first.' }, { status: 400 })
+  }
+
   const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://classroom.mindspirelab.com'
   const { data: test } = await admin.from('diagnostic_tests').select('slug').eq('id', attempt.diagnostic_test_id).maybeSingle()
   const resultsUrl = `${baseUrl}/diagnostic/${test?.slug ?? ''}/results/${attemptId}`
