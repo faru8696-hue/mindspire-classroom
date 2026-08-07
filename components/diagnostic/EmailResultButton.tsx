@@ -7,10 +7,20 @@ import { useRouter } from 'next/navigation'
 // always fall back to the free-text note for anything not covered here.
 const COMMON_ISSUES = [
   'Struggled to show work clearly on free-response questions',
+  'Did not show any work',
   'Rushed through questions — answers seem incomplete',
   'Left several questions unanswered (time management)',
   'Correct final answers but reasoning/work not shown',
   'Difficulty with multiple-choice reasoning / process of elimination',
+  'Careless errors — understood the concept but made a calculation mistake',
+  'Answer missing units',
+  'Struggled with units or significant figures',
+  'Misread or misunderstood what the question was asking',
+  'Confused similar concepts or formulas',
+  'Guessed on several multiple-choice questions rather than working through them',
+  'Would benefit from reviewing class notes/practice problems before the next test',
+  'Recommend a short one-on-one review session to go over missed topics',
+  'Strong effort and consistent performance — keep it up',
 ]
 
 export default function EmailResultButton({
