@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto'
 import { getCaller, createAdminClient } from '@/lib/supabase/server'
 import { getDiagnosticResult } from '@/lib/diagnosticResult'
 import { resultEmailHtml } from '@/lib/diagnosticEmailTemplate'
+import { resolveLeadContact } from '@/lib/diagnosticContact'
 import { sendEmail } from '@/lib/email'
 
 // Teacher-only: instead of emailing the student/parent directly, this sends
@@ -39,11 +40,7 @@ export async function POST(req: NextRequest) {
     .maybeSingle()
   if (!attempt) return NextResponse.json({ error: 'Attempt not found.' }, { status: 404 })
 
-  const { data: lead } = await admin
-    .from('diagnostic_leads')
-    .select('parent_email')
-    .eq('id', attempt.lead_id)
-    .maybeSingle()
+  const lead = await resolveLeadContact(admin, attempt.lead_id)
   if (!lead) return NextResponse.json({ error: 'No contact info found for this attempt.' }, { status: 404 })
 
   const lookup = await getDiagnosticResult(attemptId)
@@ -82,7 +79,7 @@ export async function POST(req: NextRequest) {
     <div style="font-family: -apple-system, sans-serif; max-width: 560px;">
       <div style="padding:14px 16px; background:#eef2ff; border:1px solid #c7d2fe; border-radius:8px; margin-bottom:16px;">
         <p style="margin:0 0 8px; font-weight:700; color:#3730a3; font-size:14px;">📋 This is a preview — nothing has been sent to the parent yet.</p>
-        <p style="margin:0 0 12px; font-size:13px; color:#4338ca;">This is exactly what ${lead.parent_email} will receive. Review it below, then confirm to actually send it.</p>
+        <p style="margin:0 0 12px; font-size:13px; color:#4338ca;">This is exactly what ${lead.parentEmail} will receive. Review it below, then confirm to actually send it.</p>
         <a href="${confirmUrl}" style="display:inline-block; background:#4338ca; color:#fff; text-decoration:none; padding:9px 16px; border-radius:8px; font-weight:600; font-size:13px;">Confirm &amp; Send to Parent →</a>
       </div>
       ${resultEmailHtml(lookup.result, lookup.result.studentName, resultsUrl, note, includeMcq, includeFrq, includeIntegrityNote)}

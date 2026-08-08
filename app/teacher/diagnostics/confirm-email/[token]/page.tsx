@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { createAdminClient } from '@/lib/supabase/server'
 import { getDiagnosticResult } from '@/lib/diagnosticResult'
 import { resultEmailHtml } from '@/lib/diagnosticEmailTemplate'
+import { resolveLeadContact } from '@/lib/diagnosticContact'
 import ConfirmEmailActions from './ConfirmEmailActions'
 
 // Reached from the "Confirm & Send" link in the preview email (see
@@ -34,9 +35,7 @@ export default async function ConfirmEmailPage({ params }: { params: Promise<{ t
     .select('id, lead_id, diagnostic_test_id')
     .eq('id', attemptId)
     .maybeSingle()
-  const { data: lead } = attempt
-    ? await admin.from('diagnostic_leads').select('student_name, student_email, parent_name, parent_email').eq('id', attempt.lead_id).maybeSingle()
-    : { data: null }
+  const lead = attempt ? await resolveLeadContact(admin, attempt.lead_id) : null
   const { data: test } = attempt
     ? await admin.from('diagnostic_tests').select('slug').eq('id', attempt.diagnostic_test_id).maybeSingle()
     : { data: null }
@@ -48,7 +47,7 @@ export default async function ConfirmEmailPage({ params }: { params: Promise<{ t
 
   const previewHtml = lookup.status === 'completed' && lead
     ? resultEmailHtml(
-        lookup.result, lead.parent_name, resultsUrl,
+        lookup.result, lead.parentName, resultsUrl,
         (pending.teacher_note as string | null), pending.include_mcq as boolean, pending.include_frq as boolean, pending.include_integrity_note as boolean,
       )
     : null
@@ -59,7 +58,7 @@ export default async function ConfirmEmailPage({ params }: { params: Promise<{ t
 
       <div className="bg-white rounded-2xl border border-gray-200 p-5">
         <h1 className="font-bold text-gray-800 mb-1">Review Before Sending</h1>
-        {lead && <p className="text-xs text-gray-500 mb-4">To {lead.student_email} and {lead.parent_email}</p>}
+        {lead && <p className="text-xs text-gray-500 mb-4">To {lead.studentEmail} and {lead.parentEmail}</p>}
 
         {pending.status !== 'pending' ? (
           <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-gray-600 font-semibold text-center">

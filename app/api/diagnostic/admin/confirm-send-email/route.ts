@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getCaller, createAdminClient } from '@/lib/supabase/server'
 import { getDiagnosticResult } from '@/lib/diagnosticResult'
 import { resultEmailHtml } from '@/lib/diagnosticEmailTemplate'
+import { resolveLeadContact } from '@/lib/diagnosticContact'
 import { sendEmail } from '@/lib/email'
 
 // Teacher-only: the actual send, triggered by the "Confirm & Send" button on
@@ -36,11 +37,7 @@ export async function POST(req: NextRequest) {
     .maybeSingle()
   if (!attempt) return NextResponse.json({ error: 'Attempt not found.' }, { status: 404 })
 
-  const { data: lead } = await admin
-    .from('diagnostic_leads')
-    .select('student_name, student_email, parent_name, parent_email')
-    .eq('id', attempt.lead_id)
-    .maybeSingle()
+  const lead = await resolveLeadContact(admin, attempt.lead_id)
   if (!lead) return NextResponse.json({ error: 'No contact info found for this attempt.' }, { status: 404 })
 
   const lookup = await getDiagnosticResult(attemptId)
@@ -66,17 +63,17 @@ export async function POST(req: NextRequest) {
   const errors: string[] = []
 
   try {
-    await sendEmail({ to: lead.student_email, subject, html: resultEmailHtml(lookup.result, lead.student_name, resultsUrl, note, includeMcq, includeFrq, includeIntegrityNote) })
-    sentTo.push(lead.student_email)
+    await sendEmail({ to: lead.studentEmail, subject, html: resultEmailHtml(lookup.result, lead.studentName, resultsUrl, note, includeMcq, includeFrq, includeIntegrityNote) })
+    sentTo.push(lead.studentEmail)
   } catch (e) {
-    errors.push(`student (${lead.student_email}): ${e instanceof Error ? e.message : 'failed'}`)
+    errors.push(`student (${lead.studentEmail}): ${e instanceof Error ? e.message : 'failed'}`)
   }
 
   try {
-    await sendEmail({ to: lead.parent_email, subject, html: resultEmailHtml(lookup.result, lead.parent_name, resultsUrl, note, includeMcq, includeFrq, includeIntegrityNote) })
-    sentTo.push(lead.parent_email)
+    await sendEmail({ to: lead.parentEmail, subject, html: resultEmailHtml(lookup.result, lead.parentName, resultsUrl, note, includeMcq, includeFrq, includeIntegrityNote) })
+    sentTo.push(lead.parentEmail)
   } catch (e) {
-    errors.push(`parent (${lead.parent_email}): ${e instanceof Error ? e.message : 'failed'}`)
+    errors.push(`parent (${lead.parentEmail}): ${e instanceof Error ? e.message : 'failed'}`)
   }
 
   if (sentTo.length === 0) {
