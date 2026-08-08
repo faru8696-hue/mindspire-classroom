@@ -1,7 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 
 // A curated starting point, not an exhaustive taxonomy — a teacher can
 // always fall back to the free-text note for anything not covered here.
@@ -111,7 +110,6 @@ export default function EmailResultButton({
   // actually something to report — 0 means the student never left the tab.
   tabSwitchCount: number
 }) {
-  const router = useRouter()
   const [open, setOpen] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [customNote, setCustomNote] = useState('')
@@ -173,10 +171,7 @@ export default function EmailResultButton({
       if (!res.ok) { setError(data.error || 'Something went wrong.'); setSending(false); return }
       setSent(true)
       setOpen(false)
-      setTimeout(() => setSent(false), 5000)
-      // Sending the email also releases the results (see the API route) —
-      // refresh so the release toggle next to this button picks that up.
-      router.refresh()
+      setTimeout(() => setSent(false), 8000)
     } catch {
       setError('Connection error.')
     } finally {
@@ -192,16 +187,17 @@ export default function EmailResultButton({
           sent ? 'bg-green-100 text-green-700' : 'bg-indigo-600 hover:bg-indigo-700 text-white'
         }`}
       >
-        {sent ? '✓ Sent' : '✉️ Email Results to Student & Parent'}
+        {sent ? '✓ Sent to your email for review' : '✉️ Email Results to Student & Parent'}
       </button>
+      {sent && <p className="text-xs text-gray-500 mt-1">Nothing has gone to the parent yet — check your email and confirm from there.</p>}
       {error && <p className="text-red-600 text-xs mt-1">{error}</p>}
 
       {open && (
         <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={() => !sending && setOpen(false)}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-5 space-y-4 max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <div>
-              <h3 className="font-bold text-gray-800">Review Before Sending</h3>
-              <p className="text-xs text-gray-500 mt-1">To {studentEmail} and {parentEmail}</p>
+              <h3 className="font-bold text-gray-800">Compose Result Email</h3>
+              <p className="text-xs text-gray-500 mt-1">Sends a preview to your own email first — you&rsquo;ll confirm from there before {studentEmail} or {parentEmail} see anything.</p>
             </div>
 
             {hasFrq && (
@@ -300,7 +296,7 @@ export default function EmailResultButton({
                 disabled={sending || (!includeMcq && !includeFrq)}
                 className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl disabled:opacity-50"
               >
-                {sending ? 'Sending…' : 'Send to Student & Parent'}
+                {sending ? 'Sending preview…' : 'Send Preview to My Email'}
               </button>
               <button
                 onClick={() => setOpen(false)}
