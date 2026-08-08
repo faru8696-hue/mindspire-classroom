@@ -2,6 +2,7 @@ import { createAdminClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import StudentNotes from './StudentNotes'
+import StudentProfileEditor from './StudentProfileEditor'
 import { getRecentActivity } from '@/lib/activity'
 import ActivityFeed from '@/components/ActivityFeed'
 
@@ -131,70 +132,21 @@ export default async function StudentDetailPage({ params }: { params: Promise<{ 
       </div>
 
       {/* Profile card */}
-      <div className="bg-white rounded-2xl border border-gray-200 p-6 flex items-start gap-5">
-        {student.avatar_url ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={student.avatar_url} alt="avatar" className="w-16 h-16 rounded-full object-cover border-2 border-purple-200 flex-shrink-0" />
-        ) : (
-          <div className="w-16 h-16 rounded-full bg-purple-100 flex items-center justify-center text-2xl font-bold text-purple-600 flex-shrink-0">
-            {((student.nickname || student.full_name) ?? '?').charAt(0).toUpperCase()}
-          </div>
-        )}
-        <div className="flex-1 min-w-0 grid grid-cols-2 gap-x-8 gap-y-1.5">
-          <div>
-            <p className="text-xs text-gray-400 uppercase tracking-wide">Name</p>
-            <p className="text-sm font-semibold text-gray-900">{student.full_name}</p>
-          </div>
-          {student.nickname && (
-            <div>
-              <p className="text-xs text-gray-400 uppercase tracking-wide">Nickname</p>
-              <p className="text-sm text-gray-700">{student.nickname}</p>
-            </div>
-          )}
-          {(student as { email?: string }).email && (
-            <div>
-              <p className="text-xs text-gray-400 uppercase tracking-wide">Email</p>
-              <p className="text-sm text-gray-700">{(student as { email?: string }).email}</p>
-            </div>
-          )}
-          {student.grade_level && (
-            <div>
-              <p className="text-xs text-gray-400 uppercase tracking-wide">Grade Level</p>
-              <p className="text-sm text-gray-700">{student.grade_level}</p>
-            </div>
-          )}
-          {student.phone && (
-            <div>
-              <p className="text-xs text-gray-400 uppercase tracking-wide">Student Phone</p>
-              <p className="text-sm text-gray-700">{student.phone}</p>
-            </div>
-          )}
-          {parentName && (
-            <div>
-              <p className="text-xs text-gray-400 uppercase tracking-wide">Parent / Guardian</p>
-              <p className="text-sm text-gray-700">{parentName}</p>
-            </div>
-          )}
-          {parentPhone && (
-            <div>
-              <p className="text-xs text-gray-400 uppercase tracking-wide">Parent Phone</p>
-              <p className="text-sm text-gray-700">{parentPhone}</p>
-            </div>
-          )}
-          {parentEmail && (
-            <div>
-              <p className="text-xs text-gray-400 uppercase tracking-wide">Parent Email</p>
-              <p className="text-sm text-gray-700">{parentEmail}</p>
-            </div>
-          )}
-          {enrolledClasses.length > 0 && (
-            <div>
-              <p className="text-xs text-gray-400 uppercase tracking-wide">Class{enrolledClasses.length > 1 ? 'es' : ''}</p>
-              <p className="text-sm text-gray-700">{enrolledClasses.map(c => c.title).join(', ')}</p>
-            </div>
-          )}
-        </div>
-      </div>
+      <StudentProfileEditor
+        studentId={studentId}
+        avatarUrl={student.avatar_url}
+        enrolledClassNames={enrolledClasses.map(c => c.title)}
+        initial={{
+          fullName: student.full_name ?? '',
+          nickname: student.nickname ?? '',
+          email: (student as { email?: string }).email ?? '',
+          gradeLevel: student.grade_level ?? '',
+          phone: student.phone ?? '',
+          parentName: parentName ?? '',
+          parentPhone: parentPhone ?? '',
+          parentEmail: parentEmail ?? '',
+        }}
+      />
 
       {/* Stats header */}
       <div>
