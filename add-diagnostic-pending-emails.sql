@@ -17,3 +17,9 @@ create table if not exists diagnostic_pending_emails (
   confirmed_at timestamptz
 );
 create index if not exists diagnostic_pending_emails_token_idx on diagnostic_pending_emails(token);
+
+-- Every read/write to this table goes through the service-role admin
+-- client (which bypasses RLS regardless), never the anon/authenticated
+-- client — so RLS with no policies just locks it to service-role only,
+-- matching the pattern already used by the rest of this app's tables.
+alter table diagnostic_pending_emails enable row level security;
