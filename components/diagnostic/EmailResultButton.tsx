@@ -119,8 +119,8 @@ export default function EmailResultButton({
   // per-send for a case they'd rather not raise with this parent, e.g. a
   // single brief, clearly-innocent trip away from the tab.
   const [includeIntegrityNote, setIncludeIntegrityNote] = useState(true)
-  const [sending, setSending] = useState(false)
-  const [sent, setSent] = useState(false)
+  const [sending, setSending] = useState<'preview' | 'direct' | null>(null)
+  const [sent, setSent] = useState<'preview' | 'direct' | null>(null)
   const [error, setError] = useState('')
 
   // weakTopics turned into Issues the same shape as the static ones — label
@@ -151,12 +151,12 @@ export default function EmailResultButton({
     studentName,
   )
 
-  async function send() {
+  async function send(mode: 'preview' | 'direct') {
     if (!includeMcq && !includeFrq) { setError('Include at least Multiple Choice or Free Response.'); return }
     setError('')
-    setSending(true)
+    setSending(mode)
     try {
-      const res = await fetch('/api/diagnostic/admin/email-result', {
+      const res = await fetch(mode === 'preview' ? '/api/diagnostic/admin/email-result' : '/api/diagnostic/admin/email-result-direct', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -168,14 +168,14 @@ export default function EmailResultButton({
         }),
       })
       const data = await res.json()
-      if (!res.ok) { setError(data.error || 'Something went wrong.'); setSending(false); return }
-      setSent(true)
+      if (!res.ok) { setError(data.error || 'Something went wrong.'); setSending(null); return }
+      setSent(mode)
       setOpen(false)
-      setTimeout(() => setSent(false), 8000)
+      setTimeout(() => setSent(null), 8000)
     } catch {
       setError('Connection error.')
     } finally {
-      setSending(false)
+      setSending(null)
     }
   }
 
@@ -187,9 +187,10 @@ export default function EmailResultButton({
           sent ? 'bg-green-100 text-green-700' : 'bg-indigo-600 hover:bg-indigo-700 text-white'
         }`}
       >
-        {sent ? '✓ Sent to your email for review' : '✉️ Email Results to Student & Parent'}
+        {sent === 'preview' ? '✓ Sent to your email for review' : sent === 'direct' ? '✓ Sent to Parent' : '✉️ Email Results to Student & Parent'}
       </button>
-      {sent && <p className="text-xs text-gray-500 mt-1">Nothing has gone to the parent yet — check your email and confirm from there.</p>}
+      {sent === 'preview' && <p className="text-xs text-gray-500 mt-1">Nothing has gone to the parent yet — check your email and confirm from there.</p>}
+      {sent === 'direct' && <p className="text-xs text-gray-500 mt-1">Delivered to {studentEmail} and {parentEmail}.</p>}
       {error && <p className="text-red-600 text-xs mt-1">{error}</p>}
 
       {open && (
@@ -197,7 +198,10 @@ export default function EmailResultButton({
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-5 space-y-4 max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <div>
               <h3 className="font-bold text-gray-800">Compose Result Email</h3>
-              <p className="text-xs text-gray-500 mt-1">Sends a preview to your own email first — you&rsquo;ll confirm from there before {studentEmail} or {parentEmail} see anything.</p>
+              <div className="bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2 mt-2">
+                <p className="text-xs text-indigo-900"><span className="font-semibold">Parent:</span> {parentEmail}</p>
+                <p className="text-xs text-indigo-900"><span className="font-semibold">Student:</span> {studentEmail}</p>
+              </div>
             </div>
 
             {hasFrq && (
@@ -290,18 +294,27 @@ export default function EmailResultButton({
               </div>
             )}
 
-            <div className="flex gap-2 pt-2 border-t border-gray-100">
-              <button
-                onClick={send}
-                disabled={sending || (!includeMcq && !includeFrq)}
-                className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl disabled:opacity-50"
-              >
-                {sending ? 'Sending preview…' : 'Send Preview to My Email'}
-              </button>
+            <div className="pt-2 border-t border-gray-100 space-y-2">
+              <div className="flex gap-2">
+                <button
+                  onClick={() => send('preview')}
+                  disabled={sending !== null || (!includeMcq && !includeFrq)}
+                  className="flex-1 bg-white border border-indigo-300 text-indigo-700 hover:bg-indigo-50 text-sm font-semibold px-4 py-2.5 rounded-xl disabled:opacity-50"
+                >
+                  {sending === 'preview' ? 'Sending…' : 'Send Preview to Me'}
+                </button>
+                <button
+                  onClick={() => send('direct')}
+                  disabled={sending !== null || (!includeMcq && !includeFrq)}
+                  className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl disabled:opacity-50"
+                >
+                  {sending === 'direct' ? 'Sending…' : `Send to Parent (${parentEmail})`}
+                </button>
+              </div>
               <button
                 onClick={() => setOpen(false)}
-                disabled={sending}
-                className="px-4 py-2.5 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-100 disabled:opacity-50"
+                disabled={sending !== null}
+                className="w-full px-4 py-2 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-100 disabled:opacity-50"
               >
                 Cancel
               </button>

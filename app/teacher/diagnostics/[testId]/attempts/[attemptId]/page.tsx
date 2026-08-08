@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { createAdminClient } from '@/lib/supabase/server'
 import { getDiagnosticResult } from '@/lib/diagnosticResult'
+import { resolveLeadContact } from '@/lib/diagnosticContact'
 import DiagnosticResultSummary from '@/components/diagnostic/DiagnosticResultSummary'
 import EmailResultButton from '@/components/diagnostic/EmailResultButton'
 import ReleaseResultsToggle from '@/components/diagnostic/ReleaseResultsToggle'
@@ -23,8 +24,8 @@ export default async function DiagnosticAttemptDetailPage({
     .maybeSingle()
   if (!attempt) notFound()
 
-  const [{ data: lead }, lookup] = await Promise.all([
-    admin.from('diagnostic_leads').select('student_name, student_email, parent_name, parent_email, parent_phone').eq('id', attempt.lead_id).maybeSingle(),
+  const [lead, lookup] = await Promise.all([
+    resolveLeadContact(admin, attempt.lead_id),
     getDiagnosticResult(attemptId),
   ])
 
@@ -55,14 +56,14 @@ export default async function DiagnosticAttemptDetailPage({
       {lead && (
         <div className="bg-white rounded-2xl border border-gray-200 p-5 mb-4">
           <p className="text-xs uppercase tracking-widest text-blue-500 font-semibold mb-2">Contact Info</p>
-          <p className="text-sm text-gray-700"><span className="font-semibold">Student:</span> {lead.student_name} · {lead.student_email}</p>
-          <p className="text-sm text-gray-700"><span className="font-semibold">Parent/Guardian:</span> {lead.parent_name} · {lead.parent_email} · {lead.parent_phone}</p>
+          <p className="text-sm text-gray-700"><span className="font-semibold">Student:</span> {lead.studentName} · {lead.studentEmail}</p>
+          <p className="text-sm text-gray-700"><span className="font-semibold">Parent/Guardian:</span> {lead.parentName} · {lead.parentEmail} · {lead.parentPhone}</p>
           <div className="mt-3">
             <EmailResultButton
               attemptId={attemptId}
-              studentEmail={lead.student_email}
-              parentEmail={lead.parent_email}
-              studentName={lead.student_name}
+              studentEmail={lead.studentEmail}
+              parentEmail={lead.parentEmail}
+              studentName={lead.studentName}
               weakTopics={lookup.result.advice.map(a => a.topicTitle)}
               hasFrq={!!lookup.result.frqScore}
               tabSwitchCount={lookup.result.tabSwitchCount}

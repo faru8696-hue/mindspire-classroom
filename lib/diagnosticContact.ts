@@ -5,6 +5,7 @@ export interface LeadContact {
   studentEmail: string
   parentName: string
   parentEmail: string
+  parentPhone: string
 }
 
 // diagnostic_leads freezes contact info at the moment a test is taken —
@@ -17,7 +18,7 @@ export interface LeadContact {
 export async function resolveLeadContact(admin: Awaited<ReturnType<typeof createAdminClient>>, leadId: string): Promise<LeadContact | null> {
   const { data: lead } = await admin
     .from('diagnostic_leads')
-    .select('student_id, student_name, student_email, parent_name, parent_email')
+    .select('student_id, student_name, student_email, parent_name, parent_email, parent_phone')
     .eq('id', leadId)
     .maybeSingle()
   if (!lead) return null
@@ -25,7 +26,7 @@ export async function resolveLeadContact(admin: Awaited<ReturnType<typeof create
   if (lead.student_id) {
     const { data: profile } = await admin
       .from('profiles')
-      .select('full_name, email, parent_name, parent_email')
+      .select('full_name, email, parent_name, parent_email, parent_phone')
       .eq('id', lead.student_id)
       .maybeSingle()
     if (profile) {
@@ -34,6 +35,7 @@ export async function resolveLeadContact(admin: Awaited<ReturnType<typeof create
         studentEmail: profile.email || lead.student_email,
         parentName: profile.parent_name || lead.parent_name,
         parentEmail: profile.parent_email || lead.parent_email,
+        parentPhone: profile.parent_phone || lead.parent_phone,
       }
     }
   }
@@ -43,5 +45,6 @@ export async function resolveLeadContact(admin: Awaited<ReturnType<typeof create
     studentEmail: lead.student_email,
     parentName: lead.parent_name,
     parentEmail: lead.parent_email,
+    parentPhone: lead.parent_phone,
   }
 }

@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCaller, createAdminClient } from '@/lib/supabase/server'
-import { getDiagnosticResult } from '@/lib/diagnosticResult'
-import { resultEmailHtml } from '@/lib/diagnosticEmailTemplate'
-import { resolveLeadContact } from '@/lib/diagnosticContact'
-import { sendEmail } from '@/lib/email'
+import { sendDiagnosticResultEmail } from '@/lib/sendDiagnosticResultEmail'
 
 // Teacher-only: the actual send, triggered by the "Confirm & Send" button on
 // app/teacher/diagnostics/confirm-email/[token] (reached from the preview
@@ -29,66 +26,16 @@ export async function POST(req: NextRequest) {
   if (pending.status === 'sent') return NextResponse.json({ error: 'This email has already been sent.' }, { status: 400 })
   if (pending.status === 'cancelled') return NextResponse.json({ error: 'This email was cancelled.' }, { status: 400 })
 
-  const attemptId = pending.attempt_id as string
-  const { data: attempt } = await admin
-    .from('diagnostic_attempts')
-    .select('id, lead_id, diagnostic_test_id')
-    .eq('id', attemptId)
-    .maybeSingle()
-  if (!attempt) return NextResponse.json({ error: 'Attempt not found.' }, { status: 404 })
-
-  const lead = await resolveLeadContact(admin, attempt.lead_id)
-  if (!lead) return NextResponse.json({ error: 'No contact info found for this attempt.' }, { status: 404 })
-
-  const lookup = await getDiagnosticResult(attemptId)
-  if (lookup.status !== 'completed') return NextResponse.json({ error: 'This attempt is not completed yet.' }, { status: 400 })
-
-  // Re-check — the overtime decision could have changed (or been reverted)
-  // in the time between the preview being sent and this confirmation.
-  if (lookup.result.submittedLate && lookup.result.overtimeAccepted !== true) {
-    return NextResponse.json({ error: 'This attempt was submitted after the time limit — accept or reject the overtime score first.' }, { status: 400 })
-  }
-
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://classroom.mindspirelab.com'
-  const { data: test } = await admin.from('diagnostic_tests').select('slug').eq('id', attempt.diagnostic_test_id).maybeSingle()
-  const resultsUrl = `${baseUrl}/diagnostic/${test?.slug ?? ''}/results/${attemptId}`
-
-  const subject = `${lookup.result.testTitle} results — ${lookup.result.studentName}`
-  const note = pending.teacher_note as string | null
-  const includeMcq = pending.include_mcq as boolean
-  const includeFrq = pending.include_frq as boolean
-  const includeIntegrityNote = pending.include_integrity_note as boolean
-
-  const sentTo: string[] = []
-  const errors: string[] = []
-
-  try {
-    await sendEmail({ to: lead.studentEmail, subject, html: resultEmailHtml(lookup.result, lead.studentName, resultsUrl, note, includeMcq, includeFrq, includeIntegrityNote) })
-    sentTo.push(lead.studentEmail)
-  } catch (e) {
-    errors.push(`student (${lead.studentEmail}): ${e instanceof Error ? e.message : 'failed'}`)
-  }
-
-  try {
-    await sendEmail({ to: lead.parentEmail, subject, html: resultEmailHtml(lookup.result, lead.parentName, resultsUrl, note, includeMcq, includeFrq, includeIntegrityNote) })
-    sentTo.push(lead.parentEmail)
-  } catch (e) {
-    errors.push(`parent (${lead.parentEmail}): ${e instanceof Error ? e.message : 'failed'}`)
-  }
-
-  if (sentTo.length === 0) {
-    return NextResponse.json({ error: `Could not send either email. ${errors.join('; ')}` }, { status: 500 })
-  }
+  const outcome = await sendDiagnosticResultEmail(admin, {
+    attemptId: pending.attempt_id as string,
+    teacherNote: pending.teacher_note as string | null,
+    includeMcq: pending.include_mcq as boolean,
+    includeFrq: pending.include_frq as boolean,
+    includeIntegrityNote: pending.include_integrity_note as boolean,
+  })
+  if (!outcome.ok) return NextResponse.json({ error: outcome.error }, { status: outcome.status })
 
   await admin.from('diagnostic_pending_emails').update({ status: 'sent', confirmed_at: new Date().toISOString() }).eq('id', pending.id)
 
-  // Emailing the FULL result IS releasing it — same reasoning as before this
-  // review step existed. A partial send deliberately withholds the other
-  // half, so it must NOT flip this.
-  const isFullRelease = includeMcq && (lookup.result.frqScore ? includeFrq : true)
-  if (isFullRelease) {
-    await admin.from('diagnostic_attempts').update({ results_released: true }).eq('id', attemptId)
-  }
-
-  return NextResponse.json({ ok: true, sentTo, errors: errors.length > 0 ? errors : undefined })
+  return NextResponse.json({ ok: true, sentTo: outcome.sentTo, errors: outcome.errors })
 }
