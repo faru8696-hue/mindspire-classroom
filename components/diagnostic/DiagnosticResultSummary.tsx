@@ -46,8 +46,13 @@ export interface DiagnosticResultData {
   // Frozen at submit time (see assessTestIntegrity in diagnosticGrading.ts)
   // — unlike tabSwitchCount/Seconds above, THIS is shown to the student and
   // parent: the raw score minus this percentage is the grade that counts.
+  // Already zeroed out here if the teacher waived it (see
+  // integrityDeductionWaived) — integrityRawDeductionPct below is the
+  // original, pre-waiver value, for teacher-only reference.
   integrityDeductionPct: number
   integrityLikelyCheating: boolean
+  integrityDeductionWaived: boolean
+  integrityRawDeductionPct: number
   // How many questions were left blank — used to note when a low score is
   // more likely explained by running out of time than by wrong answers.
   unansweredCount: number

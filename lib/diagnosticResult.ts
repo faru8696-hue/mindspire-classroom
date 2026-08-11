@@ -45,6 +45,18 @@ export async function getDiagnosticResult(attemptId: string): Promise<Diagnostic
     .eq('id', attemptId)
     .maybeSingle()
 
+  // Same defensive pattern, for add-diagnostic-integrity-waiver.sql — a
+  // third independent migration. Kept separate from integrityRow above
+  // (rather than adding a column to that same migration) since that file
+  // may already have been run before this one existed.
+  const { data: waiverRow } = await admin
+    .from('diagnostic_attempts')
+    .select('integrity_deduction_waived')
+    .eq('id', attemptId)
+    .maybeSingle()
+  const integrityDeductionWaived = waiverRow?.integrity_deduction_waived ?? false
+  const rawIntegrityDeductionPct = integrityRow?.integrity_deduction_pct ?? 0
+
   const [{ data: test }, { data: lead }, { data: answers }] = await Promise.all([
     admin.from('diagnostic_tests').select('title').eq('id', attempt.diagnostic_test_id).maybeSingle(),
     admin.from('diagnostic_leads').select('student_name').eq('id', attempt.lead_id).maybeSingle(),
@@ -164,9 +176,16 @@ export async function getDiagnosticResult(attemptId: string): Promise<Diagnostic
       tabSwitchCount: attempt.tab_switch_count ?? 0,
       tabSwitchSeconds: attempt.tab_switch_seconds ?? 0,
       // Frozen at submit time (see assessTestIntegrity) — shown to both
-      // student and parent, unlike the raw tab-switch counter above.
-      integrityDeductionPct: integrityRow?.integrity_deduction_pct ?? 0,
-      integrityLikelyCheating: integrityRow?.integrity_likely_cheating ?? false,
+      // student and parent, unlike the raw tab-switch counter above. Zeroed
+      // out whenever the teacher has waived it (integrityDeductionWaived),
+      // so every consumer (this summary, the PDF, result emails) just sees
+      // "no deduction" without needing its own waiver-aware logic — the
+      // original computed value is preserved separately below for the
+      // teacher's own reference.
+      integrityDeductionPct: integrityDeductionWaived ? 0 : rawIntegrityDeductionPct,
+      integrityLikelyCheating: integrityDeductionWaived ? false : (integrityRow?.integrity_likely_cheating ?? false),
+      integrityDeductionWaived,
+      integrityRawDeductionPct: rawIntegrityDeductionPct,
       // Whether this attempt was submitted after the time limit (only
       // possible when the test's allow_overtime was on), how far past, and
       // whether the teacher has explicitly accepted it — release-results

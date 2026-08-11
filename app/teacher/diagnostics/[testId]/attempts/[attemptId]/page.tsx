@@ -7,6 +7,7 @@ import DiagnosticResultSummary from '@/components/diagnostic/DiagnosticResultSum
 import EmailResultButton from '@/components/diagnostic/EmailResultButton'
 import ReleaseResultsToggle from '@/components/diagnostic/ReleaseResultsToggle'
 import OvertimeReviewPanel from '@/components/diagnostic/OvertimeReviewPanel'
+import IntegrityWaiverPanel from '@/components/diagnostic/IntegrityWaiverPanel'
 
 export default async function DiagnosticAttemptDetailPage({
   params,
@@ -53,6 +54,15 @@ export default async function DiagnosticAttemptDetailPage({
         />
       )}
 
+      <IntegrityWaiverPanel
+        attemptId={attemptId}
+        tabSwitchCount={lookup.result.tabSwitchCount}
+        tabSwitchSeconds={lookup.result.tabSwitchSeconds}
+        rawDeductionPct={lookup.result.integrityRawDeductionPct}
+        likelyCheating={lookup.result.integrityLikelyCheating}
+        waived={lookup.result.integrityDeductionWaived}
+      />
+
       {lead && (
         <div className="bg-white rounded-2xl border border-gray-200 p-5 mb-4">
           <p className="text-xs uppercase tracking-widest text-blue-500 font-semibold mb-2">Contact Info</p>
@@ -69,21 +79,6 @@ export default async function DiagnosticAttemptDetailPage({
               tabSwitchCount={lookup.result.tabSwitchCount}
             />
           </div>
-        </div>
-      )}
-
-      {/* A plain fact, not an accusation — tab/window focus loss is a weak,
-          high-false-positive signal (checking a calculator, a notification,
-          accidental alt-tab all trigger it too), so it's shown here as a
-          neutral count, on the teacher page only, never labeled "cheating"
-          and never shown to the student. */}
-      {(lookup.result.tabSwitchCount > 0) && (
-        <div className="bg-gray-50 border border-gray-200 rounded-2xl p-4 mb-4 flex items-center gap-2">
-          <span className="text-lg">🔀</span>
-          <p className="text-sm text-gray-600">
-            Left the test tab <span className="font-semibold text-gray-800">{lookup.result.tabSwitchCount}</span> time{lookup.result.tabSwitchCount === 1 ? '' : 's'}
-            {lookup.result.tabSwitchSeconds > 0 && <> · <span className="font-semibold text-gray-800">{lookup.result.tabSwitchSeconds}s</span> total away</>}
-          </p>
         </div>
       )}
 
