@@ -102,6 +102,7 @@ export default function DiagnosticTestSession({
   const [timer, setTimer] = useState(() => computeTimer(startedAt, durationMinutes))
   const { secondsLeft, overtimeSeconds } = timer
   const [submitting, setSubmitting] = useState(false)
+  const [showSubmitConfirm, setShowSubmitConfirm] = useState(false)
   const submittingRef = useRef(false)
   const canvasRef = useRef<ScratchBoardHandle>(null)
   const watermarkText = [studentName, studentEmail].filter(Boolean).join(' · ')
@@ -284,14 +285,13 @@ export default function DiagnosticTestSession({
   function next() { if (index < questions.length - 1) goTo(index + 1) }
   function prev() { if (index > 0) goTo(index - 1) }
 
-  function confirmSubmit() {
-    const answeredCount = questions.filter(qq =>
-      qq.questionType === 'frq' ? (qq.id === q.id ? true : !!canvasByQuestion.get(qq.id)) : answers.has(qq.id)
-    ).length
-    const unanswered = questions.length - answeredCount
-    if (unanswered > 0 && !confirm(`${unanswered} question${unanswered === 1 ? '' : 's'} unanswered. Submit anyway?`)) return
-    handleSubmit()
-  }
+  // Current question counts as answered here even before it's been
+  // captured into canvasByQuestion (only happens on navigation) — otherwise
+  // a student mid-way through the FRQ they're currently looking at would
+  // see it incorrectly flagged as unanswered.
+  const unansweredCount = questions.length - questions.filter(qq =>
+    qq.questionType === 'frq' ? (qq.id === q.id ? true : !!canvasByQuestion.get(qq.id)) : answers.has(qq.id)
+  ).length
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -387,16 +387,42 @@ export default function DiagnosticTestSession({
             className="px-5 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-xl font-semibold transition disabled:opacity-40">
             ← Prev
           </button>
-          <button onClick={confirmSubmit} disabled={submitting}
-            className="px-5 py-2 bg-red-500 hover:bg-red-600 text-white rounded-xl font-semibold transition text-sm disabled:opacity-50">
-            {submitting ? 'Submitting…' : '🏁 Submit'}
-          </button>
           <button onClick={next} disabled={index === questions.length - 1}
             className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold transition disabled:opacity-40">
             Next →
           </button>
+          <button onClick={() => setShowSubmitConfirm(true)} disabled={submitting}
+            className="px-5 py-2 bg-red-500 hover:bg-red-600 text-white rounded-xl font-semibold transition text-sm disabled:opacity-50">
+            {submitting ? 'Submitting…' : '🏁 Submit'}
+          </button>
         </div>
       </div>
+
+      {showSubmitConfirm && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={() => !submitting && setShowSubmitConfirm(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4" onClick={e => e.stopPropagation()}>
+            <div>
+              <h3 className="font-bold text-gray-800 text-lg">Submit Test?</h3>
+              <p className="text-sm text-gray-500 mt-1">You won&rsquo;t be able to change your answers after this.</p>
+            </div>
+            {unansweredCount > 0 && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm text-amber-800">
+                ⚠️ {unansweredCount} question{unansweredCount === 1 ? '' : 's'} not answered.
+              </div>
+            )}
+            <div className="flex gap-2 pt-1">
+              <button onClick={() => setShowSubmitConfirm(false)} disabled={submitting}
+                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 transition disabled:opacity-50">
+                Cancel
+              </button>
+              <button onClick={handleSubmit} disabled={submitting}
+                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-white bg-red-500 hover:bg-red-600 transition disabled:opacity-50">
+                {submitting ? 'Submitting…' : 'Yes, Submit'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
