@@ -64,6 +64,19 @@ function contentBounds(objs: BoardObject[]): { minX: number; minY: number; maxX:
 // eraser/zoom/pan/undo/redo/image-insert feel as that board, but entirely
 // local state, exported as a single flattened PNG data URL on demand via
 // the ref — no realtime sync, no storage upload.
+//
+// Input/render architecture is deliberately copied from InfiniteWhiteboard
+// (which students never had writing trouble with on iPad), rather than the
+// Pointer Events + draw-on-every-event approach this used to use: native
+// touchstart/touchmove/touchend for touch/pencil (Safari's Pointer Events
+// have historically been the less reliable of the two for fast continuous
+// drawing), a continuous requestAnimationFrame loop that repaints from refs
+// every frame regardless of event rate (so drawing cost is capped at the
+// display's refresh rate, not the touch event rate), and a canvas whose
+// raster resolution is kept in sync with its actual rendered pixel size via
+// ResizeObserver (the old fixed 640×320 raster stretched via CSS to
+// whatever width the container rendered at, softening precision on a large
+// iPad screen).
 const ScratchBoard = forwardRef<ScratchBoardHandle, { initialDataUrl?: string | null; label?: string; penColor?: string; width?: number; height?: number }>(function ScratchBoard(
   { initialDataUrl, label = '✏️ Work it out here', penColor = '#111827', width = 640, height = 320 }, ref
 ) {
@@ -72,7 +85,6 @@ const ScratchBoard = forwardRef<ScratchBoardHandle, { initialDataUrl?: string | 
   const imageCache = useRef<Map<string, HTMLImageElement>>(new Map())
 
   const objectsRef = useRef<BoardObject[]>([])
-  const [objVersion, setObjVersion] = useState(0) // bumped to trigger a re-render/redraw after any object change
   const history = useRef<BoardObject[][]>([])
   const redoStack = useRef<BoardObject[][]>([])
   const [canUndo, setCanUndo] = useState(false)
@@ -80,8 +92,8 @@ const ScratchBoard = forwardRef<ScratchBoardHandle, { initialDataUrl?: string | 
   const syncUndoRedo = () => { setCanUndo(history.current.length > 0); setCanRedo(redoStack.current.length > 0) }
 
   const viewRef = useRef<ViewState>({ panX: 0, panY: 0, zoom: 1 })
-  const [view, setViewState] = useState<ViewState>({ panX: 0, panY: 0, zoom: 1 })
-  const setView = (v: ViewState) => { viewRef.current = v; setViewState(v) }
+  const [view, _setView] = useState<ViewState>({ panX: 0, panY: 0, zoom: 1 })
+  const setView = (v: ViewState) => { viewRef.current = v; _setView(v) }
 
   const [tool, _setTool] = useState<Tool>('pen')
   const toolRef = useRef<Tool>('pen')
@@ -90,15 +102,12 @@ const ScratchBoard = forwardRef<ScratchBoardHandle, { initialDataUrl?: string | 
   const drawing = useRef(false)
   const currentPath = useRef<{ x: number; y: number }[]>([])
   const panStart = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null)
+  const pinchStart = useRef<{ dist: number; zoom: number } | null>(null)
 
   // No copying needed: every mutation site below REASSIGNS objectsRef.current
   // to a brand-new array (spread or []) rather than mutating the existing
   // one in place, so the reference captured here stays valid forever — same
-  // assumption undo()/redo() already rely on. Deep-cloning every stroke's
-  // points array here used to cost O(total points across the whole board)
-  // on every single new stroke (called from start(), the hottest path of
-  // all), which on iPad was slow enough to visibly stall the start of the
-  // next stroke as a test's scratch work accumulated content.
+  // assumption undo()/redo() already rely on.
   const pushHistory = useCallback(() => {
     history.current.push(objectsRef.current)
     if (history.current.length > 50) history.current.shift()
@@ -106,65 +115,94 @@ const ScratchBoard = forwardRef<ScratchBoardHandle, { initialDataUrl?: string | 
     syncUndoRedo()
   }, [])
 
-  // ── Render ──────────────────────────────────────────────────────────
-  const redraw = useCallback(() => {
-    const canvas = canvasRef.current
-    const ctx = canvas?.getContext('2d')
-    if (!canvas || !ctx) return
-    const v = viewRef.current
+  // ── Continuous render loop — reads straight from refs every frame, so
+  // drawing cost is capped at the display's refresh rate regardless of how
+  // fast touch/pencil events arrive (see the component comment above). ──
+  useEffect(() => {
+    let rafId: number
+    const loop = () => {
+      const canvas = canvasRef.current
+      const ctx = canvas?.getContext('2d')
+      if (!canvas || !ctx || canvas.width === 0 || canvas.height === 0) { rafId = requestAnimationFrame(loop); return }
+      const v = viewRef.current
 
-    ctx.setTransform(1, 0, 0, 1, 0, 0)
-    ctx.fillStyle = '#ffffff'
-    ctx.fillRect(0, 0, canvas.width, canvas.height)
+      ctx.setTransform(1, 0, 0, 1, 0, 0)
+      ctx.fillStyle = '#ffffff'
+      ctx.fillRect(0, 0, canvas.width, canvas.height)
 
-    ctx.save()
-    ctx.translate(v.panX, v.panY)
-    ctx.scale(v.zoom, v.zoom)
+      ctx.save()
+      ctx.translate(v.panX, v.panY)
+      ctx.scale(v.zoom, v.zoom)
 
-    const drawStroke = (s: StrokeObject) => {
-      if (s.points.length < 2) return
-      if (s.tool === 'highlighter') {
-        ctx.globalAlpha = 0.4
-        ctx.globalCompositeOperation = 'multiply'
-      } else {
+      const drawStroke = (s: StrokeObject) => {
+        if (s.points.length < 2) return
+        if (s.tool === 'highlighter') {
+          ctx.globalAlpha = 0.4
+          ctx.globalCompositeOperation = 'multiply'
+        } else {
+          ctx.globalAlpha = 1
+          ctx.globalCompositeOperation = 'source-over'
+        }
+        ctx.strokeStyle = s.color
+        ctx.lineWidth = s.width
+        ctx.lineCap = 'round'
+        ctx.lineJoin = 'round'
+        ctx.beginPath()
+        ctx.moveTo(s.points[0].x, s.points[0].y)
+        for (let i = 1; i < s.points.length; i++) ctx.lineTo(s.points[i].x, s.points[i].y)
+        ctx.stroke()
         ctx.globalAlpha = 1
         ctx.globalCompositeOperation = 'source-over'
       }
-      ctx.strokeStyle = s.color
-      ctx.lineWidth = s.width
-      ctx.lineCap = 'round'
-      ctx.lineJoin = 'round'
-      ctx.beginPath()
-      ctx.moveTo(s.points[0].x, s.points[0].y)
-      for (let i = 1; i < s.points.length; i++) ctx.lineTo(s.points[i].x, s.points[i].y)
-      ctx.stroke()
-      ctx.globalAlpha = 1
-      ctx.globalCompositeOperation = 'source-over'
-    }
 
-    for (const obj of objectsRef.current) {
-      if (obj.kind === 'stroke') {
-        drawStroke(obj)
-      } else {
-        const img = imageCache.current.get(obj.src)
-        if (img?.complete && img.naturalWidth > 0) ctx.drawImage(img, obj.x, obj.y, obj.width, obj.height)
+      for (const obj of objectsRef.current) {
+        if (obj.kind === 'stroke') {
+          drawStroke(obj)
+        } else {
+          const img = imageCache.current.get(obj.src)
+          if (img?.complete && img.naturalWidth > 0) ctx.drawImage(img, obj.x, obj.y, obj.width, obj.height)
+        }
       }
-    }
 
-    // The in-progress stroke isn't committed to objectsRef until pointerup,
-    // so it's drawn separately here to stay visible while actively drawing.
-    if (drawing.current && currentPath.current.length > 1) {
-      drawStroke({
-        kind: 'stroke',
-        tool: toolRef.current === 'pan' ? 'pen' : toolRef.current,
-        color: toolRef.current === 'eraser' ? '#ffffff' : toolRef.current === 'highlighter' ? '#fde047' : penColor,
-        width: toolRef.current === 'eraser' ? 22 : toolRef.current === 'highlighter' ? 14 : 2.5,
-        points: currentPath.current,
-      })
-    }
+      // The in-progress stroke isn't committed to objectsRef until the
+      // gesture ends, so it's drawn separately here to stay visible while
+      // actively drawing.
+      if (drawing.current && currentPath.current.length > 1) {
+        drawStroke({
+          kind: 'stroke',
+          tool: toolRef.current === 'pan' ? 'pen' : toolRef.current,
+          color: toolRef.current === 'eraser' ? '#ffffff' : toolRef.current === 'highlighter' ? '#fde047' : penColor,
+          width: toolRef.current === 'eraser' ? 22 : toolRef.current === 'highlighter' ? 14 : 2.5,
+          points: currentPath.current,
+        })
+      }
 
-    ctx.restore()
+      ctx.restore()
+      rafId = requestAnimationFrame(loop)
+    }
+    rafId = requestAnimationFrame(loop)
+    return () => cancelAnimationFrame(rafId)
   }, [penColor])
+
+  // ── Canvas resolution tracks its actual rendered pixel size, not a fixed
+  // raster stretched via CSS — keeps drawing crisp and touch coordinates
+  // precise at whatever size this ends up rendering at. ──
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    // Set synchronously from the current layout rather than waiting on the
+    // observer's first (inherently async) callback, so there's never a
+    // frame rendered at the browser's 300×150 canvas default before the
+    // real size is known.
+    const rect = canvas.getBoundingClientRect()
+    if (rect.width > 0 && rect.height > 0) { canvas.width = rect.width; canvas.height = rect.height }
+    const ro = new ResizeObserver(entries => {
+      const { width: w, height: h } = entries[0].contentRect
+      if (w > 0 && h > 0) { canvas.width = w; canvas.height = h }
+    })
+    ro.observe(canvas)
+    return () => ro.disconnect()
+  }, [])
 
   // ── Load starting content (a prior save) as a single image object ──
   useEffect(() => {
@@ -177,18 +215,10 @@ const ScratchBoard = forwardRef<ScratchBoardHandle, { initialDataUrl?: string | 
       img.onload = () => {
         imageCache.current.set(initialDataUrl, img)
         objectsRef.current = [{ kind: 'image', x: 0, y: 0, width: img.naturalWidth, height: img.naturalHeight, src: initialDataUrl }]
-        setObjVersion(v => v + 1)
-        redraw()
       }
       img.src = initialDataUrl
-    } else {
-      setObjVersion(v => v + 1)
-      redraw()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialDataUrl])
-
-  useEffect(() => { redraw() }, [redraw, view, objVersion])
 
   // ── Export: flatten every object into one PNG sized to fit them all,
   // independent of whatever the current pan/zoom happens to be. ──
@@ -236,88 +266,25 @@ const ScratchBoard = forwardRef<ScratchBoardHandle, { initialDataUrl?: string | 
     },
   }), [])
 
-  // ── Pointer coordinates: screen → canvas-pixel → world (accounts for
-  // both the w-full CSS stretch and the current pan/zoom). ──
-  function toWorld(e: React.PointerEvent<HTMLCanvasElement>) {
-    const canvas = e.currentTarget
-    const rect = canvas.getBoundingClientRect()
-    const scaleX = canvas.width / rect.width
-    const scaleY = canvas.height / rect.height
-    const px = (e.clientX - rect.left) * scaleX
-    const py = (e.clientY - rect.top) * scaleY
+  // ── Coordinates: client (screen) → world, accounting for pan/zoom. Canvas
+  // raster now matches its own rendered size 1:1 (see the ResizeObserver
+  // above), so no CSS-stretch scale correction is needed here anymore. ──
+  const screenToWorld = useCallback((clientX: number, clientY: number) => {
+    const canvas = canvasRef.current
+    const rect = canvas?.getBoundingClientRect()
+    if (!rect) return { x: 0, y: 0, px: 0, py: 0 }
+    const px = clientX - rect.left
+    const py = clientY - rect.top
     const v = viewRef.current
     return { x: (px - v.panX) / v.zoom, y: (py - v.panY) / v.zoom, px, py }
-  }
+  }, [])
 
-  // Paints just the one new segment on top of whatever's already rendered —
-  // O(1) regardless of how much the board already holds. move() used to call
-  // the full redraw() (clear + repaint every object) on every single
-  // pointermove, which is O(total board complexity) per event; as a test's
-  // scratch work accumulated strokes over the session, that stopped keeping
-  // up with iPad's touch event rate and drawing visibly stuttered. Safe to
-  // paint additively here because nothing else repaints the canvas from
-  // scratch between one full redraw() and the next (view/objects don't
-  // change mid-stroke — panning and drawing are mutually exclusive tools).
-  function drawSegment(p1: { x: number; y: number }, p2: { x: number; y: number }) {
-    const ctx = canvasRef.current?.getContext('2d')
-    if (!ctx) return
-    const v = viewRef.current
-    const t = toolRef.current === 'pan' ? 'pen' : toolRef.current
-    ctx.save()
-    ctx.translate(v.panX, v.panY)
-    ctx.scale(v.zoom, v.zoom)
-    if (t === 'highlighter') { ctx.globalAlpha = 0.4; ctx.globalCompositeOperation = 'multiply' }
-    else { ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over' }
-    ctx.strokeStyle = t === 'eraser' ? '#ffffff' : t === 'highlighter' ? '#fde047' : penColor
-    ctx.lineWidth = t === 'eraser' ? 22 : t === 'highlighter' ? 14 : 2.5
-    ctx.lineCap = 'round'
-    ctx.lineJoin = 'round'
-    ctx.beginPath()
-    ctx.moveTo(p1.x, p1.y)
-    ctx.lineTo(p2.x, p2.y)
-    ctx.stroke()
-    ctx.restore()
-  }
-
-  function start(e: React.PointerEvent<HTMLCanvasElement>) {
-    // Without pointer capture, a stroke silently cuts off the instant the
-    // cursor drifts even 1px outside the canvas mid-drag (onPointerLeave
-    // fires and, worse, further pointermove/pointerup events stop reaching
-    // this element entirely until the pointer re-enters) — exactly what
-    // "can't continuously write" looks like when writing near an edge.
-    // Capturing routes every event for this pointer here regardless of
-    // where it physically is until pointerup, so a drag never gets cut off.
-    e.currentTarget.setPointerCapture(e.pointerId)
-    if (toolRef.current === 'pan') {
-      const p = toWorld(e)
-      panStart.current = { x: p.px, y: p.py, panX: viewRef.current.panX, panY: viewRef.current.panY }
-      return
-    }
-    // pushHistory() is deferred to end() (once the stroke is confirmed real,
-    // see below) rather than called here — this used to run on every single
-    // pointerdown, including the two setState calls inside it, right at the
-    // start of the most latency-sensitive moment of a touch gesture.
+  const beginStroke = useCallback((p: { x: number; y: number }) => {
     drawing.current = true
-    const p = toWorld(e)
-    currentPath.current = [{ x: p.x, y: p.y }]
-  }
+    currentPath.current = [p]
+  }, [])
 
-  function move(e: React.PointerEvent<HTMLCanvasElement>) {
-    if (panStart.current) {
-      const p = toWorld(e)
-      setView({ ...viewRef.current, panX: panStart.current.panX + (p.px - panStart.current.x), panY: panStart.current.panY + (p.py - panStart.current.y) })
-      return
-    }
-    if (!drawing.current) return
-    const p = toWorld(e)
-    const last = currentPath.current[currentPath.current.length - 1]
-    currentPath.current = [...currentPath.current, { x: p.x, y: p.y }]
-    if (last) drawSegment(last, p)
-  }
-
-  function end(e: React.PointerEvent<HTMLCanvasElement>) {
-    if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId)
-    if (panStart.current) { panStart.current = null; return }
+  const commitStroke = useCallback(() => {
     if (drawing.current && currentPath.current.length > 1) {
       pushHistory()
       const t = toolRef.current === 'pan' ? 'pen' : toolRef.current
@@ -328,24 +295,125 @@ const ScratchBoard = forwardRef<ScratchBoardHandle, { initialDataUrl?: string | 
         width: t === 'eraser' ? 22 : t === 'highlighter' ? 14 : 2.5,
         points: currentPath.current,
       }]
-      setObjVersion(v => v + 1)
     }
     drawing.current = false
     currentPath.current = []
+  }, [penColor, pushHistory])
+
+  // ── Touch input — native listeners (not React's Pointer Events props),
+  // matching InfiniteWhiteboard. Two fingers pinch-zooms; one finger draws
+  // or pans depending on the active tool. ──
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+
+    function onTouchStart(e: TouchEvent) {
+      e.preventDefault()
+      if (e.touches.length === 2) {
+        const dx = e.touches[1].clientX - e.touches[0].clientX
+        const dy = e.touches[1].clientY - e.touches[0].clientY
+        pinchStart.current = { dist: Math.hypot(dx, dy), zoom: viewRef.current.zoom }
+        drawing.current = false
+        currentPath.current = []
+        return
+      }
+      if (e.touches.length !== 1) return
+      const t = e.touches[0]
+      const p = screenToWorld(t.clientX, t.clientY)
+      if (toolRef.current === 'pan') {
+        panStart.current = { x: p.px, y: p.py, panX: viewRef.current.panX, panY: viewRef.current.panY }
+        return
+      }
+      beginStroke({ x: p.x, y: p.y })
+    }
+
+    function onTouchMove(e: TouchEvent) {
+      e.preventDefault()
+      if (e.touches.length === 2 && pinchStart.current) {
+        const dx = e.touches[1].clientX - e.touches[0].clientX
+        const dy = e.touches[1].clientY - e.touches[0].clientY
+        const dist = Math.hypot(dx, dy)
+        const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2
+        const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2
+        const rect = canvas!.getBoundingClientRect()
+        const mx = midX - rect.left, my = midY - rect.top
+        const v = viewRef.current
+        const worldX = (mx - v.panX) / v.zoom, worldY = (my - v.panY) / v.zoom
+        const nz = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, pinchStart.current.zoom * (dist / pinchStart.current.dist)))
+        setView({ zoom: nz, panX: mx - worldX * nz, panY: my - worldY * nz })
+        return
+      }
+      if (e.touches.length !== 1) return
+      const t = e.touches[0]
+      const p = screenToWorld(t.clientX, t.clientY)
+      if (panStart.current) {
+        setView({ ...viewRef.current, panX: panStart.current.panX + (p.px - panStart.current.x), panY: panStart.current.panY + (p.py - panStart.current.y) })
+        return
+      }
+      if (!drawing.current) return
+      currentPath.current = [...currentPath.current, { x: p.x, y: p.y }]
+    }
+
+    function onTouchEnd(e: TouchEvent) {
+      e.preventDefault()
+      pinchStart.current = null
+      panStart.current = null
+      commitStroke()
+    }
+
+    canvas.addEventListener('touchstart', onTouchStart, { passive: false })
+    canvas.addEventListener('touchmove', onTouchMove, { passive: false })
+    canvas.addEventListener('touchend', onTouchEnd, { passive: false })
+    canvas.addEventListener('touchcancel', onTouchEnd, { passive: false })
+    return () => {
+      canvas.removeEventListener('touchstart', onTouchStart)
+      canvas.removeEventListener('touchmove', onTouchMove)
+      canvas.removeEventListener('touchend', onTouchEnd)
+      canvas.removeEventListener('touchcancel', onTouchEnd)
+    }
+  }, [screenToWorld, beginStroke, commitStroke])
+
+  // ── Mouse input (desktop). Tracked on window while a drag is in
+  // progress, rather than only via onMouseMove/onMouseUp on the canvas
+  // itself, so a drag never silently cuts off the instant the cursor drifts
+  // outside the canvas mid-stroke. ──
+  function onMouseDown(e: React.MouseEvent<HTMLCanvasElement>) {
+    const p = screenToWorld(e.clientX, e.clientY)
+    if (toolRef.current === 'pan') {
+      panStart.current = { x: p.px, y: p.py, panX: viewRef.current.panX, panY: viewRef.current.panY }
+    } else {
+      beginStroke({ x: p.x, y: p.y })
+    }
+
+    function onWindowMouseMove(ev: MouseEvent) {
+      const wp = screenToWorld(ev.clientX, ev.clientY)
+      if (panStart.current) {
+        setView({ ...viewRef.current, panX: panStart.current.panX + (wp.px - panStart.current.x), panY: panStart.current.panY + (wp.py - panStart.current.y) })
+        return
+      }
+      if (!drawing.current) return
+      currentPath.current = [...currentPath.current, { x: wp.x, y: wp.y }]
+    }
+    function onWindowMouseUp() {
+      panStart.current = null
+      commitStroke()
+      window.removeEventListener('mousemove', onWindowMouseMove)
+      window.removeEventListener('mouseup', onWindowMouseUp)
+    }
+    window.addEventListener('mousemove', onWindowMouseMove)
+    window.addEventListener('mouseup', onWindowMouseUp)
   }
 
   function clear() {
     if (objectsRef.current.length === 0) return
     pushHistory()
     objectsRef.current = []
-    setObjVersion(v => v + 1)
   }
 
   function undo() {
     if (!history.current.length) return
     redoStack.current.push(objectsRef.current)
     objectsRef.current = history.current.pop()!
-    setObjVersion(v => v + 1)
     syncUndoRedo()
   }
 
@@ -353,7 +421,6 @@ const ScratchBoard = forwardRef<ScratchBoardHandle, { initialDataUrl?: string | 
     if (!redoStack.current.length) return
     history.current.push(objectsRef.current)
     objectsRef.current = redoStack.current.pop()!
-    setObjVersion(v => v + 1)
     syncUndoRedo()
   }
 
@@ -380,8 +447,7 @@ const ScratchBoard = forwardRef<ScratchBoardHandle, { initialDataUrl?: string | 
       if (!e.ctrlKey && !e.metaKey) return
       e.preventDefault()
       const rect = canvas!.getBoundingClientRect()
-      const scaleX = canvas!.width / rect.width, scaleY = canvas!.height / rect.height
-      const px = (e.clientX - rect.left) * scaleX, py = (e.clientY - rect.top) * scaleY
+      const px = e.clientX - rect.left, py = e.clientY - rect.top
       const v = viewRef.current
       const worldX = (px - v.panX) / v.zoom, worldY = (py - v.panY) / v.zoom
       const nz = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, v.zoom * (1 - e.deltaY * 0.001)))
@@ -403,16 +469,16 @@ const ScratchBoard = forwardRef<ScratchBoardHandle, { initialDataUrl?: string | 
     const img = new Image()
     img.onload = () => {
       imageCache.current.set(dataUrl, img)
-      const maxW = width * 0.7, maxH = height * 0.7
+      const canvas = canvasRef.current
+      const cw = canvas?.width ?? width, ch = canvas?.height ?? height
+      const maxW = cw * 0.7, maxH = ch * 0.7
       const scale = Math.min(maxW / img.naturalWidth, maxH / img.naturalHeight, 1)
       const w = img.naturalWidth * scale, h = img.naturalHeight * scale
       const v = viewRef.current
-      const canvas = canvasRef.current
-      const cx = ((canvas?.width ?? width) / 2 - v.panX) / v.zoom
-      const cy = ((canvas?.height ?? height) / 2 - v.panY) / v.zoom
+      const cx = (cw / 2 - v.panX) / v.zoom
+      const cy = (ch / 2 - v.panY) / v.zoom
       pushHistory()
       objectsRef.current = [...objectsRef.current, { kind: 'image', x: cx - w / 2, y: cy - h / 2, width: w, height: h, src: dataUrl }]
-      setObjVersion(v2 => v2 + 1)
     }
     img.src = dataUrl
   }
@@ -447,14 +513,9 @@ const ScratchBoard = forwardRef<ScratchBoardHandle, { initialDataUrl?: string | 
       </div>
       <canvas
         ref={canvasRef}
-        width={width}
-        height={height}
-        className="w-full h-auto touch-none"
-        style={{ cursor: tool === 'pan' ? 'grab' : 'crosshair' }}
-        onPointerDown={start}
-        onPointerMove={move}
-        onPointerUp={end}
-        onPointerLeave={end}
+        className="w-full block touch-none"
+        style={{ aspectRatio: `${width} / ${height}`, cursor: tool === 'pan' ? 'grab' : 'crosshair' }}
+        onMouseDown={onMouseDown}
       />
     </div>
   )
