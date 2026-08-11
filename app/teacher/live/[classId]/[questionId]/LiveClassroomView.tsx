@@ -154,6 +154,7 @@ export default function LiveClassroomView({
   // uses, so both views (and the student's own toast) stay in sync regardless
   // of which one the grade was given from.
   async function applyGrade(studentId: string, newGrade: string | null) {
+    const prevGrade = grades.get(studentId) ?? null
     setGradingId(studentId)
     setGrades(prev => {
       const next = new Map(prev)
@@ -162,11 +163,26 @@ export default function LiveClassroomView({
       return next
     })
     try {
-      await fetch('/api/grade', {
+      const res = await fetch('/api/grade', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ studentId, questionId, grade: newGrade, notify: true }),
       })
+      if (!res.ok) {
+        // The tile had already flipped to the new grade optimistically — undo
+        // that and tell the teacher, instead of leaving it looking saved when
+        // it silently never persisted (indistinguishable from a real save
+        // without this check, since fetch() only rejects on network failure,
+        // not on an HTTP error status).
+        setGrades(prev => {
+          const next = new Map(prev)
+          if (prevGrade) next.set(studentId, prevGrade)
+          else next.delete(studentId)
+          return next
+        })
+        alert('Could not save this grade — please try again.')
+        return
+      }
       await supabase.channel(`live-grades:${classId}:${questionId}`).send({
         type: 'broadcast', event: 'grade-update', payload: { student_id: studentId, grade: newGrade },
       })
@@ -175,6 +191,14 @@ export default function LiveClassroomView({
           type: 'broadcast', event: 'grade-update', payload: { grade: newGrade, feedback: '' },
         })
       }
+    } catch {
+      setGrades(prev => {
+        const next = new Map(prev)
+        if (prevGrade) next.set(studentId, prevGrade)
+        else next.delete(studentId)
+        return next
+      })
+      alert('Could not save this grade — please check your connection and try again.')
     } finally {
       setGradingId(null)
     }
@@ -337,7 +361,13 @@ export default function LiveClassroomView({
         if (students.some(s => s.id === row.student_id))
           setSubmissions(prev => new Map(prev).set(row.student_id, row))
       })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'feedback' }, payload => {
+      // '*' (not just UPDATE) — /api/grade upserts, so the FIRST grade on a
+      // submission is an INSERT, not an UPDATE. Listening only for UPDATE
+      // meant a student's first-ever grade never reached other open tabs/
+      // teachers via realtime (their own tile still updated fine via the
+      // broadcast channel below, since that fires unconditionally from the
+      // grading action itself — this gap only affected everyone else).
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'feedback' }, payload => {
         const fb = payload.new as { submission_id: string; grade: string | null }
         setSubmissions(prev => {
           for (const [sid, sub] of prev)

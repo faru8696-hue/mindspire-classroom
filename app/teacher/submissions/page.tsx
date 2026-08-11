@@ -74,6 +74,23 @@ export default function SubmissionsPage() {
     })
   }, [])
 
+  // Grading can also happen from the live classroom grid (a different page)
+  // while this one is sitting open in another tab — this list previously
+  // only ever loaded once on mount, so a grade applied elsewhere silently
+  // never showed up here without a manual reload. '*' rather than just
+  // UPDATE since /api/grade upserts feedback, and a submission's first-ever
+  // grade is an INSERT, not an UPDATE.
+  useEffect(() => {
+    const ch = supabase.channel('submissions-page-feedback')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'feedback' }, payload => {
+        const fb = payload.new as { submission_id: string; grade: string | null }
+        patchFeedbackLocal(fb.submission_id, { grade: fb.grade })
+      })
+      .subscribe()
+    return () => { supabase.removeChannel(ch) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // Patches one submission's feedback in local state instead of refetching
   // the ENTIRE submissions list (every class, every student, with deep
   // joins) after every single grade save — that full reload was the actual
