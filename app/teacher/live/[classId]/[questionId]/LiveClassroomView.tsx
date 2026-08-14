@@ -183,13 +183,21 @@ export default function LiveClassroomView({
         alert('Could not save this grade — please try again.')
         return
       }
-      await supabase.channel(`live-grades:${classId}:${questionId}`).send({
+      // Not awaited — the grade itself is already saved and this teacher's
+      // own tile already shows it (the optimistic update above), so there's
+      // nothing left for THIS teacher to wait on. These broadcasts only
+      // matter for syncing other open tabs/viewers, which can land a moment
+      // later without adding to the visible "saving..." delay on the tile
+      // that was just clicked. Previously both were awaited here, meaning
+      // two more full round trips had to finish before the button's loading
+      // state cleared, on top of the /api/grade call itself.
+      supabase.channel(`live-grades:${classId}:${questionId}`).send({
         type: 'broadcast', event: 'grade-update', payload: { student_id: studentId, grade: newGrade },
-      })
+      }).catch(err => console.error('live-grades broadcast failed:', err))
       if (newGrade) {
-        await supabase.channel(`grade-notif:${questionId}:${studentId}`).send({
+        supabase.channel(`grade-notif:${questionId}:${studentId}`).send({
           type: 'broadcast', event: 'grade-update', payload: { grade: newGrade, feedback: '' },
-        })
+        }).catch(err => console.error('grade-notif broadcast failed:', err))
       }
     } catch {
       setGrades(prev => {

@@ -37,25 +37,22 @@ export async function POST(req: NextRequest) {
 
   // Feedback is keyed by submission. A teacher may grade before the student has
   // saved anything, so resolve the submission and create an empty one if needed.
+  // Combined into one round trip (submission id + its feedback grade, via the
+  // embedded select) instead of two sequential queries — this endpoint is on
+  // the critical path of every single grade click, so each round trip cut
+  // here is latency a teacher directly feels.
   let submissionId: string | null = null
   const { data: existing } = await admin
     .from('submissions')
-    .select('id')
+    .select('id, feedback(grade)')
     .eq('question_id', questionId)
     .eq('student_id', studentId)
     .maybeSingle()
 
   // The grade as it stood before this call — used to detect a real grade change
   // so we only append a history row when the grade actually moves.
-  let previousGrade: string | null = null
-  if (existing?.id) {
-    const { data: prevFb } = await admin
-      .from('feedback')
-      .select('grade')
-      .eq('submission_id', existing.id)
-      .maybeSingle()
-    previousGrade = prevFb?.grade ?? null
-  }
+  const existingFeedback = Array.isArray(existing?.feedback) ? existing.feedback[0] : existing?.feedback
+  const previousGrade: string | null = existingFeedback?.grade ?? null
 
   if (existing?.id) {
     submissionId = existing.id
@@ -87,33 +84,40 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  // Append to the grade history whenever a grade is applied and it actually
-  // changed (including the first grade). This is what makes "improvement over
-  // time" possible — the feedback row only ever holds the latest grade.
-  if (grade && grade !== previousGrade) {
-    const { error: histErr } = await admin.from('grade_history').insert({
-      student_id: studentId,
-      question_id: questionId,
-      submission_id: submissionId,
-      grade,
-      text_feedback: textFeedback || null,
-      teacher_id: caller.user.id,
-    })
-    // Don't fail grading if history logging fails (e.g. table not yet created).
-    if (histErr) console.error('grade_history insert error:', histErr)
-  }
-
-  // Persist a student notification when an actual grade was applied
-  if (notify && grade) {
-    await admin.from('student_notifications').insert({
-      student_id: studentId,
-      question_id: questionId,
-      grade,
-      feedback: textFeedback || null,
-      type: 'grade',
-      read: false,
-    })
-  }
+  // Grade history and the student notification are independent writes —
+  // neither reads the other's result — so they run concurrently instead of
+  // as two more sequential awaits on top of everything above.
+  const gradeHistoryChanged = grade && grade !== previousGrade
+  await Promise.all([
+    // Append to the grade history whenever a grade is applied and it
+    // actually changed (including the first grade). This is what makes
+    // "improvement over time" possible — the feedback row only ever holds
+    // the latest grade.
+    gradeHistoryChanged
+      ? admin.from('grade_history').insert({
+          student_id: studentId,
+          question_id: questionId,
+          submission_id: submissionId,
+          grade,
+          text_feedback: textFeedback || null,
+          teacher_id: caller.user.id,
+        }).then(({ error: histErr }) => {
+          // Don't fail grading if history logging fails (e.g. table not yet created).
+          if (histErr) console.error('grade_history insert error:', histErr)
+        })
+      : Promise.resolve(),
+    // Persist a student notification when an actual grade was applied
+    notify && grade
+      ? admin.from('student_notifications').insert({
+          student_id: studentId,
+          question_id: questionId,
+          grade,
+          feedback: textFeedback || null,
+          type: 'grade',
+          read: false,
+        })
+      : Promise.resolve(),
+  ])
 
   // Email only when the teacher actually wrote a text comment — a plain
   // grade (correct/incorrect/etc with no note) is in-app notification only,
