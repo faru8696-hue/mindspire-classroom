@@ -39,15 +39,21 @@ export default async function TeacherLayout({ children }: { children: React.Reac
   const studentsSeenAt = seenAt.get('students') ?? '1970-01-01'
   const activitySeenAt = seenAt.get('activity') ?? '1970-01-01'
 
-  const [{ data: allSubmissions }, { count: newStudents }, { count: newActivity }] = await Promise.all([
-    admin.from('submissions').select('id, feedback(grade)'),
+  // Two COUNT-only queries (head: true — no rows returned) instead of
+  // pulling every submission with a nested feedback join and filtering in
+  // JS. That used to fetch and JSON-parse the ENTIRE submissions table
+  // (867+ rows and growing) on every single teacher page load site-wide —
+  // real Vercel CPU time spent on every request just to compute one badge
+  // number. feedback.submission_id is unique (the grading upsert relies on
+  // it), so ungraded = total submissions − submissions with a graded
+  // feedback row.
+  const [{ count: newStudents }, { count: newActivity }, { count: totalSubmissions }, { count: gradedCount }] = await Promise.all([
     admin.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'student').eq('approved', false).gt('created_at', studentsSeenAt),
     admin.from('notifications').select('id', { count: 'exact', head: true }).in('type', ['help', 'submitted', 'comment']).gt('created_at', activitySeenAt),
+    admin.from('submissions').select('id', { count: 'exact', head: true }),
+    admin.from('feedback').select('id', { count: 'exact', head: true }).not('grade', 'is', null),
   ])
-  const ungradedSubmissions = (allSubmissions ?? []).filter((s: { feedback: { grade: string | null }[] | { grade: string | null } | null }) => {
-    const fb = Array.isArray(s.feedback) ? s.feedback[0] : s.feedback
-    return !fb?.grade
-  }).length
+  const ungradedSubmissions = (totalSubmissions ?? 0) - (gradedCount ?? 0)
   const { data: notifs } = await admin
     .from('notifications')
     .select('id, type, student_id, question_id, class_id, diagnostic_test_id, diagnostic_attempt_id, created_at, read, message, profiles:profiles!notifications_student_id_fkey(full_name), questions:questions!notifications_question_id_fkey(title), diagnostic_tests:diagnostic_tests!notifications_diagnostic_test_id_fkey(title)')
