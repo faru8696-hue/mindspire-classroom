@@ -2,7 +2,7 @@
 // intake/results container style used across every public diagnostic page.
 export default function GradientHero({ children, maxWidth = 'max-w-lg' }: { children: React.ReactNode; maxWidth?: string }) {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-900 to-indigo-800 p-4">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-600 to-blue-700 p-4">
       <div className={`bg-white rounded-2xl shadow-2xl w-full ${maxWidth} p-8`}>
         {children}
       </div>

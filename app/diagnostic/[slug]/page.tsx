@@ -42,8 +42,8 @@ export default async function DiagnosticLandingPage({ params }: { params: Promis
 
       <div className="bg-blue-50 rounded-xl p-5 mb-6 text-left space-y-2">
         {test.description && <p className="text-sm text-blue-800 mb-2">{test.description}</p>}
-        <p className="text-sm text-blue-800"><span className="mr-2">✓</span>{test.question_count_per_attempt} multiple-choice questions</p>
-        <p className="text-sm text-blue-800"><span className="mr-2">✓</span>Instant results with a topic-by-topic breakdown</p>
+        <p className="text-sm text-blue-800"><span className="mr-2">✓</span>{test.question_count_per_attempt} multiple choice questions</p>
+        <p className="text-sm text-blue-800"><span className="mr-2">✓</span>Instant results broken down by topic</p>
         <p className="text-sm text-blue-800"><span className="mr-2">✓</span>Downloadable PDF report with personalized prep advice</p>
         <p className="text-sm text-blue-800"><span className="mr-2">⏱</span>~{test.duration_minutes} minutes recommended</p>
         <p className="text-sm text-blue-800"><span className="mr-2">🆓</span>Completely free — open to everyone</p>
