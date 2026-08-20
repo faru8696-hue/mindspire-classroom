@@ -1,3 +1,5 @@
+'use client'
+
 // A lot of older questions have multiple-choice options typed straight into
 // the content field as one run-on line ("... (A) opt1 (B) opt2 (C) opt3"),
 // which renders as an unreadable wall of text. This splits on the "(A)"/
