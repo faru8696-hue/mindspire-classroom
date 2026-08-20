@@ -403,7 +403,14 @@ function InfiniteWhiteboardInner({
                 const parts = span.text.split('\n')
                 parts.forEach((part, i) => {
                   if (i > 0) { lineIndex++; cursorX = 0 }
-                  const shown = span.pasted ? `[${part}]` : part
+                  // Bracket only the very start/end of a pasted span, not
+                  // every line inside it — a multi-line paste should read as
+                  // one continuous bracketed block, not a separate [pair]
+                  // per line (which looked broken, especially on blank
+                  // lines within the paste).
+                  const shown = span.pasted
+                    ? (i === 0 ? '[' : '') + part + (i === parts.length - 1 ? ']' : '')
+                    : part
                   // Fixed black for the student's own words, fixed red for
                   // the bracketed pasted portion — ignoring obj.color here
                   // on purpose, since that could be whatever pen color was
