@@ -404,7 +404,12 @@ function InfiniteWhiteboardInner({
                 parts.forEach((part, i) => {
                   if (i > 0) { lineIndex++; cursorX = 0 }
                   const shown = span.pasted ? `[${part}]` : part
-                  ctx.fillStyle = span.pasted ? '#dc2626' : (obj.color || '#000')
+                  // Fixed black for the student's own words, fixed red for
+                  // the bracketed pasted portion — ignoring obj.color here
+                  // on purpose, since that could be whatever pen color was
+                  // in use (e.g. a teacher's own default is already
+                  // reddish) and would blur the black-vs-red distinction.
+                  ctx.fillStyle = span.pasted ? '#dc2626' : '#000'
                   const y = fontSize * (lineIndex + 1) * 1.2 - fontSize * 0.2
                   ctx.fillText(shown, cursorX, y)
                   cursorX += ctx.measureText(shown).width
