@@ -40,9 +40,14 @@ interface DrawObject {
   fontFamily?: string
   zIndex: number
   // Set when this text object's content was ever pasted in rather than
-  // typed — surfaced to teachers only (see drawObj) as a silent signal for
+  // typed — surfaced to teachers only (see drawObj) as a signal for
   // reviewing whether a student copied an answer in from elsewhere.
   pasted?: boolean
+  // The exact string(s) inserted by each paste event, captured at paste
+  // time — used to quote-wrap the pasted portion in the teacher's view so
+  // it's clear exactly what was pasted vs typed, without needing to track
+  // live character ranges through later edits.
+  pastedSnippets?: string[]
 }
 
 interface ViewState { panX: number; panY: number; zoom: number }
@@ -158,7 +163,7 @@ function InfiniteWhiteboardInner({
   // unchangeable "Text..." placeholder. editingTextRef mirrors the state so
   // the canvas draw loop (a plain callback, not a component re-render) can
   // skip drawing the object currently being edited without stale closures.
-  interface EditingText { id: string; value: string; color: string; fontSize: number; fontFamily: string; x: number; y: number; pasted?: boolean }
+  interface EditingText { id: string; value: string; color: string; fontSize: number; fontFamily: string; x: number; y: number; pasted?: boolean; pastedSnippets?: string[] }
   const [editingText, setEditingText] = useState<EditingText | null>(null)
   const editingTextRef = useRef<EditingText | null>(null)
   const textAreaElRef = useRef<HTMLTextAreaElement | null>(null)
@@ -354,26 +359,35 @@ function InfiniteWhiteboardInner({
         } else if (obj.type === 'text') {
           if (editingTextRef.current?.id !== obj.id) {
             const fontSize = obj.fontSize ?? 20
+            const showPasteEvidence = role === 'teacher' && !!obj.pasted
+
+            // Quote-wrap each pasted snippet where it still appears verbatim
+            // in the text — teacher view only, so a parent can see exactly
+            // what was pasted vs typed. The student's own screen always
+            // renders obj.data unmodified, so this never tips them off.
+            let displayText = obj.data || ''
+            if (showPasteEvidence) {
+              for (const snippet of obj.pastedSnippets ?? []) {
+                if (snippet && displayText.includes(snippet) && !displayText.includes(`"${snippet}"`)) {
+                  displayText = displayText.replace(snippet, `"${snippet}"`)
+                }
+              }
+            }
+
             ctx.fillStyle = obj.color || '#000'
             ctx.font = `${fontSize}px ${obj.fontFamily || 'Arial'}`
-            const lines = (obj.data || '').split('\n')
+            const lines = displayText.split('\n')
             lines.forEach((line, i) => ctx.fillText(line, 0, fontSize * (i + 1) * 1.2 - fontSize * 0.2))
-            // Silent paste indicator — teacher view only, never rendered on the
-            // student's own board, so it doesn't tip them off in the moment.
-            // A small dot in the corner, meant to be noticed on review, not
-            // to interrupt the student's flow.
-            if (obj.pasted && role === 'teacher') {
-              // Radius compensates for the ctx.scale(v.zoom) applied by the
-              // caller so the dot stays a consistent ~5px on screen — at
-              // typical "fit to content" zoom levels (often well under
-              // 100%), a fixed object-space radius shrinks to a fraction of
-              // a pixel and disappears entirely.
-              const w = obj.width ?? 160
-              const r = 5 / v.zoom
-              ctx.beginPath()
-              ctx.arc(w - r * 1.5, r * 1.5, r, 0, Math.PI * 2)
-              ctx.fillStyle = '#f59e0b'
-              ctx.fill()
+
+            // Explicit evidence label, not just a subtle marker — meant to
+            // be clear enough to screenshot and show a parent. Font size
+            // compensates for ctx.scale(v.zoom) the same way the old dot
+            // marker needed to, so it stays readable at any zoom level.
+            if (showPasteEvidence) {
+              const labelPx = 13 / v.zoom
+              ctx.font = `bold ${labelPx}px Arial, sans-serif`
+              ctx.fillStyle = '#dc2626'
+              ctx.fillText('📋 Pasted answer', 0, fontSize * lines.length * 1.2 + labelPx * 1.4)
             }
           }
         } else if (obj.type === 'sticky') {
@@ -722,7 +736,7 @@ function InfiniteWhiteboardInner({
       pushHistory()
       const id = `text-${Date.now()}`
       const fontSize = 48, fontFamily = 'Arial, sans-serif'
-      const e2 = { id, value: '', color: colorRef.current, fontSize, fontFamily, x: canvasPos.x, y: canvasPos.y, pasted: false }
+      const e2 = { id, value: '', color: colorRef.current, fontSize, fontFamily, x: canvasPos.x, y: canvasPos.y, pasted: false, pastedSnippets: [] }
       // flushSync + an immediate synchronous focus() — without this, the
       // textarea mounts on the next React commit, which is just late enough
       // that iOS Safari refuses to treat the resulting focus() as part of
@@ -757,7 +771,7 @@ function InfiniteWhiteboardInner({
     const e2 = {
       id: hitObj.id, value: hitObj.data || '', color: hitObj.color || colorRef.current,
       fontSize: hitObj.fontSize ?? 20, fontFamily: hitObj.fontFamily || 'Arial, sans-serif',
-      x: hitObj.x, y: hitObj.y, pasted: hitObj.pasted ?? false,
+      x: hitObj.x, y: hitObj.y, pasted: hitObj.pasted ?? false, pastedSnippets: hitObj.pastedSnippets ?? [],
     }
     flushSync(() => {
       editingTextRef.current = e2; setEditingText(e2)
@@ -780,7 +794,7 @@ function InfiniteWhiteboardInner({
       const width = Math.max(160, widest * et.fontSize * 0.6)
       const height = Math.max(28, lines.length * et.fontSize * 1.2)
       commitObjects(prev => prev.map(o => o.id === et.id
-        ? { ...o, data: et.value, color: et.color, fontSize: et.fontSize, fontFamily: et.fontFamily, width, height, pasted: et.pasted }
+        ? { ...o, data: et.value, color: et.color, fontSize: et.fontSize, fontFamily: et.fontFamily, width, height, pasted: et.pasted, pastedSnippets: et.pastedSnippets }
         : o))
     }
     editingTextRef.current = null
@@ -926,7 +940,7 @@ function InfiniteWhiteboardInner({
               const e2 = {
                 id: hitText.id, value: hitText.data || '', color: hitText.color || colorRef.current,
                 fontSize: hitText.fontSize ?? 20, fontFamily: hitText.fontFamily || 'Arial, sans-serif',
-                x: hitText.x, y: hitText.y, pasted: hitText.pasted ?? false,
+                x: hitText.x, y: hitText.y, pasted: hitText.pasted ?? false, pastedSnippets: hitText.pastedSnippets ?? [],
               }
               flushSync(() => {
                 editingTextRef.current = e2; setEditingText(e2)
@@ -959,7 +973,7 @@ function InfiniteWhiteboardInner({
           pushHistory()
           const id = `text-${Date.now()}`
           const fontSize = 48, fontFamily = 'Arial, sans-serif'
-          const e2 = { id, value: '', color: colorRef.current, fontSize, fontFamily, x: canvasPos.x, y: canvasPos.y, pasted: false }
+          const e2 = { id, value: '', color: colorRef.current, fontSize, fontFamily, x: canvasPos.x, y: canvasPos.y, pasted: false, pastedSnippets: [] }
           flushSync(() => {
             commitObjects(prev => [...prev, { id, type: 'text', x: canvasPos.x, y: canvasPos.y, rotation: 0, data: '', color: colorRef.current, fontSize, fontFamily, zIndex: Date.now() }])
             editingTextRef.current = e2; setEditingText(e2)
@@ -1445,7 +1459,7 @@ const SYMBOL_GROUPS: { label: string; symbols: string[] }[] = [
   { label: 'Math', symbols: ['±', '×', '÷', '≤', '≥', '≠', '≈', '√', 'π', '∞', '∑', '∫', '∂', '½', '¼', '¾'] },
 ]
 
-interface EditingTextValue { id: string; value: string; color: string; fontSize: number; fontFamily: string; x: number; y: number; pasted?: boolean }
+interface EditingTextValue { id: string; value: string; color: string; fontSize: number; fontFamily: string; x: number; y: number; pasted?: boolean; pastedSnippets?: string[] }
 
 function TextEditOverlay({
   editingText, view, onChange, onCommit, textAreaElRef,
@@ -1553,7 +1567,11 @@ function TextEditOverlay({
         autoFocus
         value={editingText.value}
         onChange={e => onChange({ value: e.target.value })}
-        onPaste={() => onChange({ pasted: true })}
+        onPaste={e => {
+          const pastedText = e.clipboardData.getData('text')
+          if (!pastedText) return
+          onChange({ pasted: true, pastedSnippets: [...(editingText.pastedSnippets ?? []), pastedText] })
+        }}
         onKeyDown={e => {
           if (e.key === 'Escape') { e.preventDefault(); onCommit() }
         }}
