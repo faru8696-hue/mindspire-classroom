@@ -44,6 +44,7 @@ export default async function StudentLayout({ children }: { children: React.Reac
         <div className="flex items-center gap-4">
           <Link href="/student" className="font-bold text-lg cursor-pointer hover:opacity-80 transition-opacity">⚛️ Mindspire Lab</Link>
           <Link href="/student" className="text-purple-200 hover:text-white text-sm transition-colors">My Classes</Link>
+          <Link href="/student/school-topics" className="text-purple-200 hover:text-white text-sm transition-colors">School Topics</Link>
           <Link href="/student/assignments" className="text-purple-200 hover:text-white text-sm transition-colors">Assignments</Link>
           <Link href="/student/tests" className="text-purple-200 hover:text-white text-sm transition-colors">Tests</Link>
           <Link href="/student/review" className="text-purple-200 hover:text-white text-sm transition-colors">Review</Link>

@@ -104,6 +104,7 @@ export default async function TeacherLayout({ children }: { children: React.Reac
             )}
           </Link>
           <Link href="/teacher/progress" className="text-purple-200 hover:text-white text-sm transition-colors">Progress</Link>
+          <Link href="/teacher/planning" className="text-purple-200 hover:text-white text-sm transition-colors">Planning</Link>
           <Link href="/teacher/activity" className="text-purple-200 hover:text-white text-sm transition-colors flex items-center gap-1.5">
             Activity
             {!!newActivity && (
