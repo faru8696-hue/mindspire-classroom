@@ -39,6 +39,10 @@ interface DrawObject {
   fontSize?: number
   fontFamily?: string
   zIndex: number
+  // Set when this text object's content was ever pasted in rather than
+  // typed — surfaced to teachers only (see drawObj) as a silent signal for
+  // reviewing whether a student copied an answer in from elsewhere.
+  pasted?: boolean
 }
 
 interface ViewState { panX: number; panY: number; zoom: number }
@@ -154,7 +158,7 @@ function InfiniteWhiteboardInner({
   // unchangeable "Text..." placeholder. editingTextRef mirrors the state so
   // the canvas draw loop (a plain callback, not a component re-render) can
   // skip drawing the object currently being edited without stale closures.
-  interface EditingText { id: string; value: string; color: string; fontSize: number; fontFamily: string; x: number; y: number }
+  interface EditingText { id: string; value: string; color: string; fontSize: number; fontFamily: string; x: number; y: number; pasted?: boolean }
   const [editingText, setEditingText] = useState<EditingText | null>(null)
   const editingTextRef = useRef<EditingText | null>(null)
   const textAreaElRef = useRef<HTMLTextAreaElement | null>(null)
@@ -354,6 +358,17 @@ function InfiniteWhiteboardInner({
             ctx.font = `${fontSize}px ${obj.fontFamily || 'Arial'}`
             const lines = (obj.data || '').split('\n')
             lines.forEach((line, i) => ctx.fillText(line, 0, fontSize * (i + 1) * 1.2 - fontSize * 0.2))
+            // Silent paste indicator — teacher view only, never rendered on the
+            // student's own board, so it doesn't tip them off in the moment.
+            // A small dot in the corner, meant to be noticed on review, not
+            // to interrupt the student's flow.
+            if (obj.pasted && role === 'teacher') {
+              const w = obj.width ?? 160
+              ctx.beginPath()
+              ctx.arc(w - 6, 6, 4, 0, Math.PI * 2)
+              ctx.fillStyle = '#f59e0b'
+              ctx.fill()
+            }
           }
         } else if (obj.type === 'sticky') {
           const w = obj.width ?? 150, h = obj.height ?? 150
@@ -701,7 +716,7 @@ function InfiniteWhiteboardInner({
       pushHistory()
       const id = `text-${Date.now()}`
       const fontSize = 48, fontFamily = 'Arial, sans-serif'
-      const e2 = { id, value: '', color: colorRef.current, fontSize, fontFamily, x: canvasPos.x, y: canvasPos.y }
+      const e2 = { id, value: '', color: colorRef.current, fontSize, fontFamily, x: canvasPos.x, y: canvasPos.y, pasted: false }
       // flushSync + an immediate synchronous focus() — without this, the
       // textarea mounts on the next React commit, which is just late enough
       // that iOS Safari refuses to treat the resulting focus() as part of
@@ -736,7 +751,7 @@ function InfiniteWhiteboardInner({
     const e2 = {
       id: hitObj.id, value: hitObj.data || '', color: hitObj.color || colorRef.current,
       fontSize: hitObj.fontSize ?? 20, fontFamily: hitObj.fontFamily || 'Arial, sans-serif',
-      x: hitObj.x, y: hitObj.y,
+      x: hitObj.x, y: hitObj.y, pasted: hitObj.pasted ?? false,
     }
     flushSync(() => {
       editingTextRef.current = e2; setEditingText(e2)
@@ -759,7 +774,7 @@ function InfiniteWhiteboardInner({
       const width = Math.max(160, widest * et.fontSize * 0.6)
       const height = Math.max(28, lines.length * et.fontSize * 1.2)
       commitObjects(prev => prev.map(o => o.id === et.id
-        ? { ...o, data: et.value, color: et.color, fontSize: et.fontSize, fontFamily: et.fontFamily, width, height }
+        ? { ...o, data: et.value, color: et.color, fontSize: et.fontSize, fontFamily: et.fontFamily, width, height, pasted: et.pasted }
         : o))
     }
     editingTextRef.current = null
@@ -905,7 +920,7 @@ function InfiniteWhiteboardInner({
               const e2 = {
                 id: hitText.id, value: hitText.data || '', color: hitText.color || colorRef.current,
                 fontSize: hitText.fontSize ?? 20, fontFamily: hitText.fontFamily || 'Arial, sans-serif',
-                x: hitText.x, y: hitText.y,
+                x: hitText.x, y: hitText.y, pasted: hitText.pasted ?? false,
               }
               flushSync(() => {
                 editingTextRef.current = e2; setEditingText(e2)
@@ -938,7 +953,7 @@ function InfiniteWhiteboardInner({
           pushHistory()
           const id = `text-${Date.now()}`
           const fontSize = 48, fontFamily = 'Arial, sans-serif'
-          const e2 = { id, value: '', color: colorRef.current, fontSize, fontFamily, x: canvasPos.x, y: canvasPos.y }
+          const e2 = { id, value: '', color: colorRef.current, fontSize, fontFamily, x: canvasPos.x, y: canvasPos.y, pasted: false }
           flushSync(() => {
             commitObjects(prev => [...prev, { id, type: 'text', x: canvasPos.x, y: canvasPos.y, rotation: 0, data: '', color: colorRef.current, fontSize, fontFamily, zIndex: Date.now() }])
             editingTextRef.current = e2; setEditingText(e2)
@@ -1424,7 +1439,7 @@ const SYMBOL_GROUPS: { label: string; symbols: string[] }[] = [
   { label: 'Math', symbols: ['±', '×', '÷', '≤', '≥', '≠', '≈', '√', 'π', '∞', '∑', '∫', '∂', '½', '¼', '¾'] },
 ]
 
-interface EditingTextValue { id: string; value: string; color: string; fontSize: number; fontFamily: string; x: number; y: number }
+interface EditingTextValue { id: string; value: string; color: string; fontSize: number; fontFamily: string; x: number; y: number; pasted?: boolean }
 
 function TextEditOverlay({
   editingText, view, onChange, onCommit, textAreaElRef,
@@ -1532,6 +1547,7 @@ function TextEditOverlay({
         autoFocus
         value={editingText.value}
         onChange={e => onChange({ value: e.target.value })}
+        onPaste={() => onChange({ pasted: true })}
         onKeyDown={e => {
           if (e.key === 'Escape') { e.preventDefault(); onCommit() }
         }}
