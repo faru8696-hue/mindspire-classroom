@@ -99,7 +99,7 @@ export default async function QuestionPage({
             <span className="text-gray-700 font-medium">{question.title}</span>
           </div>
           <h1 className="text-xl font-bold text-purple-900">{question.title}</h1>
-          {question.content && <QuestionContent text={question.content} className="text-gray-600 mt-1" />}
+          {question.content && <QuestionContent text={question.content} className="text-gray-600 mt-1" locked />}
         </div>
         <div className="flex items-center gap-3 flex-shrink-0">
           <div className="flex items-center gap-1.5">

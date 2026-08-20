@@ -222,10 +222,10 @@ export default function SelfCheckSession({
               🚩
             </button>
           </div>
-          {q.content && <QuestionContent text={q.content} className="text-gray-600 mb-4" />}
+          {q.content && <QuestionContent text={q.content} className="text-gray-600 mb-4" locked />}
 
           {q.question_type === 'mcq' ? (
-            <div className="space-y-2 mb-4">
+            <div className="space-y-2 mb-4 select-none" onCopy={e => e.preventDefault()} onContextMenu={e => e.preventDefault()}>
               {(q.mcq_options ?? []).map((opt, i) => (
                 <button
                   key={i}
@@ -280,7 +280,7 @@ export default function SelfCheckSession({
             🚩
           </button>
         </div>
-        {q.content && <QuestionContent text={q.content} className="text-gray-600 mb-4" />}
+        {q.content && <QuestionContent text={q.content} className="text-gray-600 mb-4" locked />}
 
         {q.question_type === 'mcq' ? (
           <div className="mt-2">
