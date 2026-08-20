@@ -363,9 +363,15 @@ function InfiniteWhiteboardInner({
             // A small dot in the corner, meant to be noticed on review, not
             // to interrupt the student's flow.
             if (obj.pasted && role === 'teacher') {
+              // Radius compensates for the ctx.scale(v.zoom) applied by the
+              // caller so the dot stays a consistent ~5px on screen — at
+              // typical "fit to content" zoom levels (often well under
+              // 100%), a fixed object-space radius shrinks to a fraction of
+              // a pixel and disappears entirely.
               const w = obj.width ?? 160
+              const r = 5 / v.zoom
               ctx.beginPath()
-              ctx.arc(w - 6, 6, 4, 0, Math.PI * 2)
+              ctx.arc(w - r * 1.5, r * 1.5, r, 0, Math.PI * 2)
               ctx.fillStyle = '#f59e0b'
               ctx.fill()
             }
