@@ -1,12 +1,14 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
 interface ClassRow { id: string; title: string; order_index: number }
 interface UnitRow { id: string; class_id: string; title: string; order_index: number }
 interface TopicRow { id: string; unit_id: string; title: string; order_index: number }
 interface PlanRow { topicId: string; testDate: string | null }
+interface StatusRow { classId: string; notStarted: boolean; otherTopics: string }
+interface ClassStatus { notStarted: boolean; otherTopics: string }
 
 interface Props {
   studentId: string
@@ -14,20 +16,61 @@ interface Props {
   units: UnitRow[]
   topics: TopicRow[]
   initialPlans: PlanRow[]
+  initialStatus: StatusRow[]
+  required: boolean
 }
 
-export default function SchoolTopicsChecklist({ studentId, classes, units, topics, initialPlans }: Props) {
+export default function SchoolTopicsChecklist({ studentId, classes, units, topics, initialPlans, initialStatus, required }: Props) {
   const supabase = createClient()
   // topicId -> test_date (or null). Presence in the map = "my school covers this topic".
   const [selections, setSelections] = useState<Map<string, string | null>>(
     () => new Map(initialPlans.map(p => [p.topicId, p.testDate]))
   )
+  const [statusByClass, setStatusByClass] = useState<Map<string, ClassStatus>>(
+    () => new Map(initialStatus.map(s => [s.classId, { notStarted: s.notStarted, otherTopics: s.otherTopics }]))
+  )
   const [savingTopic, setSavingTopic] = useState<string | null>(null)
   const [savedTopic, setSavedTopic] = useState<string | null>(null)
+  const [savingStatusClass, setSavingStatusClass] = useState<string | null>(null)
+  const [savedStatusClass, setSavedStatusClass] = useState<string | null>(null)
+  const hasRedirected = useRef(false)
 
   function flashSaved(topicId: string) {
     setSavedTopic(topicId)
     setTimeout(() => setSavedTopic(prev => (prev === topicId ? null : prev)), 1500)
+  }
+
+  function flashStatusSaved(classId: string) {
+    setSavedStatusClass(classId)
+    setTimeout(() => setSavedStatusClass(prev => (prev === classId ? null : prev)), 1500)
+  }
+
+  function getStatus(classId: string): ClassStatus {
+    return statusByClass.get(classId) ?? { notStarted: false, otherTopics: '' }
+  }
+
+  async function saveStatus(classId: string, next: ClassStatus) {
+    setSavingStatusClass(classId)
+    const { error } = await supabase.from('student_school_status')
+      .upsert({ student_id: studentId, class_id: classId, not_started: next.notStarted, other_topics: next.otherTopics || null }, { onConflict: 'student_id,class_id' })
+    setSavingStatusClass(null)
+    if (!error) {
+      setStatusByClass(prev => new Map(prev).set(classId, next))
+      flashStatusSaved(classId)
+    }
+  }
+
+  function toggleNotStarted(classId: string) {
+    const current = getStatus(classId)
+    saveStatus(classId, { ...current, notStarted: !current.notStarted })
+  }
+
+  function updateOtherTopicsDraft(classId: string, text: string) {
+    setStatusByClass(prev => new Map(prev).set(classId, { ...getStatus(classId), otherTopics: text }))
+  }
+
+  function saveOtherTopicsOnBlur(classId: string) {
+    saveStatus(classId, getStatus(classId))
   }
 
   async function toggle(topicId: string, classId: string) {
@@ -63,20 +106,81 @@ export default function SchoolTopicsChecklist({ studentId, classes, units, topic
 
   const sortedClasses = [...classes].sort((a, b) => a.order_index - b.order_index)
 
+  const topicIdsByClass = new Map<string, string[]>()
+  for (const u of units) {
+    const ts = topics.filter(t => t.unit_id === u.id).map(t => t.id)
+    topicIdsByClass.set(u.class_id, [...(topicIdsByClass.get(u.class_id) ?? []), ...ts])
+  }
+
+  function isClassComplete(classId: string) {
+    const status = getStatus(classId)
+    if (status.notStarted || status.otherTopics.trim()) return true
+    return (topicIdsByClass.get(classId) ?? []).some(id => selections.has(id))
+  }
+
+  const allComplete = sortedClasses.length > 0 && sortedClasses.every(c => isClassComplete(c.id))
+
+  // Once every enrolled class has something filled in, and this page was
+  // reached via the required-first-login gate, send the student on into the
+  // rest of the app — same "done, now continue" flow as ProfileEditor's
+  // required path.
+  useEffect(() => {
+    if (!required || !allComplete || hasRedirected.current) return
+    hasRedirected.current = true
+    const t = setTimeout(() => { window.location.href = '/student' }, 700)
+    return () => clearTimeout(t)
+  }, [required, allComplete])
+
   return (
     <div className="space-y-6">
+      {required && allComplete && (
+        <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 text-green-800 text-sm font-medium">
+          ✓ Got it — taking you to your classes…
+        </div>
+      )}
+
       {sortedClasses.map(cls => {
         const classUnits = units.filter(u => u.class_id === cls.id).sort((a, b) => a.order_index - b.order_index)
         const checkedCount = classUnits.reduce(
           (sum, u) => sum + topics.filter(t => t.unit_id === u.id && selections.has(t.id)).length,
           0,
         )
+        const status = getStatus(cls.id)
+        const isStatusSaving = savingStatusClass === cls.id
+        const isStatusSaved = savedStatusClass === cls.id
 
         return (
           <div key={cls.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
             <div className="px-5 py-3 bg-purple-50 border-b border-purple-100 flex items-center justify-between">
               <h2 className="font-bold text-purple-900">{cls.title}</h2>
               <span className="text-xs text-purple-600">{checkedCount} topic{checkedCount === 1 ? '' : 's'} selected</span>
+            </div>
+
+            <div className="px-5 py-3 border-b border-gray-100 space-y-3">
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={status.notStarted}
+                  disabled={isStatusSaving}
+                  onChange={() => toggleNotStarted(cls.id)}
+                  className="w-4 h-4 rounded border-gray-300 text-purple-600 focus:ring-purple-400 flex-shrink-0"
+                />
+                <span className="text-sm text-gray-800">My school hasn&apos;t started this class yet</span>
+                {isStatusSaved && status.notStarted && <span className="text-xs text-green-600">✓</span>}
+              </label>
+
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Something else your school covers that&apos;s not on the list below?</label>
+                <textarea
+                  value={status.otherTopics}
+                  onChange={e => updateOtherTopicsDraft(cls.id, e.target.value)}
+                  onBlur={() => saveOtherTopicsOnBlur(cls.id)}
+                  placeholder="Optional — describe it here"
+                  rows={2}
+                  className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-400 placeholder-gray-400"
+                />
+                {isStatusSaved && status.otherTopics.trim() && <span className="text-xs text-green-600">✓ Saved</span>}
+              </div>
             </div>
 
             {classUnits.length === 0 && (

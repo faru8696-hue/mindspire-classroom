@@ -4,6 +4,7 @@ import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
 import Link from 'next/link'
 import { logout } from '@/app/actions/auth'
 import ProfileGate from '@/components/ProfileGate'
+import SchoolTopicsGate from '@/components/SchoolTopicsGate'
 import StudentNotificationBell from '@/components/StudentNotificationBell'
 
 export default async function StudentLayout({ children }: { children: React.ReactNode }) {
@@ -37,6 +38,25 @@ export default async function StudentLayout({ children }: { children: React.Reac
   const admin = createSupabaseAdmin(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
   const { data: enrollments } = await admin.from('class_enrollments').select('class_id').eq('student_id', session.user.id)
   const enrolledClassIds = (enrollments ?? []).map((e: { class_id: string }) => e.class_id)
+
+  // School-topics gate: a class counts as "done" once the student has
+  // checked at least one topic for it, or filled in the not-started/other
+  // status for it. Guarded by the error checks below so this gate stays
+  // off (never locks anyone out) until both migrations have actually been
+  // run — same defensive pattern as extColumnsExist above.
+  const { data: planRows, error: planErr } = await admin
+    .from('student_topic_plans').select('class_id').eq('student_id', session.user.id)
+  const { data: statusRows, error: statusErr } = await admin
+    .from('student_school_status').select('class_id, not_started, other_topics').eq('student_id', session.user.id)
+  const schoolTopicsTablesExist = !planErr && !statusErr
+  const classIdsWithTopics = new Set((planRows ?? []).map((r: { class_id: string }) => r.class_id))
+  const classIdsWithStatus = new Set(
+    (statusRows ?? [])
+      .filter((r: { not_started: boolean; other_topics: string | null }) => r.not_started || !!r.other_topics?.trim())
+      .map((r: { class_id: string }) => r.class_id)
+  )
+  const schoolTopicsComplete = !schoolTopicsTablesExist || enrolledClassIds.length === 0
+    || enrolledClassIds.every(id => classIdsWithTopics.has(id) || classIdsWithStatus.has(id))
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -72,7 +92,9 @@ export default async function StudentLayout({ children }: { children: React.Reac
         </div>
       </nav>
       <main className="flex-1 p-6">
-        <ProfileGate profileComplete={profileComplete}>{children}</ProfileGate>
+        <ProfileGate profileComplete={profileComplete}>
+          <SchoolTopicsGate complete={schoolTopicsComplete}>{children}</SchoolTopicsGate>
+        </ProfileGate>
       </main>
     </div>
   )

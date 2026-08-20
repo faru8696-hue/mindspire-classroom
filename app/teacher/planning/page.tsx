@@ -12,7 +12,7 @@ export default async function TeacherPlanningPage() {
   const { data: classes } = await supabase.from('classes').select('id, title, order_index').order('order_index')
   const classIds = (classes ?? []).map((c: { id: string }) => c.id)
 
-  const [{ data: units }, { data: enrollments }, { data: plans }] = await Promise.all([
+  const [{ data: units }, { data: enrollments }, { data: plans }, { data: statusRows }] = await Promise.all([
     classIds.length > 0
       ? supabase.from('units').select('id, class_id, title, order_index').in('class_id', classIds).order('order_index')
       : Promise.resolve({ data: [] }),
@@ -22,12 +22,38 @@ export default async function TeacherPlanningPage() {
     classIds.length > 0
       ? supabase.from('student_topic_plans').select('student_id, class_id, topic_id, test_date').in('class_id', classIds)
       : Promise.resolve({ data: [] }),
+    classIds.length > 0
+      ? supabase.from('student_school_status').select('student_id, class_id, not_started, other_topics').in('class_id', classIds)
+      : Promise.resolve({ data: [] }),
   ])
 
   const unitIds = (units ?? []).map((u: { id: string }) => u.id)
   const { data: topics } = unitIds.length > 0
     ? await supabase.from('topics').select('id, unit_id, title, order_index').in('unit_id', unitIds).order('order_index')
     : { data: [] }
+
+  const enrolledStudentIds = [...new Set((enrollments ?? []).map((e: { student_id: string }) => e.student_id))]
+  const { data: studentProfiles } = enrolledStudentIds.length > 0
+    ? await supabase.from('profiles').select('id, full_name').in('id', enrolledStudentIds)
+    : { data: [] }
+  const nameById = new Map((studentProfiles ?? []).map((p: { id: string; full_name: string }) => [p.id, p.full_name]))
+
+  // Students who report their school hasn't started a class yet, and any
+  // freeform "other topics" notes — both keyed by class so they render
+  // alongside that class's topic breakdown below.
+  const notStartedByClass = new Map<string, string[]>()
+  const otherNotesByClass = new Map<string, { name: string; text: string }[]>()
+  for (const s of statusRows ?? []) {
+    const name = nameById.get(s.student_id) ?? 'Unknown'
+    if (s.not_started) {
+      if (!notStartedByClass.has(s.class_id)) notStartedByClass.set(s.class_id, [])
+      notStartedByClass.get(s.class_id)!.push(name)
+    }
+    if (s.other_topics && s.other_topics.trim()) {
+      if (!otherNotesByClass.has(s.class_id)) otherNotesByClass.set(s.class_id, [])
+      otherNotesByClass.get(s.class_id)!.push({ name, text: s.other_topics })
+    }
+  }
 
   const enrolledCountByClass = new Map<string, number>()
   for (const e of enrollments ?? []) {
@@ -91,6 +117,35 @@ export default async function TeacherPlanningPage() {
               <p className="text-gray-400 text-sm">No students enrolled.</p>
             ) : (
               <>
+                {(notStartedByClass.get(cls.id)?.length ?? 0) > 0 && (
+                  <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mb-3">
+                    <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-200">
+                      <span className="text-sm font-semibold text-gray-700">🚫 Hasn&apos;t Started Yet</span>
+                    </div>
+                    <div className="px-4 py-2.5 flex flex-wrap gap-2">
+                      {notStartedByClass.get(cls.id)!.map(name => (
+                        <span key={name} className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-full">{name}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {(otherNotesByClass.get(cls.id)?.length ?? 0) > 0 && (
+                  <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mb-3">
+                    <div className="px-4 py-2.5 bg-blue-50 border-b border-blue-100">
+                      <span className="text-sm font-semibold text-blue-800">💬 Other Notes</span>
+                    </div>
+                    <div className="divide-y divide-gray-50">
+                      {otherNotesByClass.get(cls.id)!.map((n, i) => (
+                        <div key={i} className="px-4 py-2.5 text-sm">
+                          <span className="font-medium text-gray-700">{n.name}:</span>{' '}
+                          <span className="text-gray-600">{n.text}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {upcoming.length > 0 && (
                   <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mb-3">
                     <div className="px-4 py-2.5 bg-amber-50 border-b border-amber-100">
