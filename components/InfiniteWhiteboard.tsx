@@ -71,6 +71,31 @@ function loadSaved(raw: string | null | undefined): DrawObject[] {
   try { return JSON.parse(raw) as DrawObject[] } catch { return [] }
 }
 
+// Splits text into alternating normal/pasted spans so the canvas renderer
+// can draw the pasted portions in a different color — canvas fillText can't
+// mix colors within one call, so the caller needs these as separate draws.
+// Only the first occurrence of each snippet is matched, and matching only
+// looks inside spans not already marked pasted, so a snippet can't nest
+// inside another already-flagged span.
+function buildPasteSpans(text: string, snippets: string[]): { text: string; pasted: boolean }[] {
+  let spans: { text: string; pasted: boolean }[] = [{ text, pasted: false }]
+  for (const snippet of snippets) {
+    if (!snippet) continue
+    const next: typeof spans = []
+    for (const span of spans) {
+      if (span.pasted) { next.push(span); continue }
+      const idx = span.text.indexOf(snippet)
+      if (idx === -1) { next.push(span); continue }
+      if (idx > 0) next.push({ text: span.text.slice(0, idx), pasted: false })
+      next.push({ text: snippet, pasted: true })
+      const rest = span.text.slice(idx + snippet.length)
+      if (rest) next.push({ text: rest, pasted: false })
+    }
+    spans = next
+  }
+  return spans
+}
+
 // Bounding box (canvas coords) enclosing all objects, or null if there are none.
 function contentBounds(objs: DrawObject[]): { minX: number; minY: number; maxX: number; maxY: number } | null {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
@@ -360,34 +385,44 @@ function InfiniteWhiteboardInner({
           if (editingTextRef.current?.id !== obj.id) {
             const fontSize = obj.fontSize ?? 20
             const showPasteEvidence = role === 'teacher' && !!obj.pasted
+            const rawText = obj.data || ''
+            ctx.font = `${fontSize}px ${obj.fontFamily || 'Arial'}`
 
-            // Quote-wrap each pasted snippet where it still appears verbatim
-            // in the text — teacher view only, so a parent can see exactly
-            // what was pasted vs typed. The student's own screen always
-            // renders obj.data unmodified, so this never tips them off.
-            let displayText = obj.data || ''
-            if (showPasteEvidence) {
-              for (const snippet of obj.pastedSnippets ?? []) {
-                if (snippet && displayText.includes(snippet) && !displayText.includes(`"${snippet}"`)) {
-                  displayText = displayText.replace(snippet, `"${snippet}"`)
-                }
+            if (!showPasteEvidence) {
+              ctx.fillStyle = obj.color || '#000'
+              rawText.split('\n').forEach((line, i) => ctx.fillText(line, 0, fontSize * (i + 1) * 1.2 - fontSize * 0.2))
+            } else {
+              // Bracket the pasted portion(s) in red — teacher view only, so
+              // a parent can see exactly what was pasted vs typed. Canvas
+              // text can't mix colors in one fillText call, so each span is
+              // drawn separately, walking the x cursor forward by its
+              // measured width and dropping to the next line on '\n'.
+              const spans = buildPasteSpans(rawText, obj.pastedSnippets ?? [])
+              let cursorX = 0, lineIndex = 0
+              for (const span of spans) {
+                const parts = span.text.split('\n')
+                parts.forEach((part, i) => {
+                  if (i > 0) { lineIndex++; cursorX = 0 }
+                  const shown = span.pasted ? `[${part}]` : part
+                  ctx.fillStyle = span.pasted ? '#dc2626' : (obj.color || '#000')
+                  const y = fontSize * (lineIndex + 1) * 1.2 - fontSize * 0.2
+                  ctx.fillText(shown, cursorX, y)
+                  cursorX += ctx.measureText(shown).width
+                })
               }
             }
 
-            ctx.fillStyle = obj.color || '#000'
-            ctx.font = `${fontSize}px ${obj.fontFamily || 'Arial'}`
-            const lines = displayText.split('\n')
-            lines.forEach((line, i) => ctx.fillText(line, 0, fontSize * (i + 1) * 1.2 - fontSize * 0.2))
-
             // Explicit evidence label, not just a subtle marker — meant to
             // be clear enough to screenshot and show a parent. Font size
-            // compensates for ctx.scale(v.zoom) the same way the old dot
-            // marker needed to, so it stays readable at any zoom level.
+            // compensates for ctx.scale(v.zoom) so it stays readable at any
+            // zoom level (a fixed object-space size shrinks to sub-pixel at
+            // typical "fit to content" zoom, well under 100%).
             if (showPasteEvidence) {
+              const lineCount = rawText.split('\n').length
               const labelPx = 13 / v.zoom
               ctx.font = `bold ${labelPx}px Arial, sans-serif`
               ctx.fillStyle = '#dc2626'
-              ctx.fillText('📋 Pasted answer', 0, fontSize * lines.length * 1.2 + labelPx * 1.4)
+              ctx.fillText('📋 Pasted answer', 0, fontSize * lineCount * 1.2 + labelPx * 1.4)
             }
           }
         } else if (obj.type === 'sticky') {
