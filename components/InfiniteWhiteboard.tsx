@@ -1329,6 +1329,8 @@ function InfiniteWhiteboardInner({
           className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-sm flex-shrink-0">+</button>
         <button onClick={() => fitToContent()} title="Fit work to screen"
           className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-sm flex-shrink-0">🎯 Fit</button>
+        <button onClick={doUndo} title="Undo (Ctrl+Z)" className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-sm flex-shrink-0">↩ Undo</button>
+        <button onClick={doRedo} title="Redo (Ctrl+Shift+Z)" className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-sm flex-shrink-0">↪ Redo</button>
         <div className="w-px h-6 bg-gray-200 flex-shrink-0" />
         {tb('pointer', '➤ Select')}
         {tb('pan', '✋ Pan')}
@@ -1367,9 +1369,6 @@ function InfiniteWhiteboardInner({
               🗑 Delete
             </button>
           )}
-          <button onClick={doUndo} title="Undo (Ctrl+Z)" className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-sm">↩ Undo</button>
-          <button onClick={doRedo} title="Redo (Ctrl+Shift+Z)" className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-sm">↪ Redo</button>
-          <div className="w-px h-5 bg-gray-200" />
           <button onClick={() => { viewRef.current = { panX: 0, panY: 0, zoom: 1 }; _setView({ panX: 0, panY: 0, zoom: 1 }) }}
             className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-sm">Reset</button>
           {(onSaveStudent || onSaveTeacher) && (
