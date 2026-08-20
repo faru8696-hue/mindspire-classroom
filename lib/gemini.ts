@@ -165,6 +165,66 @@ answer key: ${answerKey ? answerKey.slice(0, 800) : '(none yet)'}`
   return JSON.parse(text) as DifficultyResult
 }
 
+export interface WeeklyPlanTopicInput {
+  unitTitle: string
+  topicTitle: string
+  studentsReporting: number
+  studentsEnrolled: number
+  nearestTestDate: string | null
+}
+
+export interface WeeklyPlanSession {
+  day: string
+  focusTopics: string[]
+  rationale: string
+}
+
+// Suggests what to cover in the upcoming group sessions, given how students
+// report their own school's pace. The teacher can't personalize per student
+// in a shared group session, so this is a best-effort starting point she
+// reviews and adjusts — not a directive.
+export async function suggestWeeklyPlan(
+  className: string, classDays: string[], topics: WeeklyPlanTopicInput[], todayIso: string,
+): Promise<WeeklyPlanSession[]> {
+  const topicLines = topics.length > 0
+    ? topics.map(t =>
+        `- ${t.unitTitle} / ${t.topicTitle}: ${t.studentsReporting}/${t.studentsEnrolled} students report their school is currently on this${t.nearestTestDate ? `, nearest reported test date ${t.nearestTestDate}` : ''}`
+      ).join('\n')
+    : '(No students have reported any topics yet for this class.)'
+
+  const prompt = `You are helping a tutor plan her upcoming group tutoring sessions for "${className}". She teaches a small group of students together, but each student's own school moves at its own pace, so she can't fully personalize for every student individually — she needs a best-effort plan for what to prioritize across the group.
+
+Her group sessions this week are on: ${classDays.join(', ')}. Today's date is ${todayIso}.
+
+Here is what students have reported about their own school's pace for this class (a topic is listed if at least one student's school is currently covering or has covered it; test date is the earliest date any student reported, if known):
+${topicLines}
+
+Suggest a plan for each of her upcoming session days (${classDays.join(', ')}), picking 1-3 topics to focus on per session. Prioritize topics where students have an upcoming test soonest, but also make room for topics many students report but with no test date yet. Keep each day's focus reasonably tight rather than trying to cover everything at once. If there's nothing reported yet, say so plainly rather than inventing topics.`
+
+  const schema = {
+    type: 'object',
+    properties: {
+      sessions: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            day: { type: 'string' },
+            focusTopics: { type: 'array', items: { type: 'string' } },
+            rationale: { type: 'string' },
+          },
+          required: ['day', 'focusTopics', 'rationale'],
+        },
+      },
+    },
+    required: ['sessions'],
+  }
+
+  const text = await callGemini([{ text: prompt }], schema, 1024)
+  const parsed = JSON.parse(text) as { sessions: WeeklyPlanSession[] }
+  return parsed.sessions
+}
+
 export interface ChatTurn {
   role: 'user' | 'model'
   text: string

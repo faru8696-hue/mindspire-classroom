@@ -25,17 +25,25 @@ export default async function SchoolTopicsPage({
     )
   }
 
-  const [{ data: classes }, { data: units }, { data: plans }, { data: statusRows }] = await Promise.all([
+  const [{ data: classes }, { data: units }, { data: plans }] = await Promise.all([
     supabase.from('classes').select('id, title, order_index').in('id', classIds).order('order_index'),
     supabase.from('units').select('id, class_id, title, order_index').in('class_id', classIds).order('order_index'),
     supabase.from('student_topic_plans').select('topic_id, test_date').eq('student_id', studentId),
-    supabase.from('student_school_status').select('class_id, not_started, other_topics').eq('student_id', studentId),
   ])
 
   const unitIds = (units ?? []).map((u: { id: string }) => u.id)
   const { data: topics } = unitIds.length > 0
     ? await supabase.from('topics').select('id, unit_id, title, order_index').in('unit_id', unitIds).order('order_index')
     : { data: [] }
+
+  // Fetched separately with a fallback: starts_on requires a migration that
+  // may not have run yet, and a missing column would otherwise fail the
+  // whole select and wipe out not_started/other_topics too.
+  const { data: statusRowsFull, error: statusErr } = await supabase
+    .from('student_school_status').select('class_id, not_started, starts_on, other_topics').eq('student_id', studentId)
+  const statusRows = statusErr
+    ? (await supabase.from('student_school_status').select('class_id, not_started, other_topics').eq('student_id', studentId)).data
+    : statusRowsFull
 
   return (
     <div className="max-w-3xl mx-auto">
@@ -54,8 +62,8 @@ export default async function SchoolTopicsPage({
         units={units ?? []}
         topics={topics ?? []}
         initialPlans={(plans ?? []).map((p: { topic_id: string; test_date: string | null }) => ({ topicId: p.topic_id, testDate: p.test_date }))}
-        initialStatus={(statusRows ?? []).map((s: { class_id: string; not_started: boolean; other_topics: string | null }) => ({
-          classId: s.class_id, notStarted: s.not_started, otherTopics: s.other_topics ?? '',
+        initialStatus={(statusRows ?? []).map((s: { class_id: string; not_started: boolean; starts_on?: string | null; other_topics: string | null }) => ({
+          classId: s.class_id, notStarted: s.not_started, startsOn: s.starts_on ?? null, otherTopics: s.other_topics ?? '',
         }))}
         required={required === '1'}
       />

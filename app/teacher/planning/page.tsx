@@ -1,10 +1,8 @@
 import { createAdminClient } from '@/lib/supabase/server'
 import Link from 'next/link'
-
-// Faridah's fixed weekly group-session schedule — not tied to any DB table
-// since it's a single constant shared by both classes, not something that
-// currently varies per class or student.
-const CLASS_DAYS = ['Tuesday', 'Saturday', 'Sunday']
+import TestDateCalendar, { type CalendarEvent } from './TestDateCalendar'
+import WeeklyPlanButton from './WeeklyPlanButton'
+import { CLASS_DAYS } from '@/lib/classSchedule'
 
 export default async function TeacherPlanningPage() {
   const supabase = await createAdminClient()
@@ -75,6 +73,26 @@ export default async function TeacherPlanningPage() {
   }
 
   const topicById = new Map((topics ?? []).map((t: { id: string; title: string }) => [t.id, t]))
+  const classById = new Map((classes ?? []).map((c: { id: string; title: string }) => [c.id, c.title]))
+
+  // Every distinct (date, class, topic) combination — not just the nearest
+  // per topic (that's what the "Upcoming Tests" panel below shows) — so the
+  // calendar reflects the full spread of dates students actually reported.
+  const calendarEventMap = new Map<string, { date: string; classId: string; topicId: string; count: number }>()
+  for (const p of plans ?? []) {
+    if (!p.test_date) continue
+    const key = `${p.test_date}|${p.class_id}|${p.topic_id}`
+    const cur = calendarEventMap.get(key)
+    if (cur) cur.count++
+    else calendarEventMap.set(key, { date: p.test_date, classId: p.class_id, topicId: p.topic_id, count: 1 })
+  }
+  const calendarEvents: CalendarEvent[] = [...calendarEventMap.values()].map(e => ({
+    date: e.date,
+    classId: e.classId,
+    classTitle: classById.get(e.classId) ?? '',
+    topicTitle: topicById.get(e.topicId)?.title ?? '',
+    count: e.count,
+  }))
 
   return (
     <div className="max-w-7xl mx-auto space-y-8">
@@ -90,6 +108,8 @@ export default async function TeacherPlanningPage() {
           <Link href="/teacher" className="text-purple-600 text-sm hover:underline">← Dashboard</Link>
         </div>
       </div>
+
+      {calendarEvents.length > 0 && <TestDateCalendar events={calendarEvents} classDays={CLASS_DAYS} />}
 
       {(classes ?? []).map(cls => {
         const classUnits = (units ?? []).filter((u: { class_id: string }) => u.class_id === cls.id)
@@ -120,6 +140,8 @@ export default async function TeacherPlanningPage() {
               <p className="text-gray-400 text-sm">No students enrolled.</p>
             ) : (
               <>
+                <WeeklyPlanButton classId={cls.id} />
+
                 {(notStartedByClass.get(cls.id)?.length ?? 0) > 0 && (
                   <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mb-3">
                     <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-200">

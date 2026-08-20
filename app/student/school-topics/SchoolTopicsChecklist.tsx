@@ -2,13 +2,14 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { isClassCurrent } from '@/lib/schoolTopicsStatus'
 
 interface ClassRow { id: string; title: string; order_index: number }
 interface UnitRow { id: string; class_id: string; title: string; order_index: number }
 interface TopicRow { id: string; unit_id: string; title: string; order_index: number }
 interface PlanRow { topicId: string; testDate: string | null }
-interface StatusRow { classId: string; notStarted: boolean; otherTopics: string }
-interface ClassStatus { notStarted: boolean; otherTopics: string }
+interface StatusRow { classId: string; notStarted: boolean; startsOn: string | null; otherTopics: string }
+interface ClassStatus { notStarted: boolean; startsOn: string; otherTopics: string }
 
 interface Props {
   studentId: string
@@ -20,14 +21,21 @@ interface Props {
   required: boolean
 }
 
+const todayIso = () => new Date().toISOString().slice(0, 10)
+
 export default function SchoolTopicsChecklist({ studentId, classes, units, topics, initialPlans, initialStatus, required }: Props) {
   const supabase = createClient()
   // topicId -> test_date (or null). Presence in the map = "my school covers this topic".
   const [selections, setSelections] = useState<Map<string, string | null>>(
     () => new Map(initialPlans.map(p => [p.topicId, p.testDate]))
   )
+  const [topicClassId] = useState<Map<string, string>>(() => {
+    const m = new Map<string, string>()
+    for (const u of units) for (const t of topics) if (t.unit_id === u.id) m.set(t.id, u.class_id)
+    return m
+  })
   const [statusByClass, setStatusByClass] = useState<Map<string, ClassStatus>>(
-    () => new Map(initialStatus.map(s => [s.classId, { notStarted: s.notStarted, otherTopics: s.otherTopics }]))
+    () => new Map(initialStatus.map(s => [s.classId, { notStarted: s.notStarted, startsOn: s.startsOn ?? '', otherTopics: s.otherTopics }]))
   )
   const [savingTopic, setSavingTopic] = useState<string | null>(null)
   const [savedTopic, setSavedTopic] = useState<string | null>(null)
@@ -46,13 +54,16 @@ export default function SchoolTopicsChecklist({ studentId, classes, units, topic
   }
 
   function getStatus(classId: string): ClassStatus {
-    return statusByClass.get(classId) ?? { notStarted: false, otherTopics: '' }
+    return statusByClass.get(classId) ?? { notStarted: false, startsOn: '', otherTopics: '' }
   }
 
   async function saveStatus(classId: string, next: ClassStatus) {
     setSavingStatusClass(classId)
     const { error } = await supabase.from('student_school_status')
-      .upsert({ student_id: studentId, class_id: classId, not_started: next.notStarted, other_topics: next.otherTopics || null }, { onConflict: 'student_id,class_id' })
+      .upsert({
+        student_id: studentId, class_id: classId,
+        not_started: next.notStarted, starts_on: next.startsOn || null, other_topics: next.otherTopics || null,
+      }, { onConflict: 'student_id,class_id' })
     setSavingStatusClass(null)
     if (!error) {
       setStatusByClass(prev => new Map(prev).set(classId, next))
@@ -63,6 +74,14 @@ export default function SchoolTopicsChecklist({ studentId, classes, units, topic
   function toggleNotStarted(classId: string) {
     const current = getStatus(classId)
     saveStatus(classId, { ...current, notStarted: !current.notStarted })
+  }
+
+  function updateStartsOnDraft(classId: string, date: string) {
+    setStatusByClass(prev => new Map(prev).set(classId, { ...getStatus(classId), startsOn: date }))
+  }
+
+  function saveStartsOn(classId: string) {
+    saveStatus(classId, getStatus(classId))
   }
 
   function updateOtherTopicsDraft(classId: string, text: string) {
@@ -105,17 +124,14 @@ export default function SchoolTopicsChecklist({ studentId, classes, units, topic
   }
 
   const sortedClasses = [...classes].sort((a, b) => a.order_index - b.order_index)
-
-  const topicIdsByClass = new Map<string, string[]>()
-  for (const u of units) {
-    const ts = topics.filter(t => t.unit_id === u.id).map(t => t.id)
-    topicIdsByClass.set(u.class_id, [...(topicIdsByClass.get(u.class_id) ?? []), ...ts])
-  }
+  const today = todayIso()
 
   function isClassComplete(classId: string) {
-    const status = getStatus(classId)
-    if (status.notStarted || status.otherTopics.trim()) return true
-    return (topicIdsByClass.get(classId) ?? []).some(id => selections.has(id))
+    const plans = [...selections.entries()]
+      .filter(([topicId]) => topicClassId.get(topicId) === classId)
+      .map(([, testDate]) => ({ classId, testDate }))
+    const s = getStatus(classId)
+    return isClassCurrent(classId, plans, { notStarted: s.notStarted, startsOn: s.startsOn || null, otherTopics: s.otherTopics }, today)
   }
 
   const allComplete = sortedClasses.length > 0 && sortedClasses.every(c => isClassComplete(c.id))
@@ -148,6 +164,7 @@ export default function SchoolTopicsChecklist({ studentId, classes, units, topic
         const status = getStatus(cls.id)
         const isStatusSaving = savingStatusClass === cls.id
         const isStatusSaved = savedStatusClass === cls.id
+        const startsOnExpired = status.notStarted && !!status.startsOn && status.startsOn < today
 
         return (
           <div key={cls.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -157,17 +174,36 @@ export default function SchoolTopicsChecklist({ studentId, classes, units, topic
             </div>
 
             <div className="px-5 py-3 border-b border-gray-100 space-y-3">
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={status.notStarted}
-                  disabled={isStatusSaving}
-                  onChange={() => toggleNotStarted(cls.id)}
-                  className="w-4 h-4 rounded border-gray-300 text-purple-600 focus:ring-purple-400 flex-shrink-0"
-                />
-                <span className="text-sm text-gray-800">My school hasn&apos;t started this class yet</span>
-                {isStatusSaved && status.notStarted && <span className="text-xs text-green-600">✓</span>}
-              </label>
+              <div>
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={status.notStarted}
+                    disabled={isStatusSaving}
+                    onChange={() => toggleNotStarted(cls.id)}
+                    className="w-4 h-4 rounded border-gray-300 text-purple-600 focus:ring-purple-400 flex-shrink-0"
+                  />
+                  <span className="text-sm text-gray-800">My school hasn&apos;t started this class yet</span>
+                  {isStatusSaved && status.notStarted && <span className="text-xs text-green-600">✓</span>}
+                </label>
+                {status.notStarted && (
+                  <div className="mt-2 ml-7 flex items-center gap-1.5">
+                    <label className="text-xs text-gray-500">When do you expect it to start? (optional)</label>
+                    <input
+                      type="date"
+                      value={status.startsOn}
+                      onChange={e => updateStartsOnDraft(cls.id, e.target.value)}
+                      onBlur={() => saveStartsOn(cls.id)}
+                      className="text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-purple-400 text-gray-700"
+                    />
+                  </div>
+                )}
+                {startsOnExpired && (
+                  <p className="mt-1.5 ml-7 text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded px-2 py-1 inline-block">
+                    ⏰ You said around {status.startsOn} — has it started yet?
+                  </p>
+                )}
+              </div>
 
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Something else your school covers that&apos;s not on the list below?</label>
@@ -198,30 +234,38 @@ export default function SchoolTopicsChecklist({ studentId, classes, units, topic
                     const testDate = selections.get(topic.id) ?? ''
                     const isSaving = savingTopic === topic.id
                     const isSaved = savedTopic === topic.id
+                    const isExpired = isChecked && !!testDate && testDate < today
                     return (
-                      <div key={topic.id} className="flex items-center gap-3 px-5 py-2.5 hover:bg-gray-50">
-                        <label className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={isChecked}
-                            disabled={isSaving}
-                            onChange={() => toggle(topic.id, cls.id)}
-                            className="w-4 h-4 rounded border-gray-300 text-purple-600 focus:ring-purple-400 flex-shrink-0"
-                          />
-                          <span className="text-sm text-gray-800 truncate">{topic.title}</span>
-                        </label>
-                        {isChecked && (
-                          <div className="flex items-center gap-1.5 flex-shrink-0">
-                            <label className="text-xs text-gray-500">Test date:</label>
+                      <div key={topic.id} className="px-5 py-2.5 hover:bg-gray-50">
+                        <div className="flex items-center gap-3">
+                          <label className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer">
                             <input
-                              type="date"
-                              value={testDate}
-                              onChange={e => updateTestDate(topic.id, e.target.value)}
-                              className="text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-purple-400 text-gray-700"
+                              type="checkbox"
+                              checked={isChecked}
+                              disabled={isSaving}
+                              onChange={() => toggle(topic.id, cls.id)}
+                              className="w-4 h-4 rounded border-gray-300 text-purple-600 focus:ring-purple-400 flex-shrink-0"
                             />
-                          </div>
+                            <span className="text-sm text-gray-800 truncate">{topic.title}</span>
+                          </label>
+                          {isChecked && (
+                            <div className="flex items-center gap-1.5 flex-shrink-0">
+                              <label className="text-xs text-gray-500">Test date:</label>
+                              <input
+                                type="date"
+                                value={testDate}
+                                onChange={e => updateTestDate(topic.id, e.target.value)}
+                                className="text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-purple-400 text-gray-700"
+                              />
+                            </div>
+                          )}
+                          {isSaved && <span className="text-xs text-green-600 flex-shrink-0">✓</span>}
+                        </div>
+                        {isExpired && (
+                          <p className="mt-1.5 ml-7 text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded px-2 py-1 inline-block">
+                            ⏰ Test passed — still on this, or has your school moved on?
+                          </p>
                         )}
-                        {isSaved && <span className="text-xs text-green-600 flex-shrink-0">✓</span>}
                       </div>
                     )
                   })}

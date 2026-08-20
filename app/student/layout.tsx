@@ -6,6 +6,7 @@ import { logout } from '@/app/actions/auth'
 import ProfileGate from '@/components/ProfileGate'
 import SchoolTopicsGate from '@/components/SchoolTopicsGate'
 import StudentNotificationBell from '@/components/StudentNotificationBell'
+import { isClassCurrent } from '@/lib/schoolTopicsStatus'
 
 export default async function StudentLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
@@ -39,24 +40,25 @@ export default async function StudentLayout({ children }: { children: React.Reac
   const { data: enrollments } = await admin.from('class_enrollments').select('class_id').eq('student_id', session.user.id)
   const enrolledClassIds = (enrollments ?? []).map((e: { class_id: string }) => e.class_id)
 
-  // School-topics gate: a class counts as "done" once the student has
-  // checked at least one topic for it, or filled in the not-started/other
-  // status for it. Guarded by the error checks below so this gate stays
-  // off (never locks anyone out) until both migrations have actually been
-  // run — same defensive pattern as extColumnsExist above.
+  // School-topics gate: a class counts as "done" once the student has a
+  // CURRENT topic/status signal for it — a test date (or "hasn't started"
+  // start date) in the past no longer counts, same as an expired signal, so
+  // the student is asked again. Guarded by the error checks below so this
+  // gate stays off (never locks anyone out) until all migrations have
+  // actually been run — same defensive pattern as extColumnsExist above.
   const { data: planRows, error: planErr } = await admin
-    .from('student_topic_plans').select('class_id').eq('student_id', session.user.id)
+    .from('student_topic_plans').select('class_id, test_date').eq('student_id', session.user.id)
   const { data: statusRows, error: statusErr } = await admin
-    .from('student_school_status').select('class_id, not_started, other_topics').eq('student_id', session.user.id)
+    .from('student_school_status').select('class_id, not_started, starts_on, other_topics').eq('student_id', session.user.id)
   const schoolTopicsTablesExist = !planErr && !statusErr
-  const classIdsWithTopics = new Set((planRows ?? []).map((r: { class_id: string }) => r.class_id))
-  const classIdsWithStatus = new Set(
-    (statusRows ?? [])
-      .filter((r: { not_started: boolean; other_topics: string | null }) => r.not_started || !!r.other_topics?.trim())
-      .map((r: { class_id: string }) => r.class_id)
+  const todayIso = new Date().toISOString().slice(0, 10)
+  const plans = (planRows ?? []).map((r: { class_id: string; test_date: string | null }) => ({ classId: r.class_id, testDate: r.test_date }))
+  const statusByClass = new Map(
+    (statusRows ?? []).map((r: { class_id: string; not_started: boolean; starts_on: string | null; other_topics: string | null }) =>
+      [r.class_id, { notStarted: r.not_started, startsOn: r.starts_on, otherTopics: r.other_topics }])
   )
   const schoolTopicsComplete = !schoolTopicsTablesExist || enrolledClassIds.length === 0
-    || enrolledClassIds.every(id => classIdsWithTopics.has(id) || classIdsWithStatus.has(id))
+    || enrolledClassIds.every(id => isClassCurrent(id, plans, statusByClass.get(id), todayIso))
 
   return (
     <div className="min-h-screen flex flex-col">
