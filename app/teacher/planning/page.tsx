@@ -85,7 +85,10 @@ export default async function TeacherPlanningPage() {
             Based on what students report their own school is teaching. Group sessions meet {CLASS_DAYS.join(' · ')}.
           </p>
         </div>
-        <Link href="/teacher" className="text-purple-600 text-sm hover:underline">← Dashboard</Link>
+        <div className="flex items-center gap-4 flex-shrink-0">
+          <Link href="/teacher/content" className="text-purple-600 text-sm hover:underline">+ Add topics →</Link>
+          <Link href="/teacher" className="text-purple-600 text-sm hover:underline">← Dashboard</Link>
+        </div>
       </div>
 
       {(classes ?? []).map(cls => {
