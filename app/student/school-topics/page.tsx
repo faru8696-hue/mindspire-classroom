@@ -13,14 +13,22 @@ export default async function SchoolTopicsPage({
   if (!user) redirect('/login')
   const studentId = user.id
 
-  const { data: enrollments } = await supabase.from('class_enrollments').select('class_id').eq('student_id', studentId)
-  const classIds = (enrollments ?? []).map((e: { class_id: string }) => e.class_id)
+  // Fallback if the in_group migration hasn't run yet — treat everyone as
+  // in-group, same defensive pattern used elsewhere in this feature.
+  const { data: enrollmentsFull, error: enrollErr } = await supabase
+    .from('class_enrollments').select('class_id, in_group').eq('student_id', studentId)
+  const enrollments: { class_id: string; in_group?: boolean }[] = enrollErr
+    ? ((await supabase.from('class_enrollments').select('class_id').eq('student_id', studentId)).data ?? [])
+    : (enrollmentsFull ?? [])
+  const classIds = enrollments.filter(e => e.in_group !== false).map(e => e.class_id)
 
   if (classIds.length === 0) {
     return (
       <div className="max-w-3xl mx-auto">
         <h1 className="text-2xl font-bold text-purple-900 mb-2">School Topics</h1>
-        <p className="text-gray-500">You&apos;re not enrolled in a class yet.</p>
+        <p className="text-gray-500">
+          {enrollments.length === 0 ? "You're not enrolled in a class yet." : 'Nothing to fill in here right now.'}
+        </p>
       </div>
     )
   }

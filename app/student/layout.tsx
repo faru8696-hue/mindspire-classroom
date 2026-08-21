@@ -35,10 +35,18 @@ export default async function StudentLayout({ children }: { children: React.Reac
   const extColumnsExist = extProfile !== null && 'parent_name' in (extProfile ?? {})
   const profileComplete = !extColumnsExist || !!(p.grade_level && p.phone && p.parent_name && p.parent_phone && p.parent_email)
 
-  // Enrolled class IDs for notification bell
+  // Enrolled class IDs for notification bell — kept unfiltered (notifications
+  // aren't about group planning, so a non-group student still gets them).
   const admin = createSupabaseAdmin(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
-  const { data: enrollments } = await admin.from('class_enrollments').select('class_id').eq('student_id', session.user.id)
-  const enrolledClassIds = (enrollments ?? []).map((e: { class_id: string }) => e.class_id)
+  const { data: enrollmentsFull, error: enrollErr } = await admin
+    .from('class_enrollments').select('class_id, in_group').eq('student_id', session.user.id)
+  const enrollments: { class_id: string; in_group?: boolean }[] = enrollErr
+    ? ((await admin.from('class_enrollments').select('class_id').eq('student_id', session.user.id)).data ?? [])
+    : (enrollmentsFull ?? [])
+  const enrolledClassIds = enrollments.map(e => e.class_id)
+  // Only group-enrolled classes are subject to the School Topics gate below
+  // — a student marked not-in-group for a class isn't asked about it.
+  const groupClassIds = enrollments.filter(e => e.in_group !== false).map(e => e.class_id)
 
   // School-topics gate: a class counts as "done" once the student has a
   // CURRENT topic/status signal for it — a test date (or "hasn't started"
@@ -57,8 +65,8 @@ export default async function StudentLayout({ children }: { children: React.Reac
     (statusRows ?? []).map((r: { class_id: string; not_started: boolean; starts_on: string | null; other_topics: string | null }) =>
       [r.class_id, { notStarted: r.not_started, startsOn: r.starts_on, otherTopics: r.other_topics }])
   )
-  const schoolTopicsComplete = !schoolTopicsTablesExist || enrolledClassIds.length === 0
-    || enrolledClassIds.every(id => isClassCurrent(id, plans, statusByClass.get(id), todayIso))
+  const schoolTopicsComplete = !schoolTopicsTablesExist || groupClassIds.length === 0
+    || groupClassIds.every(id => isClassCurrent(id, plans, statusByClass.get(id), todayIso))
 
   return (
     <div className="min-h-screen flex flex-col">

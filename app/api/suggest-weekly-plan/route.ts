@@ -21,24 +21,32 @@ export async function POST(req: NextRequest) {
 
   const admin = await createAdminClient()
 
-  const [{ data: cls }, { data: units }, { data: enrollments }] = await Promise.all([
+  const [{ data: cls }, { data: units }, { data: enrollmentsFull, error: enrollErr }] = await Promise.all([
     admin.from('classes').select('id, title').eq('id', classId).single(),
     admin.from('units').select('id, title, order_index').eq('class_id', classId).order('order_index'),
-    admin.from('class_enrollments').select('student_id').eq('class_id', classId),
+    admin.from('class_enrollments').select('student_id, in_group').eq('class_id', classId),
   ])
   if (!cls) return NextResponse.json({ error: 'Class not found' }, { status: 404 })
 
-  const totalStudents = (enrollments ?? []).length
+  // Fallback if the in_group migration hasn't run yet — treat everyone as
+  // in-group, same defensive pattern used elsewhere in this feature.
+  const enrollments: { student_id: string; in_group?: boolean }[] = enrollErr
+    ? ((await admin.from('class_enrollments').select('student_id').eq('class_id', classId)).data ?? [])
+    : (enrollmentsFull ?? [])
+  const inGroupStudentIds = new Set(enrollments.filter(e => e.in_group !== false).map(e => e.student_id))
+  const totalStudents = inGroupStudentIds.size
+
   const unitIds = (units ?? []).map((u: { id: string }) => u.id)
   const { data: topics } = unitIds.length > 0
     ? await admin.from('topics').select('id, unit_id, title, order_index').in('unit_id', unitIds).order('order_index')
     : { data: [] }
 
-  const { data: plans } = await admin.from('student_topic_plans').select('topic_id, test_date').eq('class_id', classId)
+  const { data: plansRaw } = await admin.from('student_topic_plans').select('student_id, topic_id, test_date').eq('class_id', classId)
+  const plans = (plansRaw ?? []).filter((p: { student_id: string }) => inGroupStudentIds.has(p.student_id))
 
   const planCountByTopic = new Map<string, number>()
   const nearestTestDateByTopic = new Map<string, string>()
-  for (const p of plans ?? []) {
+  for (const p of plans) {
     planCountByTopic.set(p.topic_id, (planCountByTopic.get(p.topic_id) ?? 0) + 1)
     if (p.test_date) {
       const cur = nearestTestDateByTopic.get(p.topic_id)

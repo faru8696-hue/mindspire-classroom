@@ -2,6 +2,7 @@ import { createAdminClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import TestDateCalendar, { type CalendarEvent } from './TestDateCalendar'
 import WeeklyPlanButton from './WeeklyPlanButton'
+import RosterManager, { type RosterStudent } from './RosterManager'
 import { CLASS_DAYS } from '@/lib/classSchedule'
 
 export default async function TeacherPlanningPage() {
@@ -10,12 +11,19 @@ export default async function TeacherPlanningPage() {
   const { data: classes } = await supabase.from('classes').select('id, title, order_index').order('order_index')
   const classIds = (classes ?? []).map((c: { id: string }) => c.id)
 
-  const [{ data: units }, { data: enrollments }, { data: plans }, { data: statusRows }] = await Promise.all([
+  // Fetched separately with a fallback: in_group requires a migration that
+  // may not have run yet, and a missing column would otherwise fail the
+  // whole select.
+  const { data: enrollmentsFull, error: enrollErr } = classIds.length > 0
+    ? await supabase.from('class_enrollments').select('student_id, class_id, in_group').in('class_id', classIds)
+    : { data: [], error: null }
+  const enrollments: { student_id: string; class_id: string; in_group?: boolean }[] = enrollErr
+    ? ((await supabase.from('class_enrollments').select('student_id, class_id').in('class_id', classIds)).data ?? [])
+    : (enrollmentsFull ?? [])
+
+  const [{ data: units }, { data: plans }, { data: statusRows }] = await Promise.all([
     classIds.length > 0
       ? supabase.from('units').select('id, class_id, title, order_index').in('class_id', classIds).order('order_index')
-      : Promise.resolve({ data: [] }),
-    classIds.length > 0
-      ? supabase.from('class_enrollments').select('student_id, class_id').in('class_id', classIds)
       : Promise.resolve({ data: [] }),
     classIds.length > 0
       ? supabase.from('student_topic_plans').select('student_id, class_id, topic_id, test_date').in('class_id', classIds)
@@ -25,23 +33,46 @@ export default async function TeacherPlanningPage() {
       : Promise.resolve({ data: [] }),
   ])
 
+  // Students marked not-in-group are excluded from every planning
+  // aggregate below (counts, calendar, AI input) but their raw rows are
+  // never touched — flip the toggle back and they're counted again.
+  const inGroupStudentIdsByClass = new Map<string, Set<string>>()
+  for (const e of enrollments) {
+    if (e.in_group === false) continue
+    if (!inGroupStudentIdsByClass.has(e.class_id)) inGroupStudentIdsByClass.set(e.class_id, new Set())
+    inGroupStudentIdsByClass.get(e.class_id)!.add(e.student_id)
+  }
+  const isInGroup = (classId: string, studentId: string) => inGroupStudentIdsByClass.get(classId)?.has(studentId) ?? false
+
   const unitIds = (units ?? []).map((u: { id: string }) => u.id)
   const { data: topics } = unitIds.length > 0
     ? await supabase.from('topics').select('id, unit_id, title, order_index').in('unit_id', unitIds).order('order_index')
     : { data: [] }
 
-  const enrolledStudentIds = [...new Set((enrollments ?? []).map((e: { student_id: string }) => e.student_id))]
+  const enrolledStudentIds = [...new Set(enrollments.map(e => e.student_id))]
   const { data: studentProfiles } = enrolledStudentIds.length > 0
     ? await supabase.from('profiles').select('id, full_name').in('id', enrolledStudentIds)
     : { data: [] }
   const nameById = new Map((studentProfiles ?? []).map((p: { id: string; full_name: string }) => [p.id, p.full_name]))
 
+  // Full roster per class (group AND non-group) for the roster-manager
+  // toggle — the aggregates below filter to group-only, but this list needs
+  // everyone so the teacher can flip someone back in.
+  const rosterByClass = new Map<string, RosterStudent[]>()
+  for (const e of enrollments) {
+    if (!rosterByClass.has(e.class_id)) rosterByClass.set(e.class_id, [])
+    rosterByClass.get(e.class_id)!.push({ id: e.student_id, name: nameById.get(e.student_id) ?? 'Unknown', inGroup: e.in_group !== false })
+  }
+  for (const list of rosterByClass.values()) list.sort((a, b) => a.name.localeCompare(b.name))
+
   // Students who report their school hasn't started a class yet, and any
   // freeform "other topics" notes — both keyed by class so they render
-  // alongside that class's topic breakdown below.
+  // alongside that class's topic breakdown below. Excludes non-group
+  // students, same as every other aggregate on this page.
   const notStartedByClass = new Map<string, string[]>()
   const otherNotesByClass = new Map<string, { name: string; text: string }[]>()
   for (const s of statusRows ?? []) {
+    if (!isInGroup(s.class_id, s.student_id)) continue
     const name = nameById.get(s.student_id) ?? 'Unknown'
     if (s.not_started) {
       if (!notStartedByClass.has(s.class_id)) notStartedByClass.set(s.class_id, [])
@@ -53,17 +84,19 @@ export default async function TeacherPlanningPage() {
     }
   }
 
+  // "Enrolled" here means group-enrolled — the denominator throughout this
+  // page is about the group sessions, not raw class_enrollments membership.
   const enrolledCountByClass = new Map<string, number>()
-  for (const e of enrollments ?? []) {
-    enrolledCountByClass.set(e.class_id, (enrolledCountByClass.get(e.class_id) ?? 0) + 1)
-  }
+  for (const [classId, ids] of inGroupStudentIdsByClass) enrolledCountByClass.set(classId, ids.size)
 
   // How many students report a topic as taught, how many attached a test
-  // date, and the earliest of those dates (worth flagging first).
+  // date, and the earliest of those dates (worth flagging first). Non-group
+  // students' reports don't factor in here at all.
   const planCountByTopic = new Map<string, number>()
   const testDateCountByTopic = new Map<string, number>()
   const nearestTestDateByTopic = new Map<string, string>()
   for (const p of plans ?? []) {
+    if (!isInGroup(p.class_id, p.student_id)) continue
     planCountByTopic.set(p.topic_id, (planCountByTopic.get(p.topic_id) ?? 0) + 1)
     if (p.test_date) {
       testDateCountByTopic.set(p.topic_id, (testDateCountByTopic.get(p.topic_id) ?? 0) + 1)
@@ -78,9 +111,10 @@ export default async function TeacherPlanningPage() {
   // Every distinct (date, class, topic) combination — not just the nearest
   // per topic (that's what the "Upcoming Tests" panel below shows) — so the
   // calendar reflects the full spread of dates students actually reported.
+  // Non-group students excluded, same as the rest of this page.
   const calendarEventMap = new Map<string, { date: string; classId: string; topicId: string; count: number }>()
   for (const p of plans ?? []) {
-    if (!p.test_date) continue
+    if (!p.test_date || !isInGroup(p.class_id, p.student_id)) continue
     const key = `${p.test_date}|${p.class_id}|${p.topic_id}`
     const cur = calendarEventMap.get(key)
     if (cur) cur.count++
@@ -129,15 +163,19 @@ export default async function TeacherPlanningPage() {
           }))
           .sort((a, b) => a.date.localeCompare(b.date))
 
+        const roster = rosterByClass.get(cls.id) ?? []
+
         return (
           <section key={cls.id}>
             <div className="flex items-center gap-3 mb-3">
               <h2 className="text-lg font-semibold text-gray-800">{cls.title}</h2>
-              <span className="text-xs text-gray-500">{totalStudents} student{totalStudents === 1 ? '' : 's'} enrolled</span>
+              <span className="text-xs text-gray-500">{totalStudents} student{totalStudents === 1 ? '' : 's'} in group</span>
             </div>
 
+            {roster.length > 0 && <RosterManager classId={cls.id} students={roster} />}
+
             {totalStudents === 0 ? (
-              <p className="text-gray-400 text-sm">No students enrolled.</p>
+              <p className="text-gray-400 text-sm">No group students enrolled.</p>
             ) : (
               <>
                 <WeeklyPlanButton classId={cls.id} />
