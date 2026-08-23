@@ -38,6 +38,7 @@ export default async function TeacherLayout({ children }: { children: React.Reac
   const seenAt = new Map((seenRows ?? []).map(r => [r.nav_key, r.seen_at]))
   const studentsSeenAt = seenAt.get('students') ?? '1970-01-01'
   const activitySeenAt = seenAt.get('activity') ?? '1970-01-01'
+  const planningSeenAt = seenAt.get('planning') ?? '1970-01-01'
 
   // Two COUNT-only queries (head: true — no rows returned) instead of
   // pulling every submission with a nested feedback join and filtering in
@@ -47,13 +48,21 @@ export default async function TeacherLayout({ children }: { children: React.Reac
   // number. feedback.submission_id is unique (the grading upsert relies on
   // it), so ungraded = total submissions − submissions with a graded
   // feedback row.
-  const [{ count: newStudents }, { count: newActivity }, { count: totalSubmissions }, { count: gradedCount }] = await Promise.all([
+  const [
+    { count: newStudents }, { count: newActivity }, { count: totalSubmissions }, { count: gradedCount },
+    { count: newTopicPlans, error: newTopicPlansErr }, { count: newSchoolStatus, error: newSchoolStatusErr },
+  ] = await Promise.all([
     admin.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'student').eq('approved', false).gt('created_at', studentsSeenAt),
     admin.from('notifications').select('id', { count: 'exact', head: true }).in('type', ['help', 'submitted', 'comment']).gt('created_at', activitySeenAt),
     admin.from('submissions').select('id', { count: 'exact', head: true }),
     admin.from('feedback').select('id', { count: 'exact', head: true }).not('grade', 'is', null),
+    // Guarded so a not-yet-migrated table never breaks the whole layout —
+    // same defensive pattern used throughout the School Topics feature.
+    admin.from('student_topic_plans').select('id', { count: 'exact', head: true }).gt('created_at', planningSeenAt),
+    admin.from('student_school_status').select('id', { count: 'exact', head: true }).gt('updated_at', planningSeenAt),
   ])
   const ungradedSubmissions = (totalSubmissions ?? 0) - (gradedCount ?? 0)
+  const newPlanningActivity = (newTopicPlansErr ? 0 : (newTopicPlans ?? 0)) + (newSchoolStatusErr ? 0 : (newSchoolStatus ?? 0))
   const { data: notifs } = await admin
     .from('notifications')
     .select('id, type, student_id, question_id, class_id, diagnostic_test_id, diagnostic_attempt_id, created_at, read, message, profiles:profiles!notifications_student_id_fkey(full_name), questions:questions!notifications_question_id_fkey(title), diagnostic_tests:diagnostic_tests!notifications_diagnostic_test_id_fkey(title)')
@@ -104,7 +113,12 @@ export default async function TeacherLayout({ children }: { children: React.Reac
             )}
           </Link>
           <Link href="/teacher/progress" className="text-purple-200 hover:text-white text-sm transition-colors">Progress</Link>
-          <Link href="/teacher/planning" className="text-purple-200 hover:text-white text-sm transition-colors">Planning</Link>
+          <Link href="/teacher/planning" className="text-purple-200 hover:text-white text-sm transition-colors flex items-center gap-1.5">
+            Planning
+            {!!newPlanningActivity && (
+              <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">{newPlanningActivity}</span>
+            )}
+          </Link>
           <Link href="/teacher/activity" className="text-purple-200 hover:text-white text-sm transition-colors flex items-center gap-1.5">
             Activity
             {!!newActivity && (

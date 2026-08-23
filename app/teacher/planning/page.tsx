@@ -1,5 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/server'
 import Link from 'next/link'
+import MarkNavSeen from '@/components/MarkNavSeen'
 import TestDateCalendar, { type CalendarEvent } from './TestDateCalendar'
 import WeeklyPlanButton from './WeeklyPlanButton'
 import RosterManager, { type RosterStudent } from './RosterManager'
@@ -144,6 +145,7 @@ export default async function TeacherPlanningPage() {
 
   return (
     <div className="max-w-7xl mx-auto space-y-8">
+      <MarkNavSeen navKey="planning" />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-purple-900">Planning</h1>
