@@ -83,6 +83,31 @@ export default async function StudentDetailPage({ params }: { params: Promise<{ 
     : null
   const dueDateMap = new Map(assignments?.map((a: { question_id: string; due_date: string | null }) => [a.question_id, a.due_date]) ?? [])
 
+  // School Topics — everything this student has reported across ALL their
+  // enrolled classes, for the whole duration (not just what's upcoming) —
+  // fetched once here rather than reusing the per-class Planning page
+  // aggregates, since this view is scoped to one student across classes.
+  const { data: topicPlans } = await supabase
+    .from('student_topic_plans').select('class_id, topic_id, test_date').eq('student_id', studentId)
+  const { data: schoolStatusRows } = await supabase
+    .from('student_school_status').select('class_id, not_started, starts_on, other_topics').eq('student_id', studentId)
+  const topicTitleById = new Map((topics ?? []).map(t => [t.id, t.title]))
+  const topicPlansByClass = new Map<string, { topicTitle: string; testDate: string | null }[]>()
+  for (const p of topicPlans ?? []) {
+    if (!topicPlansByClass.has(p.class_id)) topicPlansByClass.set(p.class_id, [])
+    topicPlansByClass.get(p.class_id)!.push({ topicTitle: topicTitleById.get(p.topic_id) ?? '', testDate: p.test_date })
+  }
+  // Chronological — nearest test date first, undated entries last.
+  for (const list of topicPlansByClass.values()) {
+    list.sort((a, b) => {
+      if (!a.testDate && !b.testDate) return 0
+      if (!a.testDate) return 1
+      if (!b.testDate) return -1
+      return a.testDate.localeCompare(b.testDate)
+    })
+  }
+  const schoolStatusByClass = new Map((schoolStatusRows ?? []).map(s => [s.class_id, s]))
+
   // Student's submissions + feedback. No .in('question_id', questionIds)
   // filter here — a student enrolled in multiple classes can push this past
   // the point where PostgREST rejects the combined request URL as too long
@@ -181,6 +206,43 @@ export default async function StudentDetailPage({ params }: { params: Promise<{ 
           <ActivityFeed events={studentActivity} showStudentName={false} />
         </div>
       </div>
+
+      {/* School Topics — full duration, whatever the student has entered,
+          across every class they're enrolled in. */}
+      {enrolledClasses.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <p className="px-4 py-3 border-b border-gray-100 font-bold text-gray-800">🗓️ School Topics</p>
+          <div className="divide-y divide-gray-100">
+            {enrolledClasses.map(cls => {
+              const classPlans = topicPlansByClass.get(cls.id) ?? []
+              const status = schoolStatusByClass.get(cls.id)
+              const hasAnything = classPlans.length > 0 || status?.not_started || !!status?.other_topics
+              return (
+                <div key={cls.id} className="p-4">
+                  <p className="text-sm font-semibold text-purple-800 mb-2">{cls.title}</p>
+                  {!hasAnything && <p className="text-xs text-gray-400">No response yet.</p>}
+                  <div className="space-y-1.5">
+                    {classPlans.map((p, i) => (
+                      <div key={i} className="flex items-center justify-between text-sm">
+                        <span className="text-gray-700">{p.topicTitle}</span>
+                        {p.testDate && <span className="text-xs font-medium text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full flex-shrink-0">{p.testDate}</span>}
+                      </div>
+                    ))}
+                    {status?.not_started && (
+                      <p className="text-xs text-gray-500">
+                        Hasn&apos;t started{status.starts_on ? ` — expected ${status.starts_on}` : ''}
+                      </p>
+                    )}
+                    {status?.other_topics && (
+                      <p className="text-xs text-gray-500 italic">&quot;{status.other_topics}&quot;</p>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Units */}
       {(units ?? []).length === 0 && (
