@@ -29,7 +29,7 @@ export default async function TeacherPlanningPage() {
       ? supabase.from('student_topic_plans').select('student_id, class_id, topic_id, test_date').in('class_id', classIds)
       : Promise.resolve({ data: [] }),
     classIds.length > 0
-      ? supabase.from('student_school_status').select('student_id, class_id, not_started, other_topics').in('class_id', classIds)
+      ? supabase.from('student_school_status').select('student_id, class_id, not_started, starts_on, other_topics').in('class_id', classIds)
       : Promise.resolve({ data: [] }),
   ])
 
@@ -48,6 +48,7 @@ export default async function TeacherPlanningPage() {
   const { data: topics } = unitIds.length > 0
     ? await supabase.from('topics').select('id, unit_id, title, order_index').in('unit_id', unitIds).order('order_index')
     : { data: [] }
+  const topicTitleById = new Map((topics ?? []).map((t: { id: string; title: string }) => [t.id, t.title]))
 
   const enrolledStudentIds = [...new Set(enrollments.map(e => e.student_id))]
   const { data: studentProfiles } = enrolledStudentIds.length > 0
@@ -56,12 +57,26 @@ export default async function TeacherPlanningPage() {
   const nameById = new Map((studentProfiles ?? []).map((p: { id: string; full_name: string }) => [p.id, p.full_name]))
 
   // Full roster per class (group AND non-group) for the roster-manager
-  // toggle — the aggregates below filter to group-only, but this list needs
-  // everyone so the teacher can flip someone back in.
+  // panel — the aggregates below filter to group-only, but this list needs
+  // everyone so the teacher can flip someone back in, and includes each
+  // student's actual responses so individual entries can be deleted there.
   const rosterByClass = new Map<string, RosterStudent[]>()
+  const statusRowsTyped = (statusRows ?? []) as { student_id: string; class_id: string; not_started: boolean; starts_on: string | null; other_topics: string | null }[]
   for (const e of enrollments) {
     if (!rosterByClass.has(e.class_id)) rosterByClass.set(e.class_id, [])
-    rosterByClass.get(e.class_id)!.push({ id: e.student_id, name: nameById.get(e.student_id) ?? 'Unknown', inGroup: e.in_group !== false })
+    const studentPlans = (plans ?? [])
+      .filter((p: { student_id: string; class_id: string }) => p.student_id === e.student_id && p.class_id === e.class_id)
+      .map((p: { topic_id: string; test_date: string | null }) => ({ topicId: p.topic_id, topicTitle: topicTitleById.get(p.topic_id) ?? '', testDate: p.test_date }))
+    const status = statusRowsTyped.find(s => s.student_id === e.student_id && s.class_id === e.class_id)
+    rosterByClass.get(e.class_id)!.push({
+      id: e.student_id,
+      name: nameById.get(e.student_id) ?? 'Unknown',
+      inGroup: e.in_group !== false,
+      topics: studentPlans,
+      notStarted: status?.not_started ?? false,
+      startsOn: status?.starts_on ?? null,
+      otherTopics: status?.other_topics ?? null,
+    })
   }
   for (const list of rosterByClass.values()) list.sort((a, b) => a.name.localeCompare(b.name))
 
@@ -105,7 +120,6 @@ export default async function TeacherPlanningPage() {
     }
   }
 
-  const topicById = new Map((topics ?? []).map((t: { id: string; title: string }) => [t.id, t]))
   const classById = new Map((classes ?? []).map((c: { id: string; title: string }) => [c.id, c.title]))
 
   // Every distinct (date, class, topic) combination — not just the nearest
@@ -124,7 +138,7 @@ export default async function TeacherPlanningPage() {
     date: e.date,
     classId: e.classId,
     classTitle: classById.get(e.classId) ?? '',
-    topicTitle: topicById.get(e.topicId)?.title ?? '',
+    topicTitle: topicTitleById.get(e.topicId) ?? '',
     count: e.count,
   }))
 
@@ -157,13 +171,16 @@ export default async function TeacherPlanningPage() {
           .filter(tid => nearestTestDateByTopic.has(tid as string))
           .map(tid => ({
             topicId: tid as string,
-            title: topicById.get(tid as string)?.title ?? '',
+            title: topicTitleById.get(tid as string) ?? '',
             date: nearestTestDateByTopic.get(tid as string)!,
             count: testDateCountByTopic.get(tid as string) ?? 0,
           }))
           .sort((a, b) => a.date.localeCompare(b.date))
 
         const roster = rosterByClass.get(cls.id) ?? []
+        const classTopics = classUnits
+          .flatMap((u: { id: string }) => (topics ?? []).filter((t: { unit_id: string }) => t.unit_id === u.id))
+          .map((t: { id: string; title: string }) => ({ id: t.id, title: t.title }))
 
         return (
           <section key={cls.id}>
@@ -172,7 +189,7 @@ export default async function TeacherPlanningPage() {
               <span className="text-xs text-gray-500">{totalStudents} student{totalStudents === 1 ? '' : 's'} in group</span>
             </div>
 
-            {roster.length > 0 && <RosterManager classId={cls.id} students={roster} />}
+            {roster.length > 0 && <RosterManager classId={cls.id} students={roster} classTopics={classTopics} />}
 
             {totalStudents === 0 ? (
               <p className="text-gray-400 text-sm">No group students enrolled.</p>
