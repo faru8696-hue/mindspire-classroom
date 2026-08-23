@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { fuzzyMatch } from '@/lib/fuzzyMatch'
 
 interface ClassRow { id: string; title: string; order_index: number }
 interface UnitRow { id: string; class_id: string; title: string; order_index: number }
@@ -34,6 +35,7 @@ export default function SchoolTopicsChecklist({ studentId, classes, units, topic
   const [savedTopic, setSavedTopic] = useState<string | null>(null)
   const [savingStatusClass, setSavingStatusClass] = useState<string | null>(null)
   const [savedStatusClass, setSavedStatusClass] = useState<string | null>(null)
+  const [search, setSearch] = useState('')
 
   function flashSaved(topicId: string) {
     setSavedTopic(topicId)
@@ -120,8 +122,30 @@ export default function SchoolTopicsChecklist({ studentId, classes, units, topic
 
   return (
     <div className="space-y-6">
+      <div className="relative">
+        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">🔍</span>
+        <input
+          type="text"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search topics… (close spelling is fine)"
+          className="w-full text-sm border border-gray-200 rounded-xl pl-9 pr-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-purple-400 placeholder-gray-400"
+        />
+        {search && (
+          <button
+            onClick={() => setSearch('')}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-sm"
+            title="Clear search"
+          >
+            ✕
+          </button>
+        )}
+      </div>
+
       {sortedClasses.map(cls => {
         const classUnits = units.filter(u => u.class_id === cls.id).sort((a, b) => a.order_index - b.order_index)
+        const classHasAnyTopics = classUnits.some(u => topics.some(t => t.unit_id === u.id))
+        const classHasSearchMatch = classUnits.some(u => topics.some(t => t.unit_id === u.id && fuzzyMatch(search, t.title)))
         const checkedCount = classUnits.reduce(
           (sum, u) => sum + topics.filter(t => t.unit_id === u.id && selections.has(t.id)).length,
           0,
@@ -187,9 +211,12 @@ export default function SchoolTopicsChecklist({ studentId, classes, units, topic
             {classUnits.length === 0 && (
               <p className="text-sm text-gray-400 px-5 py-4">No topics added for this class yet.</p>
             )}
+            {classHasAnyTopics && !classHasSearchMatch && (
+              <p className="text-sm text-gray-400 px-5 py-4">No topics match &quot;{search}&quot;.</p>
+            )}
 
             {classUnits.map(unit => {
-              const unitTopics = topics.filter(t => t.unit_id === unit.id).sort((a, b) => a.order_index - b.order_index)
+              const unitTopics = topics.filter(t => t.unit_id === unit.id && fuzzyMatch(search, t.title)).sort((a, b) => a.order_index - b.order_index)
               if (unitTopics.length === 0) return null
               return (
                 <div key={unit.id} className="border-b border-gray-100 last:border-0">
