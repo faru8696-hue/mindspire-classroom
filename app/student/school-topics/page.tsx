@@ -2,12 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import SchoolTopicsChecklist from './SchoolTopicsChecklist'
 
-export default async function SchoolTopicsPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ required?: string }>
-}) {
-  const { required } = await searchParams
+export default async function SchoolTopicsPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
@@ -55,14 +50,9 @@ export default async function SchoolTopicsPage({
 
   return (
     <div className="max-w-3xl mx-auto">
-      {required === '1' && (
-        <div className="mb-5 bg-amber-50 border border-amber-300 rounded-xl px-4 py-3 text-amber-800 text-sm font-medium">
-          📋 Please tell us what your school is covering before continuing — for each class, check off topics, or let us know if your school hasn&apos;t started it yet.
-        </div>
-      )}
       <h1 className="text-2xl font-bold text-purple-900 mb-1">School Topics</h1>
       <p className="text-sm text-gray-500 mb-6">
-        Check off what your school is currently teaching (or has already taught) for each class, and add your school&apos;s test date if you know it. This helps your teacher plan group sessions around what everyone actually needs.
+        Optional — check off what your school is currently teaching (or has already taught) for each class, and add your school&apos;s test date if you know it. This helps your teacher plan group sessions around what everyone actually needs, but it&apos;s not required.
       </p>
       <SchoolTopicsChecklist
         studentId={studentId}
@@ -73,7 +63,6 @@ export default async function SchoolTopicsPage({
         initialStatus={(statusRows ?? []).map((s: { class_id: string; not_started: boolean; starts_on?: string | null; other_topics: string | null }) => ({
           classId: s.class_id, notStarted: s.not_started, startsOn: s.starts_on ?? null, otherTopics: s.other_topics ?? '',
         }))}
-        required={required === '1'}
       />
     </div>
   )

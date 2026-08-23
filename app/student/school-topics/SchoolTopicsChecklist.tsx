@@ -1,8 +1,7 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { isClassCurrent } from '@/lib/schoolTopicsStatus'
 
 interface ClassRow { id: string; title: string; order_index: number }
 interface UnitRow { id: string; class_id: string; title: string; order_index: number }
@@ -18,22 +17,16 @@ interface Props {
   topics: TopicRow[]
   initialPlans: PlanRow[]
   initialStatus: StatusRow[]
-  required: boolean
 }
 
 const todayIso = () => new Date().toISOString().slice(0, 10)
 
-export default function SchoolTopicsChecklist({ studentId, classes, units, topics, initialPlans, initialStatus, required }: Props) {
+export default function SchoolTopicsChecklist({ studentId, classes, units, topics, initialPlans, initialStatus }: Props) {
   const supabase = createClient()
   // topicId -> test_date (or null). Presence in the map = "my school covers this topic".
   const [selections, setSelections] = useState<Map<string, string | null>>(
     () => new Map(initialPlans.map(p => [p.topicId, p.testDate]))
   )
-  const [topicClassId] = useState<Map<string, string>>(() => {
-    const m = new Map<string, string>()
-    for (const u of units) for (const t of topics) if (t.unit_id === u.id) m.set(t.id, u.class_id)
-    return m
-  })
   const [statusByClass, setStatusByClass] = useState<Map<string, ClassStatus>>(
     () => new Map(initialStatus.map(s => [s.classId, { notStarted: s.notStarted, startsOn: s.startsOn ?? '', otherTopics: s.otherTopics }]))
   )
@@ -41,7 +34,6 @@ export default function SchoolTopicsChecklist({ studentId, classes, units, topic
   const [savedTopic, setSavedTopic] = useState<string | null>(null)
   const [savingStatusClass, setSavingStatusClass] = useState<string | null>(null)
   const [savedStatusClass, setSavedStatusClass] = useState<string | null>(null)
-  const hasRedirected = useRef(false)
 
   function flashSaved(topicId: string) {
     setSavedTopic(topicId)
@@ -126,35 +118,8 @@ export default function SchoolTopicsChecklist({ studentId, classes, units, topic
   const sortedClasses = [...classes].sort((a, b) => a.order_index - b.order_index)
   const today = todayIso()
 
-  function isClassComplete(classId: string) {
-    const plans = [...selections.entries()]
-      .filter(([topicId]) => topicClassId.get(topicId) === classId)
-      .map(([, testDate]) => ({ classId, testDate }))
-    const s = getStatus(classId)
-    return isClassCurrent(classId, plans, { notStarted: s.notStarted, startsOn: s.startsOn || null, otherTopics: s.otherTopics }, today)
-  }
-
-  const allComplete = sortedClasses.length > 0 && sortedClasses.every(c => isClassComplete(c.id))
-
-  // Once every enrolled class has something filled in, and this page was
-  // reached via the required-first-login gate, send the student on into the
-  // rest of the app — same "done, now continue" flow as ProfileEditor's
-  // required path.
-  useEffect(() => {
-    if (!required || !allComplete || hasRedirected.current) return
-    hasRedirected.current = true
-    const t = setTimeout(() => { window.location.href = '/student' }, 700)
-    return () => clearTimeout(t)
-  }, [required, allComplete])
-
   return (
     <div className="space-y-6">
-      {required && allComplete && (
-        <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 text-green-800 text-sm font-medium">
-          ✓ Got it — taking you to your classes…
-        </div>
-      )}
-
       {sortedClasses.map(cls => {
         const classUnits = units.filter(u => u.class_id === cls.id).sort((a, b) => a.order_index - b.order_index)
         const checkedCount = classUnits.reduce(

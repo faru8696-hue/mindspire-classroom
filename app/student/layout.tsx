@@ -4,9 +4,7 @@ import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
 import Link from 'next/link'
 import { logout } from '@/app/actions/auth'
 import ProfileGate from '@/components/ProfileGate'
-import SchoolTopicsGate from '@/components/SchoolTopicsGate'
 import StudentNotificationBell from '@/components/StudentNotificationBell'
-import { isClassCurrent } from '@/lib/schoolTopicsStatus'
 
 export default async function StudentLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
@@ -35,38 +33,10 @@ export default async function StudentLayout({ children }: { children: React.Reac
   const extColumnsExist = extProfile !== null && 'parent_name' in (extProfile ?? {})
   const profileComplete = !extColumnsExist || !!(p.grade_level && p.phone && p.parent_name && p.parent_phone && p.parent_email)
 
-  // Enrolled class IDs for notification bell — kept unfiltered (notifications
-  // aren't about group planning, so a non-group student still gets them).
+  // Enrolled class IDs for notification bell
   const admin = createSupabaseAdmin(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
-  const { data: enrollmentsFull, error: enrollErr } = await admin
-    .from('class_enrollments').select('class_id, in_group').eq('student_id', session.user.id)
-  const enrollments: { class_id: string; in_group?: boolean }[] = enrollErr
-    ? ((await admin.from('class_enrollments').select('class_id').eq('student_id', session.user.id)).data ?? [])
-    : (enrollmentsFull ?? [])
-  const enrolledClassIds = enrollments.map(e => e.class_id)
-  // Only group-enrolled classes are subject to the School Topics gate below
-  // — a student marked not-in-group for a class isn't asked about it.
-  const groupClassIds = enrollments.filter(e => e.in_group !== false).map(e => e.class_id)
-
-  // School-topics gate: a class counts as "done" once the student has a
-  // CURRENT topic/status signal for it — a test date (or "hasn't started"
-  // start date) in the past no longer counts, same as an expired signal, so
-  // the student is asked again. Guarded by the error checks below so this
-  // gate stays off (never locks anyone out) until all migrations have
-  // actually been run — same defensive pattern as extColumnsExist above.
-  const { data: planRows, error: planErr } = await admin
-    .from('student_topic_plans').select('class_id, test_date').eq('student_id', session.user.id)
-  const { data: statusRows, error: statusErr } = await admin
-    .from('student_school_status').select('class_id, not_started, starts_on, other_topics').eq('student_id', session.user.id)
-  const schoolTopicsTablesExist = !planErr && !statusErr
-  const todayIso = new Date().toISOString().slice(0, 10)
-  const plans = (planRows ?? []).map((r: { class_id: string; test_date: string | null }) => ({ classId: r.class_id, testDate: r.test_date }))
-  const statusByClass = new Map(
-    (statusRows ?? []).map((r: { class_id: string; not_started: boolean; starts_on: string | null; other_topics: string | null }) =>
-      [r.class_id, { notStarted: r.not_started, startsOn: r.starts_on, otherTopics: r.other_topics }])
-  )
-  const schoolTopicsComplete = !schoolTopicsTablesExist || groupClassIds.length === 0
-    || groupClassIds.every(id => isClassCurrent(id, plans, statusByClass.get(id), todayIso))
+  const { data: enrollments } = await admin.from('class_enrollments').select('class_id').eq('student_id', session.user.id)
+  const enrolledClassIds = (enrollments ?? []).map((e: { class_id: string }) => e.class_id)
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -102,9 +72,7 @@ export default async function StudentLayout({ children }: { children: React.Reac
         </div>
       </nav>
       <main className="flex-1 p-6">
-        <ProfileGate profileComplete={profileComplete}>
-          <SchoolTopicsGate complete={schoolTopicsComplete}>{children}</SchoolTopicsGate>
-        </ProfileGate>
+        <ProfileGate profileComplete={profileComplete}>{children}</ProfileGate>
       </main>
     </div>
   )
