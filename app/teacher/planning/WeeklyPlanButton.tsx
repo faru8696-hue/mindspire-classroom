@@ -3,10 +3,29 @@
 import { useState } from 'react'
 import type { WeeklyPlanSession } from '@/lib/gemini'
 
-export default function WeeklyPlanButton({ classId }: { classId: string }) {
+export interface InitialWeeklyPlan {
+  sessions: WeeklyPlanSession[]
+  feasibilityNote: string | null
+  shared: boolean
+  generatedAt: string
+}
+
+function timeAgo(iso: string): string {
+  const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  if (mins < 1440) return `${Math.round(mins / 60)}h ago`
+  return `${Math.round(mins / 1440)}d ago`
+}
+
+export default function WeeklyPlanButton({ classId, initialPlan }: { classId: string; initialPlan: InitialWeeklyPlan | null }) {
   const [loading, setLoading] = useState(false)
-  const [sessions, setSessions] = useState<WeeklyPlanSession[] | null>(null)
-  const [feasibilityNote, setFeasibilityNote] = useState<string | null>(null)
+  const [sharing, setSharing] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [sessions, setSessions] = useState<WeeklyPlanSession[] | null>(initialPlan?.sessions ?? null)
+  const [feasibilityNote, setFeasibilityNote] = useState<string | null>(initialPlan?.feasibilityNote ?? null)
+  const [shared, setShared] = useState(initialPlan?.shared ?? false)
+  const [generatedAt, setGeneratedAt] = useState<string | null>(initialPlan?.generatedAt ?? null)
   const [error, setError] = useState<string | null>(null)
 
   async function getPlan() {
@@ -22,6 +41,8 @@ export default function WeeklyPlanButton({ classId }: { classId: string }) {
       if (!res.ok) throw new Error(data.error || 'Something went wrong')
       setSessions(data.sessions)
       setFeasibilityNote(data.feasibilityNote ?? null)
+      setGeneratedAt(data.generatedAt ?? new Date().toISOString())
+      setShared(data.shared ?? false)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong')
     } finally {
@@ -29,15 +50,65 @@ export default function WeeklyPlanButton({ classId }: { classId: string }) {
     }
   }
 
+  async function deletePlan() {
+    setDeleting(true)
+    const res = await fetch('/api/delete-weekly-plan', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ classId }),
+    })
+    setDeleting(false)
+    if (res.ok) {
+      setSessions(null)
+      setFeasibilityNote(null)
+      setGeneratedAt(null)
+      setShared(false)
+    }
+  }
+
+  async function toggleShare() {
+    const next = !shared
+    setSharing(true)
+    const res = await fetch('/api/share-weekly-plan', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ classId, shared: next }),
+    })
+    setSharing(false)
+    if (res.ok) setShared(next)
+  }
+
   return (
     <div className="mb-3">
-      <button
-        onClick={getPlan}
-        disabled={loading}
-        className="text-xs font-semibold bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded-lg disabled:opacity-50"
-      >
-        {loading ? 'Thinking…' : "🤖 Get This Week's Plan"}
-      </button>
+      <div className="flex items-center gap-2 flex-wrap">
+        <button
+          onClick={getPlan}
+          disabled={loading}
+          className="text-xs font-semibold bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded-lg disabled:opacity-50"
+        >
+          {loading ? 'Thinking…' : sessions ? '🔄 Get New Plan' : "🤖 Get This Week's Plan"}
+        </button>
+
+        {sessions && (
+          <>
+            <button
+              onClick={toggleShare}
+              disabled={sharing}
+              className={`text-xs font-semibold px-3 py-1.5 rounded-lg disabled:opacity-50 ${
+                shared ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              {sharing ? 'Saving…' : shared ? '✓ Shared with students' : '📤 Share with students'}
+            </button>
+            <button
+              onClick={deletePlan}
+              disabled={deleting}
+              className="text-xs font-semibold text-gray-400 hover:text-red-500 px-2 py-1.5 disabled:opacity-50"
+            >
+              {deleting ? 'Deleting…' : '🗑️ Delete'}
+            </button>
+            {generatedAt && <span className="text-xs text-gray-400">Generated {timeAgo(generatedAt)}</span>}
+          </>
+        )}
+      </div>
 
       {error && <p className="text-xs text-red-600 mt-2">{error}</p>}
 

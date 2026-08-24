@@ -49,13 +49,29 @@ export default async function StudentDashboard() {
         <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
           <div className="text-5xl mb-4">⏳</div>
           <h2 className="text-xl font-bold text-purple-900 mb-2">No Class Assigned Yet</h2>
-          <p className="text-gray-500">Your teacher hasn't assigned you to a class yet. Check back soon!</p>
+          <p className="text-gray-500">Your teacher hasn&apos;t assigned you to a class yet. Check back soon!</p>
         </div>
       </div>
     )
   }
 
   const classIds = classes.map(c => c.id)
+  const classTitleById = new Map(classes.map(c => [c.id, c.title]))
+
+  // ── This week's plan — teacher-shared AI weekly plan, if any (see
+  // app/teacher/planning). Guarded so a not-yet-migrated table never
+  // breaks the dashboard.
+  const { data: weeklyPlanRows } = await admin
+    .from('weekly_plans')
+    .select('class_id, sessions, generated_at')
+    .in('class_id', classIds)
+    .eq('shared', true)
+  const weeklyPlans = (weeklyPlanRows ?? []).map((w: { class_id: string; sessions: { day: string; focusTopics: string[]; rationale: string }[]; generated_at: string }) => ({
+    classId: w.class_id,
+    classTitle: classTitleById.get(w.class_id) ?? '',
+    sessions: w.sessions,
+    generatedAt: w.generated_at,
+  }))
 
   // ── Pending Tests count — published+active tests across every enrolled
   // class this student hasn't completed yet, for the dashboard summary card.
@@ -192,6 +208,32 @@ export default async function StudentDashboard() {
           <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-purple-100 text-purple-700 flex-shrink-0">{pendingTestCount} to do</span>
         )}
       </Link>
+
+      {/* This week's plan — teacher-shared AI weekly plan per class */}
+      {weeklyPlans.length > 0 && (
+        <section className="mb-8 space-y-4">
+          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">This Week&apos;s Plan</h2>
+          {weeklyPlans.map(plan => (
+            <div key={plan.classId} className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+              <div className="px-4 py-2.5 bg-purple-50 border-b border-purple-100">
+                <span className="text-sm font-bold text-purple-900">{plan.classTitle}</span>
+              </div>
+              {plan.sessions.length === 0 ? (
+                <p className="text-sm text-gray-400 px-4 py-3">Nothing planned yet.</p>
+              ) : (
+                <div className="divide-y divide-gray-50">
+                  {plan.sessions.map((s, i) => (
+                    <div key={i} className="px-4 py-2.5 text-sm">
+                      <p className="font-semibold text-gray-800">{s.day}</p>
+                      <p className="text-gray-600 mt-0.5">{s.focusTopics.join(', ')}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </section>
+      )}
 
       {/* Recent activity — feedback, comments, new assignments, all in one place */}
       {activity.length > 0 && (

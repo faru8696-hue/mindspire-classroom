@@ -67,7 +67,21 @@ export async function POST(req: NextRequest) {
 
   try {
     const result = await suggestWeeklyPlan(cls.title, CLASS_DAYS, topicInputs, new Date().toISOString().slice(0, 10))
-    return NextResponse.json(result)
+
+    // Persist so the plan survives a reload instead of only living in
+    // client state — one row per class, regenerating overwrites it and
+    // resets shared to false so a new plan always needs a deliberate
+    // re-share rather than silently replacing what students already see.
+    const { data: saved, error: saveError } = await admin.from('weekly_plans')
+      .upsert(
+        { class_id: classId, feasibility_note: result.feasibilityNote, sessions: result.sessions, generated_at: new Date().toISOString(), shared: false, shared_at: null },
+        { onConflict: 'class_id' },
+      )
+      .select('generated_at, shared')
+      .single()
+    if (saveError) console.error('Failed to persist weekly plan:', saveError)
+
+    return NextResponse.json({ ...result, generatedAt: saved?.generated_at ?? new Date().toISOString(), shared: saved?.shared ?? false })
   } catch (err) {
     console.error('suggest-weekly-plan error:', err)
     const message = err instanceof Error ? err.message : String(err)

@@ -2,7 +2,7 @@ import { createAdminClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import MarkNavSeen from '@/components/MarkNavSeen'
 import TestDateCalendar, { type CalendarEvent } from './TestDateCalendar'
-import WeeklyPlanButton from './WeeklyPlanButton'
+import WeeklyPlanButton, { type InitialWeeklyPlan } from './WeeklyPlanButton'
 import RosterManager, { type RosterStudent } from './RosterManager'
 import { CLASS_DAYS } from '@/lib/classSchedule'
 
@@ -22,7 +22,7 @@ export default async function TeacherPlanningPage() {
     ? ((await supabase.from('class_enrollments').select('student_id, class_id').in('class_id', classIds)).data ?? [])
     : (enrollmentsFull ?? [])
 
-  const [{ data: units }, { data: plans }, { data: statusRows }] = await Promise.all([
+  const [{ data: units }, { data: plans }, { data: statusRows }, { data: weeklyPlanRows }] = await Promise.all([
     classIds.length > 0
       ? supabase.from('units').select('id, class_id, title, order_index').in('class_id', classIds).order('order_index')
       : Promise.resolve({ data: [] }),
@@ -32,7 +32,15 @@ export default async function TeacherPlanningPage() {
     classIds.length > 0
       ? supabase.from('student_school_status').select('student_id, class_id, not_started, starts_on, other_topics').in('class_id', classIds)
       : Promise.resolve({ data: [] }),
+    // Guarded so a not-yet-migrated table never breaks the page.
+    classIds.length > 0
+      ? supabase.from('weekly_plans').select('class_id, feasibility_note, sessions, generated_at, shared').in('class_id', classIds)
+      : Promise.resolve({ data: [] }),
   ])
+  const weeklyPlanByClass = new Map<string, InitialWeeklyPlan>(
+    (weeklyPlanRows ?? []).map((w: { class_id: string; feasibility_note: string | null; sessions: InitialWeeklyPlan['sessions']; generated_at: string; shared: boolean }) =>
+      [w.class_id, { sessions: w.sessions, feasibilityNote: w.feasibility_note, generatedAt: w.generated_at, shared: w.shared }])
+  )
 
   // Students marked not-in-group are excluded from every planning
   // aggregate below (counts, calendar, AI input) but their raw rows are
@@ -197,7 +205,7 @@ export default async function TeacherPlanningPage() {
               <p className="text-gray-400 text-sm">No group students enrolled.</p>
             ) : (
               <>
-                <WeeklyPlanButton classId={cls.id} />
+                <WeeklyPlanButton classId={cls.id} initialPlan={weeklyPlanByClass.get(cls.id) ?? null} />
 
                 {(notStartedByClass.get(cls.id)?.length ?? 0) > 0 && (
                   <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mb-3">
