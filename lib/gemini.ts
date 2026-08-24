@@ -175,8 +175,10 @@ export interface WeeklyPlanTopicInput {
 
 export interface WeeklyPlanSession {
   date: string // ISO date, one of the availableSessionDates passed in
+  dayLabel: string // e.g. "Tuesday, September 1" — spelled out by the model so the date is self-describing wherever it's read, not dependent on client-side formatting
   focusTopics: string[]
   rationale: string
+  homeworkSuggestion: string | null // what students can work on independently before the NEXT session (the "off days" in between) — null only if there's nothing worth assigning yet
 }
 
 export interface WeeklyPlanResult {
@@ -227,9 +229,11 @@ ${topicLines}
 
 Order sessions chronologically and prioritize by real urgency (nearest test dates first, then topics many students share) and by actual teachability in the time available — not by trying to touch everything at once. If there's nothing reported yet, say so plainly rather than inventing topics.
 
+Between sessions, students have "off days" with no group meeting — for each session, also suggest brief, SPECIFIC independent homework students can do before the next session to reinforce what was just covered or prepare for what's next (e.g. "10 practice problems balancing redox half-reactions" or "read ahead on Le Chatelier's principle"), not a vague "review your notes." Skip it (null) only if there's genuinely nothing worth assigning yet.
+
 Return:
 - feasibilityNote: 1-3 honest sentences ONLY if something is genuinely off — e.g. the material doesn't fit even across all ${availableSessionDates.length} available dates, or a test date will be missed no matter how it's paced. Null otherwise.
-- sessions: one entry per session actually used (using one of the exact dates listed above, in chronological order — you choose how many), each with specific focus topic(s) (naming sub-parts of a large topic where relevant) and a rationale grounded in actual chemistry content and urgency.`
+- sessions: one entry per session actually used (using one of the exact dates listed above, in chronological order — you choose how many), each with a dayLabel spelling out that date and day of week, specific focus topic(s) (naming sub-parts of a large topic where relevant), a rationale grounded in actual chemistry content and urgency, and a homeworkSuggestion for the off days before the next session.`
 
   const schema = {
     type: 'object',
@@ -241,10 +245,12 @@ Return:
           type: 'object',
           properties: {
             date: { type: 'string' },
+            dayLabel: { type: 'string' },
             focusTopics: { type: 'array', items: { type: 'string' } },
             rationale: { type: 'string' },
+            homeworkSuggestion: { type: 'string', nullable: true },
           },
-          required: ['date', 'focusTopics', 'rationale'],
+          required: ['date', 'dayLabel', 'focusTopics', 'rationale', 'homeworkSuggestion'],
         },
       },
     },

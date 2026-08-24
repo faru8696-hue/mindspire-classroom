@@ -66,7 +66,7 @@ export default async function StudentDashboard() {
     .select('class_id, sessions, generated_at')
     .in('class_id', classIds)
     .eq('shared', true)
-  const weeklyPlans = (weeklyPlanRows ?? []).map((w: { class_id: string; sessions: { date: string; focusTopics: string[]; rationale: string }[]; generated_at: string }) => ({
+  const weeklyPlans = (weeklyPlanRows ?? []).map((w: { class_id: string; sessions: { date: string; dayLabel?: string; focusTopics: string[]; rationale: string; homeworkSuggestion?: string | null }[]; generated_at: string }) => ({
     classId: w.class_id,
     classTitle: classTitleById.get(w.class_id) ?? '',
     sessions: w.sessions,
@@ -225,13 +225,18 @@ export default async function StudentDashboard() {
                   {plan.sessions.map((s, i) => (
                     <div key={i} className="px-4 py-2.5 text-sm">
                       <p className="font-semibold text-gray-800">
-                        {(() => {
+                        {s.dayLabel || (() => {
                           if (!s.date) return 'Unknown date'
                           const d = new Date(`${s.date}T00:00:00`)
                           return isNaN(d.getTime()) ? s.date : d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })
                         })()}
                       </p>
                       <p className="text-gray-600 mt-0.5">{s.focusTopics.join(', ')}</p>
+                      {s.homeworkSuggestion && (
+                        <p className="text-xs text-purple-700 bg-purple-50 rounded-lg px-2.5 py-1.5 mt-1.5">
+                          📝 Before next session: {s.homeworkSuggestion}
+                        </p>
+                      )}
                     </div>
                   ))}
                 </div>

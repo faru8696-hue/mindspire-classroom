@@ -134,9 +134,14 @@ export default function WeeklyPlanButton({ classId, initialPlan }: { classId: st
               <div className="divide-y divide-gray-50">
                 {sessions.map((s, i) => (
                   <div key={i} className="px-4 py-2.5 text-sm">
-                    <p className="font-semibold text-gray-800">{formatSessionDate(s.date)} <span className="font-normal text-gray-400">· {CLASS_TIME}</span></p>
+                    <p className="font-semibold text-gray-800">{s.dayLabel || formatSessionDate(s.date)} <span className="font-normal text-gray-400">· {CLASS_TIME}</span></p>
                     <p className="text-gray-600 mt-0.5">{s.focusTopics.join(', ')}</p>
                     <p className="text-xs text-gray-400 mt-1">{s.rationale}</p>
+                    {s.homeworkSuggestion && (
+                      <p className="text-xs text-purple-700 bg-purple-50 rounded-lg px-2.5 py-1.5 mt-1.5">
+                        📝 Homework for the off days: {s.homeworkSuggestion}
+                      </p>
+                    )}
                   </div>
                 ))}
               </div>
