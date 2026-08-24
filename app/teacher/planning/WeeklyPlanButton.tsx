@@ -3,7 +3,8 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import type { WeeklyPlanSession, UnmatchedTopicNote } from '@/lib/gemini'
-import { classTimeFor } from '@/lib/classSchedule'
+import { CLASS_DAYS, classTimeFor } from '@/lib/classSchedule'
+import StudyPlanCalendar from '@/components/StudyPlanCalendar'
 
 export interface InitialWeeklyPlan {
   sessions: WeeklyPlanSession[]
@@ -146,6 +147,12 @@ export default function WeeklyPlanButton({ classId, classTitle, initialPlan }: {
                 Add topics →
               </Link>
             </div>
+          )}
+          {sessions.length > 0 && (
+            <StudyPlanCalendar
+              sessions={sessions.map(s => ({ date: s.date, dayLabel: s.dayLabel, focusTopics: s.focusTopics }))}
+              classDays={CLASS_DAYS}
+            />
           )}
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
             {sessions.length === 0 ? (

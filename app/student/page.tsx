@@ -2,6 +2,8 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
+import StudyPlanCalendar from '@/components/StudyPlanCalendar'
+import { CLASS_DAYS } from '@/lib/classSchedule'
 
 function adminDb() {
   return createSupabaseAdmin(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
@@ -221,24 +223,36 @@ export default async function StudentDashboard() {
               {plan.sessions.length === 0 ? (
                 <p className="text-sm text-gray-400 px-4 py-3">Nothing planned yet.</p>
               ) : (
-                <div className="divide-y divide-gray-50">
-                  {plan.sessions.map((s, i) => (
-                    <div key={i} className="px-4 py-2.5 text-sm">
-                      <p className="font-semibold text-gray-800">
-                        {s.dayLabel || (() => {
-                          if (!s.date) return 'Unknown date'
-                          const d = new Date(`${s.date}T00:00:00`)
-                          return isNaN(d.getTime()) ? s.date : d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })
-                        })()}
-                      </p>
-                      <p className="text-gray-600 mt-0.5">{s.focusTopics.join(', ')}</p>
-                      {s.homeworkSuggestion && (
-                        <p className="text-xs text-purple-700 bg-purple-50 rounded-lg px-2.5 py-1.5 mt-1.5">
-                          📝 Before next session: {s.homeworkSuggestion}
+                <div>
+                  <div className="p-3">
+                    <StudyPlanCalendar
+                      sessions={plan.sessions.map(s => ({
+                        date: s.date,
+                        dayLabel: s.dayLabel ?? s.date,
+                        focusTopics: s.focusTopics,
+                      }))}
+                      classDays={CLASS_DAYS}
+                    />
+                  </div>
+                  <div className="divide-y divide-gray-50">
+                    {plan.sessions.map((s, i) => (
+                      <div key={i} className="px-4 py-2.5 text-sm">
+                        <p className="font-semibold text-gray-800">
+                          {s.dayLabel || (() => {
+                            if (!s.date) return 'Unknown date'
+                            const d = new Date(`${s.date}T00:00:00`)
+                            return isNaN(d.getTime()) ? s.date : d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })
+                          })()}
                         </p>
-                      )}
-                    </div>
-                  ))}
+                        <p className="text-gray-600 mt-0.5">{s.focusTopics.join(', ')}</p>
+                        {s.homeworkSuggestion && (
+                          <p className="text-xs text-purple-700 bg-purple-50 rounded-lg px-2.5 py-1.5 mt-1.5">
+                            📝 Before next session: {s.homeworkSuggestion}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
