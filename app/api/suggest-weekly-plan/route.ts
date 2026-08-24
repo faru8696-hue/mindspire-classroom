@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCaller, createAdminClient } from '@/lib/supabase/server'
-import { suggestWeeklyPlan, WeeklyPlanTopicInput } from '@/lib/gemini'
+import { suggestWeeklyPlan, WeeklyPlanTopicInput, CurriculumTopic } from '@/lib/gemini'
 import { isQuotaExceeded, isOverloaded } from '@/lib/geminiErrors'
 import { CLASS_DAYS, CLASS_TIME, nextSessionDates } from '@/lib/classSchedule'
 
@@ -65,12 +65,32 @@ export async function POST(req: NextRequest) {
       nearestTestDate: nearestTestDateByTopic.get(t.id) ?? null,
     }))
 
+  // The FULL curriculum topic list (not just already-checked ones) so the
+  // model has something complete to match freeform notes against below.
+  const allCurriculumTopics: CurriculumTopic[] = (topics ?? []).map((t: { unit_id: string; title: string }) => ({
+    unitTitle: unitTitleById.get(t.unit_id) ?? '',
+    topicTitle: t.title,
+  }))
+
+  // "Other topics" freeform notes — many students report their school's
+  // pace this way instead of checking a topic from the list, so this is
+  // primary data, not an afterthought. student_school_status has no
+  // in_group column of its own; filter against the same in-group set used
+  // for topic plans above.
+  const { data: statusRowsRaw } = await admin
+    .from('student_school_status').select('student_id, other_topics').eq('class_id', classId)
+  const otherNotes = (statusRowsRaw ?? [])
+    .filter((s: { student_id: string; other_topics: string | null }) => inGroupStudentIds.has(s.student_id) && !!s.other_topics?.trim())
+    .map((s: { other_topics: string | null }) => s.other_topics!.trim())
+
   try {
     const todayIso = new Date().toISOString().slice(0, 10)
     // ~4 weeks of slots (3/week) — the model picks however many it
     // actually needs, it isn't required to fill all of them.
     const availableSessionDates = nextSessionDates(CLASS_DAYS, todayIso, 12)
-    const result = await suggestWeeklyPlan(cls.title, CLASS_DAYS, CLASS_TIME, availableSessionDates, topicInputs, todayIso)
+    const result = await suggestWeeklyPlan(
+      cls.title, CLASS_DAYS, CLASS_TIME, availableSessionDates, topicInputs, allCurriculumTopics, otherNotes, todayIso,
+    )
 
     // Persist so the plan survives a reload instead of only living in
     // client state — one row per class, regenerating overwrites it and
@@ -85,6 +105,9 @@ export async function POST(req: NextRequest) {
       .single()
     if (saveError) console.error('Failed to persist weekly plan:', saveError)
 
+    // unmatchedTopicNotes isn't persisted — it's a one-time actionable
+    // prompt to go add curriculum content, not part of the plan itself, so
+    // it just re-appears each time the plan is regenerated.
     return NextResponse.json({ ...result, generatedAt: saved?.generated_at ?? new Date().toISOString(), shared: saved?.shared ?? false })
   } catch (err) {
     console.error('suggest-weekly-plan error:', err)

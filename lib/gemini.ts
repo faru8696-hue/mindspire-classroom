@@ -181,9 +181,20 @@ export interface WeeklyPlanSession {
   homeworkSuggestion: string | null // what students can work on independently before the NEXT session (the "off days" in between) — null only if there's nothing worth assigning yet
 }
 
+export interface UnmatchedTopicNote {
+  note: string // the freeform text a student wrote
+  suggestion: string // where to add it, e.g. "Add under Unit 3 (Gases) — sounds like Dalton's Law of Partial Pressures"
+}
+
 export interface WeeklyPlanResult {
   feasibilityNote: string | null
+  unmatchedTopicNotes: UnmatchedTopicNote[]
   sessions: WeeklyPlanSession[]
+}
+
+export interface CurriculumTopic {
+  unitTitle: string
+  topicTitle: string
 }
 
 // Suggests what to cover across the tutor's upcoming group sessions, given
@@ -191,24 +202,38 @@ export interface WeeklyPlanResult {
 // personalize per student in a shared group session, so this is a
 // best-effort pacing plan she reviews and adjusts — not a directive.
 //
-// Two earlier mistakes this now avoids: (1) the model was told to "pick
-// 1-3 topics per session," so it did exactly that regardless of what those
-// topics actually were — e.g. cramming an entire unit into 3 sessions as
-// if every topic were the same size; (2) the plan was implicitly locked to
-// "this week" (3 bare weekday names), forcing everything into 3 slots even
-// when the material genuinely needed a month. availableSessionDates now
-// hands the model real upcoming calendar dates spanning several weeks, and
-// the prompt explicitly says it's fine — expected, even — to only use as
-// many of them as the material actually calls for.
+// Mistakes this now avoids: (1) the model was told to "pick 1-3 topics per
+// session," producing exactly that regardless of what those topics
+// actually were; (2) the plan was implicitly locked to "this week" (3 bare
+// weekday names), forcing everything into 3 slots even when the material
+// genuinely needed a month — availableSessionDates now hands it real
+// upcoming dates spanning several weeks; (3) the freeform "other topics"
+// notes (student_school_status.other_topics) were never even fetched, so
+// most of the real reported data — most students describe their school's
+// pace this way rather than checking a topic from the list — was silently
+// invisible to the plan. otherNotes and allCurriculumTopics fix that: the
+// model semantically matches each note against the real curriculum (typos,
+// paraphrasing, and all) and folds a match into its planning, or — if a
+// note describes something genuinely not in the curriculum yet — surfaces
+// it in unmatchedTopicNotes instead of silently ignoring or inventing a
+// session for it.
 export async function suggestWeeklyPlan(
   className: string, classDays: string[], classTime: string, availableSessionDates: string[],
-  topics: WeeklyPlanTopicInput[], todayIso: string,
+  topics: WeeklyPlanTopicInput[], allCurriculumTopics: CurriculumTopic[], otherNotes: string[], todayIso: string,
 ): Promise<WeeklyPlanResult> {
   const topicLines = topics.length > 0
     ? topics.map(t =>
         `- ${t.unitTitle} / ${t.topicTitle}: ${t.studentsReporting}/${t.studentsEnrolled} students report their school is currently on this${t.nearestTestDate ? `, nearest reported test date ${t.nearestTestDate}` : ''}`
       ).join('\n')
-    : '(No students have reported any topics yet for this class.)'
+    : '(No students have checked off a topic from the list yet.)'
+
+  const curriculumLines = allCurriculumTopics.length > 0
+    ? allCurriculumTopics.map(t => `- ${t.unitTitle} / ${t.topicTitle}`).join('\n')
+    : '(No curriculum content set up for this class yet.)'
+
+  const otherNoteLines = otherNotes.length > 0
+    ? otherNotes.map(n => `- "${n}"`).join('\n')
+    : '(none)'
 
   const dateLines = availableSessionDates
     .map(d => `${d} (${new Date(`${d}T00:00:00`).toLocaleDateString('en-US', { weekday: 'long' })})`)
@@ -220,25 +245,43 @@ Her group sessions are every ${classDays.join('/')} at ${classTime}. Today's dat
 
 IMPORTANT — you do NOT need to fit everything into just the first few sessions. Use as many of the available dates above as the material genuinely requires, and no more — it's completely normal and often correct for a plan to run several weeks out, or to only use a handful of the earliest dates if that's all the reported material needs. Do not pad the schedule with extra sessions just because more dates are available, and do not compress everything into the first 2-3 dates just because that feels like "this week."
 
-There are ${topics.length} distinct topic${topics.length === 1 ? '' : 's'} reported below — treat this as the real scope you're planning for.
+Full curriculum for this class, by unit (this is the complete reference — use it for the matching step below):
+${curriculumLines}
 
-CRITICAL — use your actual chemistry knowledge, don't just evenly distribute topic names across sessions: chemistry topics vary enormously in depth. Something like "Thermodynamics" or "Equilibrium" covers many subtopics and commonly takes multiple full sessions to teach properly, while a narrow topic like "Naming Ionic Compounds" might only need part of one session. Think about what each topic below actually involves — its subtopics, typical student difficulty, and how long it really takes to teach well — before deciding how to allocate it across sessions. It is completely fine, and often correct, to give one large topic an entire session (or more) on its own, or to split a large topic into named sub-parts across multiple sessions (e.g. "Thermodynamics — enthalpy and calorimetry" as one session's focus, "Thermodynamics — entropy and Gibbs free energy" as a later session's).
+Students report their school's pace two ways: checking a topic from the curriculum above, OR writing a freeform note when nothing on the list fits. Most students actually use the freeform note, so treat these as equally important primary data, not an afterthought:
+${otherNoteLines}
 
-Here is what students have reported about their own school's pace for this class (a topic is listed if at least one student's school is currently covering or has covered it; test date is the earliest date any student reported, if known):
+MATCHING STEP — for each freeform note above, use your chemistry knowledge to judge whether it actually describes one of the curriculum topics listed above, even if worded very differently, abbreviated, or misspelled (e.g. "we're doing gas laws" or "avogadro/ideal gas stuff" both plausibly match a curriculum topic literally titled "The Ideal Gas Law"). If a note clearly matches a curriculum topic, treat that as one more student reporting that topic — fold it into your prioritization the same as a checked topic, and mention it came from a note in that topic's rationale where relevant. If a note does NOT match anything in the curriculum (a genuinely different topic not yet in the system), do NOT invent a plan session for it — instead put it in unmatchedTopicNotes with a specific suggestion for which existing unit it likely belongs under (or that a new unit is probably needed, if none fit), so the teacher can add proper curriculum content for it. Be conservative: only report unmatchedTopicNotes for notes that genuinely don't fit anywhere, not for reasonable paraphrases of existing topics.
+
+Structured checked-topic counts (may undercount real coverage — see the notes above for what's likely missing):
 ${topicLines}
 
-Order sessions chronologically and prioritize by real urgency (nearest test dates first, then topics many students share) and by actual teachability in the time available — not by trying to touch everything at once. If there's nothing reported yet, say so plainly rather than inventing topics.
+CRITICAL — use your actual chemistry knowledge, don't just evenly distribute topic names across sessions: chemistry topics vary enormously in depth. Something like "Thermodynamics" or "Equilibrium" covers many subtopics and commonly takes multiple full sessions to teach properly, while a narrow topic like "Naming Ionic Compounds" might only need part of one session. Think about what each topic actually involves — its subtopics, typical student difficulty, and how long it really takes to teach well — before deciding how to allocate it across sessions. It is completely fine, and often correct, to give one large topic an entire session (or more) on its own, or to split a large topic into named sub-parts across multiple sessions (e.g. "Thermodynamics — enthalpy and calorimetry" as one session's focus, "Thermodynamics — entropy and Gibbs free energy" as a later session's).
+
+Order sessions chronologically and prioritize by real urgency (nearest test dates first, then topics many students share — including note-matched ones) and by actual teachability in the time available — not by trying to touch everything at once. If nothing has been reported at all (no checked topics and no usable notes), say so plainly rather than inventing topics.
 
 Between sessions, students have "off days" with no group meeting — for each session, also suggest brief, SPECIFIC independent homework students can do before the next session to reinforce what was just covered or prepare for what's next (e.g. "10 practice problems balancing redox half-reactions" or "read ahead on Le Chatelier's principle"), not a vague "review your notes." Skip it (null) only if there's genuinely nothing worth assigning yet.
 
 Return:
 - feasibilityNote: 1-3 honest sentences ONLY if something is genuinely off — e.g. the material doesn't fit even across all ${availableSessionDates.length} available dates, or a test date will be missed no matter how it's paced. Null otherwise.
+- unmatchedTopicNotes: freeform notes that don't match any curriculum topic, per the matching step above (empty array if none).
 - sessions: one entry per session actually used (using one of the exact dates listed above, in chronological order — you choose how many), each with a dayLabel spelling out that date and day of week, specific focus topic(s) (naming sub-parts of a large topic where relevant), a rationale grounded in actual chemistry content and urgency, and a homeworkSuggestion for the off days before the next session.`
 
   const schema = {
     type: 'object',
     properties: {
       feasibilityNote: { type: 'string', nullable: true },
+      unmatchedTopicNotes: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            note: { type: 'string' },
+            suggestion: { type: 'string' },
+          },
+          required: ['note', 'suggestion'],
+        },
+      },
       sessions: {
         type: 'array',
         items: {
@@ -254,10 +297,10 @@ Return:
         },
       },
     },
-    required: ['feasibilityNote', 'sessions'],
+    required: ['feasibilityNote', 'unmatchedTopicNotes', 'sessions'],
   }
 
-  const text = await callGemini([{ text: prompt }], schema, 1024)
+  const text = await callGemini([{ text: prompt }], schema, 1536)
   return JSON.parse(text) as WeeklyPlanResult
 }
 

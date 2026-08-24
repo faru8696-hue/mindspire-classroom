@@ -1,7 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import type { WeeklyPlanSession } from '@/lib/gemini'
+import Link from 'next/link'
+import type { WeeklyPlanSession, UnmatchedTopicNote } from '@/lib/gemini'
 import { CLASS_TIME } from '@/lib/classSchedule'
 
 export interface InitialWeeklyPlan {
@@ -32,6 +33,7 @@ export default function WeeklyPlanButton({ classId, initialPlan }: { classId: st
   const [deleting, setDeleting] = useState(false)
   const [sessions, setSessions] = useState<WeeklyPlanSession[] | null>(initialPlan?.sessions ?? null)
   const [feasibilityNote, setFeasibilityNote] = useState<string | null>(initialPlan?.feasibilityNote ?? null)
+  const [unmatchedTopicNotes, setUnmatchedTopicNotes] = useState<UnmatchedTopicNote[]>([])
   const [shared, setShared] = useState(initialPlan?.shared ?? false)
   const [generatedAt, setGeneratedAt] = useState<string | null>(initialPlan?.generatedAt ?? null)
   const [error, setError] = useState<string | null>(null)
@@ -49,6 +51,7 @@ export default function WeeklyPlanButton({ classId, initialPlan }: { classId: st
       if (!res.ok) throw new Error(data.error || 'Something went wrong')
       setSessions(data.sessions)
       setFeasibilityNote(data.feasibilityNote ?? null)
+      setUnmatchedTopicNotes(data.unmatchedTopicNotes ?? [])
       setGeneratedAt(data.generatedAt ?? new Date().toISOString())
       setShared(data.shared ?? false)
     } catch (err) {
@@ -68,6 +71,7 @@ export default function WeeklyPlanButton({ classId, initialPlan }: { classId: st
     if (res.ok) {
       setSessions(null)
       setFeasibilityNote(null)
+      setUnmatchedTopicNotes([])
       setGeneratedAt(null)
       setShared(false)
     }
@@ -125,6 +129,21 @@ export default function WeeklyPlanButton({ classId, initialPlan }: { classId: st
           {feasibilityNote && (
             <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 text-sm text-amber-800">
               ⚠️ {feasibilityNote}
+            </div>
+          )}
+          {unmatchedTopicNotes.length > 0 && (
+            <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 text-sm text-blue-800">
+              <p className="font-semibold mb-1.5">📌 These &quot;other topics&quot; notes don&apos;t match anything in your curriculum yet:</p>
+              <ul className="space-y-1.5">
+                {unmatchedTopicNotes.map((u, i) => (
+                  <li key={i}>
+                    <span className="italic">&quot;{u.note}&quot;</span> — {u.suggestion}
+                  </li>
+                ))}
+              </ul>
+              <Link href="/teacher/content" className="inline-block mt-1.5 text-xs font-semibold underline hover:no-underline">
+                Add topics →
+              </Link>
             </div>
           )}
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
