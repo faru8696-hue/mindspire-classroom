@@ -179,31 +179,55 @@ export interface WeeklyPlanSession {
   rationale: string
 }
 
+export interface WeeklyPlanResult {
+  feasibilityNote: string | null
+  sessions: WeeklyPlanSession[]
+}
+
 // Suggests what to cover in the upcoming group sessions, given how students
 // report their own school's pace. The teacher can't personalize per student
 // in a shared group session, so this is a best-effort starting point she
 // reviews and adjusts — not a directive.
+//
+// Earlier version told the model to "pick 1-3 topics per session," which
+// produced exactly that regardless of what those topics actually were —
+// e.g. cramming all of Thermodynamics into one day next to two unrelated
+// topics, as if every topic title were the same size. The prompt now makes
+// the model reason as an actual chemistry teacher about how much depth each
+// topic really has, explicitly surfaces the total scope of what's been
+// reported, and asks it to say so — via feasibilityNote — when there's
+// genuinely more material than the available sessions can cover well,
+// rather than silently spreading it thin to fill the schedule.
 export async function suggestWeeklyPlan(
   className: string, classDays: string[], topics: WeeklyPlanTopicInput[], todayIso: string,
-): Promise<WeeklyPlanSession[]> {
+): Promise<WeeklyPlanResult> {
   const topicLines = topics.length > 0
     ? topics.map(t =>
         `- ${t.unitTitle} / ${t.topicTitle}: ${t.studentsReporting}/${t.studentsEnrolled} students report their school is currently on this${t.nearestTestDate ? `, nearest reported test date ${t.nearestTestDate}` : ''}`
       ).join('\n')
     : '(No students have reported any topics yet for this class.)'
 
-  const prompt = `You are helping a tutor plan her upcoming group tutoring sessions for "${className}". She teaches a small group of students together, but each student's own school moves at its own pace, so she can't fully personalize for every student individually — she needs a best-effort plan for what to prioritize across the group.
+  const prompt = `You are an experienced AP/Honors Chemistry teacher helping a tutor plan her upcoming group tutoring sessions for "${className}". She teaches a small group of students together, but each student's own school moves at its own pace, so she can't fully personalize for every student individually — she needs a best-effort plan for what to prioritize across the group.
 
-Her group sessions this week are on: ${classDays.join(', ')}. Today's date is ${todayIso}.
+Her group sessions this week are on: ${classDays.join(', ')} — that is only ${classDays.length} session${classDays.length === 1 ? '' : 's'} total. Today's date is ${todayIso}.
+
+There are ${topics.length} distinct topic${topics.length === 1 ? '' : 's'} reported below — treat this as the real scope you're planning for, not a short list to casually divide up.
+
+CRITICAL — use your actual chemistry knowledge, don't just evenly distribute topic names: chemistry topics vary enormously in depth. Something like "Thermodynamics" or "Equilibrium" covers many subtopics and commonly takes multiple sessions to teach properly, while a narrow topic like "Naming Ionic Compounds" might only need part of one session. Think about what each topic below actually involves — its subtopics, typical student difficulty, and how long it really takes to teach — before deciding how to allocate it. It is completely fine, and often correct, to give one large topic an entire session (or more) on its own, to split a large topic into named sub-parts across multiple sessions (e.g. "Thermodynamics — enthalpy and calorimetry" as one session's focus, "Thermodynamics — entropy and Gibbs free energy" as another's), or to leave a topic for a later week if it doesn't fit. Do NOT force every reported topic into this week's ${classDays.length} session${classDays.length === 1 ? '' : 's'} just to appear complete.
 
 Here is what students have reported about their own school's pace for this class (a topic is listed if at least one student's school is currently covering or has covered it; test date is the earliest date any student reported, if known):
 ${topicLines}
 
-Suggest a plan for each of her upcoming session days (${classDays.join(', ')}), picking 1-3 topics to focus on per session. Prioritize topics where students have an upcoming test soonest, but also make room for topics many students report but with no test date yet. Keep each day's focus reasonably tight rather than trying to cover everything at once. If there's nothing reported yet, say so plainly rather than inventing topics.`
+Prioritize by real urgency (nearest test dates, then topics many students share) and by actual teachability in the time available — not by trying to touch everything. If the reported material is genuinely more than ${classDays.length} session${classDays.length === 1 ? '' : 's'} can responsibly cover, say so plainly in feasibilityNote and explain your prioritization, rather than quietly cramming it thin. If there's nothing reported yet, say so plainly rather than inventing topics.
+
+Return:
+- feasibilityNote: 1-3 honest sentences if the material doesn't realistically fit in the available sessions (null if it genuinely does, or if there's nothing reported).
+- sessions: one entry per session day, each with specific focus topic(s) (naming sub-parts of a large topic where relevant, per the guidance above) and a rationale grounded in actual chemistry content and urgency — not evenness.`
 
   const schema = {
     type: 'object',
     properties: {
+      feasibilityNote: { type: 'string', nullable: true },
       sessions: {
         type: 'array',
         items: {
@@ -217,12 +241,11 @@ Suggest a plan for each of her upcoming session days (${classDays.join(', ')}), 
         },
       },
     },
-    required: ['sessions'],
+    required: ['feasibilityNote', 'sessions'],
   }
 
   const text = await callGemini([{ text: prompt }], schema, 1024)
-  const parsed = JSON.parse(text) as { sessions: WeeklyPlanSession[] }
-  return parsed.sessions
+  return JSON.parse(text) as WeeklyPlanResult
 }
 
 export interface ChatTurn {

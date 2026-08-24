@@ -66,8 +66,8 @@ export async function POST(req: NextRequest) {
     }))
 
   try {
-    const sessions = await suggestWeeklyPlan(cls.title, CLASS_DAYS, topicInputs, new Date().toISOString().slice(0, 10))
-    return NextResponse.json({ sessions })
+    const result = await suggestWeeklyPlan(cls.title, CLASS_DAYS, topicInputs, new Date().toISOString().slice(0, 10))
+    return NextResponse.json(result)
   } catch (err) {
     console.error('suggest-weekly-plan error:', err)
     const message = err instanceof Error ? err.message : String(err)
