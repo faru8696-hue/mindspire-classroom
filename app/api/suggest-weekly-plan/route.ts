@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getCaller, createAdminClient } from '@/lib/supabase/server'
 import { suggestWeeklyPlan, WeeklyPlanTopicInput } from '@/lib/gemini'
 import { isQuotaExceeded, isOverloaded } from '@/lib/geminiErrors'
-import { CLASS_DAYS } from '@/lib/classSchedule'
+import { CLASS_DAYS, CLASS_TIME, nextSessionDates } from '@/lib/classSchedule'
 
 // Teacher-only: re-aggregates the same student-reported topic-coverage data
 // the Planning page (app/teacher/planning) shows, and asks Gemini for a
@@ -66,7 +66,11 @@ export async function POST(req: NextRequest) {
     }))
 
   try {
-    const result = await suggestWeeklyPlan(cls.title, CLASS_DAYS, topicInputs, new Date().toISOString().slice(0, 10))
+    const todayIso = new Date().toISOString().slice(0, 10)
+    // ~4 weeks of slots (3/week) — the model picks however many it
+    // actually needs, it isn't required to fill all of them.
+    const availableSessionDates = nextSessionDates(CLASS_DAYS, todayIso, 12)
+    const result = await suggestWeeklyPlan(cls.title, CLASS_DAYS, CLASS_TIME, availableSessionDates, topicInputs, todayIso)
 
     // Persist so the plan survives a reload instead of only living in
     // client state — one row per class, regenerating overwrites it and

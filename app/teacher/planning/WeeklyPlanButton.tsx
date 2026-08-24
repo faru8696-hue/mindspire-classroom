@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import type { WeeklyPlanSession } from '@/lib/gemini'
+import { CLASS_TIME } from '@/lib/classSchedule'
 
 export interface InitialWeeklyPlan {
   sessions: WeeklyPlanSession[]
@@ -16,6 +17,13 @@ function timeAgo(iso: string): string {
   if (mins < 60) return `${mins}m ago`
   if (mins < 1440) return `${Math.round(mins / 60)}h ago`
   return `${Math.round(mins / 1440)}d ago`
+}
+
+function formatSessionDate(iso: string | undefined): string {
+  if (!iso) return 'Unknown date'
+  const d = new Date(`${iso}T00:00:00`)
+  if (isNaN(d.getTime())) return iso
+  return d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })
 }
 
 export default function WeeklyPlanButton({ classId, initialPlan }: { classId: string; initialPlan: InitialWeeklyPlan | null }) {
@@ -84,7 +92,7 @@ export default function WeeklyPlanButton({ classId, initialPlan }: { classId: st
           disabled={loading}
           className="text-xs font-semibold bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded-lg disabled:opacity-50"
         >
-          {loading ? 'Thinking…' : sessions ? '🔄 Get New Plan' : "🤖 Get This Week's Plan"}
+          {loading ? 'Thinking…' : sessions ? '🔄 Get New Plan' : '🤖 Get Study Plan'}
         </button>
 
         {sessions && (
@@ -126,7 +134,7 @@ export default function WeeklyPlanButton({ classId, initialPlan }: { classId: st
               <div className="divide-y divide-gray-50">
                 {sessions.map((s, i) => (
                   <div key={i} className="px-4 py-2.5 text-sm">
-                    <p className="font-semibold text-gray-800">{s.day}</p>
+                    <p className="font-semibold text-gray-800">{formatSessionDate(s.date)} <span className="font-normal text-gray-400">· {CLASS_TIME}</span></p>
                     <p className="text-gray-600 mt-0.5">{s.focusTopics.join(', ')}</p>
                     <p className="text-xs text-gray-400 mt-1">{s.rationale}</p>
                   </div>

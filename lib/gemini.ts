@@ -174,7 +174,7 @@ export interface WeeklyPlanTopicInput {
 }
 
 export interface WeeklyPlanSession {
-  day: string
+  date: string // ISO date, one of the availableSessionDates passed in
   focusTopics: string[]
   rationale: string
 }
@@ -184,22 +184,23 @@ export interface WeeklyPlanResult {
   sessions: WeeklyPlanSession[]
 }
 
-// Suggests what to cover in the upcoming group sessions, given how students
-// report their own school's pace. The teacher can't personalize per student
-// in a shared group session, so this is a best-effort starting point she
-// reviews and adjusts — not a directive.
+// Suggests what to cover across the tutor's upcoming group sessions, given
+// how students report their own school's pace. The teacher can't
+// personalize per student in a shared group session, so this is a
+// best-effort pacing plan she reviews and adjusts — not a directive.
 //
-// Earlier version told the model to "pick 1-3 topics per session," which
-// produced exactly that regardless of what those topics actually were —
-// e.g. cramming all of Thermodynamics into one day next to two unrelated
-// topics, as if every topic title were the same size. The prompt now makes
-// the model reason as an actual chemistry teacher about how much depth each
-// topic really has, explicitly surfaces the total scope of what's been
-// reported, and asks it to say so — via feasibilityNote — when there's
-// genuinely more material than the available sessions can cover well,
-// rather than silently spreading it thin to fill the schedule.
+// Two earlier mistakes this now avoids: (1) the model was told to "pick
+// 1-3 topics per session," so it did exactly that regardless of what those
+// topics actually were — e.g. cramming an entire unit into 3 sessions as
+// if every topic were the same size; (2) the plan was implicitly locked to
+// "this week" (3 bare weekday names), forcing everything into 3 slots even
+// when the material genuinely needed a month. availableSessionDates now
+// hands the model real upcoming calendar dates spanning several weeks, and
+// the prompt explicitly says it's fine — expected, even — to only use as
+// many of them as the material actually calls for.
 export async function suggestWeeklyPlan(
-  className: string, classDays: string[], topics: WeeklyPlanTopicInput[], todayIso: string,
+  className: string, classDays: string[], classTime: string, availableSessionDates: string[],
+  topics: WeeklyPlanTopicInput[], todayIso: string,
 ): Promise<WeeklyPlanResult> {
   const topicLines = topics.length > 0
     ? topics.map(t =>
@@ -207,22 +208,28 @@ export async function suggestWeeklyPlan(
       ).join('\n')
     : '(No students have reported any topics yet for this class.)'
 
-  const prompt = `You are an experienced AP/Honors Chemistry teacher helping a tutor plan her upcoming group tutoring sessions for "${className}". She teaches a small group of students together, but each student's own school moves at its own pace, so she can't fully personalize for every student individually — she needs a best-effort plan for what to prioritize across the group.
+  const dateLines = availableSessionDates
+    .map(d => `${d} (${new Date(`${d}T00:00:00`).toLocaleDateString('en-US', { weekday: 'long' })})`)
+    .join(', ')
 
-Her group sessions this week are on: ${classDays.join(', ')} — that is only ${classDays.length} session${classDays.length === 1 ? '' : 's'} total. Today's date is ${todayIso}.
+  const prompt = `You are an experienced AP/Honors Chemistry teacher helping a tutor plan her upcoming group tutoring sessions for "${className}". She teaches a small group of students together, but each student's own school moves at its own pace, so she can't fully personalize for every student individually — she needs a best-effort pacing plan for what to prioritize across the group.
 
-There are ${topics.length} distinct topic${topics.length === 1 ? '' : 's'} reported below — treat this as the real scope you're planning for, not a short list to casually divide up.
+Her group sessions are every ${classDays.join('/')} at ${classTime}. Today's date is ${todayIso}. Here are her next ${availableSessionDates.length} available session dates, spanning about a month: ${dateLines}.
 
-CRITICAL — use your actual chemistry knowledge, don't just evenly distribute topic names: chemistry topics vary enormously in depth. Something like "Thermodynamics" or "Equilibrium" covers many subtopics and commonly takes multiple sessions to teach properly, while a narrow topic like "Naming Ionic Compounds" might only need part of one session. Think about what each topic below actually involves — its subtopics, typical student difficulty, and how long it really takes to teach — before deciding how to allocate it. It is completely fine, and often correct, to give one large topic an entire session (or more) on its own, to split a large topic into named sub-parts across multiple sessions (e.g. "Thermodynamics — enthalpy and calorimetry" as one session's focus, "Thermodynamics — entropy and Gibbs free energy" as another's), or to leave a topic for a later week if it doesn't fit. Do NOT force every reported topic into this week's ${classDays.length} session${classDays.length === 1 ? '' : 's'} just to appear complete.
+IMPORTANT — you do NOT need to fit everything into just the first few sessions. Use as many of the available dates above as the material genuinely requires, and no more — it's completely normal and often correct for a plan to run several weeks out, or to only use a handful of the earliest dates if that's all the reported material needs. Do not pad the schedule with extra sessions just because more dates are available, and do not compress everything into the first 2-3 dates just because that feels like "this week."
+
+There are ${topics.length} distinct topic${topics.length === 1 ? '' : 's'} reported below — treat this as the real scope you're planning for.
+
+CRITICAL — use your actual chemistry knowledge, don't just evenly distribute topic names across sessions: chemistry topics vary enormously in depth. Something like "Thermodynamics" or "Equilibrium" covers many subtopics and commonly takes multiple full sessions to teach properly, while a narrow topic like "Naming Ionic Compounds" might only need part of one session. Think about what each topic below actually involves — its subtopics, typical student difficulty, and how long it really takes to teach well — before deciding how to allocate it across sessions. It is completely fine, and often correct, to give one large topic an entire session (or more) on its own, or to split a large topic into named sub-parts across multiple sessions (e.g. "Thermodynamics — enthalpy and calorimetry" as one session's focus, "Thermodynamics — entropy and Gibbs free energy" as a later session's).
 
 Here is what students have reported about their own school's pace for this class (a topic is listed if at least one student's school is currently covering or has covered it; test date is the earliest date any student reported, if known):
 ${topicLines}
 
-Prioritize by real urgency (nearest test dates, then topics many students share) and by actual teachability in the time available — not by trying to touch everything. If the reported material is genuinely more than ${classDays.length} session${classDays.length === 1 ? '' : 's'} can responsibly cover, say so plainly in feasibilityNote and explain your prioritization, rather than quietly cramming it thin. If there's nothing reported yet, say so plainly rather than inventing topics.
+Order sessions chronologically and prioritize by real urgency (nearest test dates first, then topics many students share) and by actual teachability in the time available — not by trying to touch everything at once. If there's nothing reported yet, say so plainly rather than inventing topics.
 
 Return:
-- feasibilityNote: 1-3 honest sentences if the material doesn't realistically fit in the available sessions (null if it genuinely does, or if there's nothing reported).
-- sessions: one entry per session day, each with specific focus topic(s) (naming sub-parts of a large topic where relevant, per the guidance above) and a rationale grounded in actual chemistry content and urgency — not evenness.`
+- feasibilityNote: 1-3 honest sentences ONLY if something is genuinely off — e.g. the material doesn't fit even across all ${availableSessionDates.length} available dates, or a test date will be missed no matter how it's paced. Null otherwise.
+- sessions: one entry per session actually used (using one of the exact dates listed above, in chronological order — you choose how many), each with specific focus topic(s) (naming sub-parts of a large topic where relevant) and a rationale grounded in actual chemistry content and urgency.`
 
   const schema = {
     type: 'object',
@@ -233,11 +240,11 @@ Return:
         items: {
           type: 'object',
           properties: {
-            day: { type: 'string' },
+            date: { type: 'string' },
             focusTopics: { type: 'array', items: { type: 'string' } },
             rationale: { type: 'string' },
           },
-          required: ['day', 'focusTopics', 'rationale'],
+          required: ['date', 'focusTopics', 'rationale'],
         },
       },
     },

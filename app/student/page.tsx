@@ -58,15 +58,15 @@ export default async function StudentDashboard() {
   const classIds = classes.map(c => c.id)
   const classTitleById = new Map(classes.map(c => [c.id, c.title]))
 
-  // ── This week's plan — teacher-shared AI weekly plan, if any (see
+  // ── Study plan — teacher-shared AI pacing plan, if any (see
   // app/teacher/planning). Guarded so a not-yet-migrated table never
-  // breaks the dashboard.
+  // breaks the dashboard. Can span several weeks, not just "this week".
   const { data: weeklyPlanRows } = await admin
     .from('weekly_plans')
     .select('class_id, sessions, generated_at')
     .in('class_id', classIds)
     .eq('shared', true)
-  const weeklyPlans = (weeklyPlanRows ?? []).map((w: { class_id: string; sessions: { day: string; focusTopics: string[]; rationale: string }[]; generated_at: string }) => ({
+  const weeklyPlans = (weeklyPlanRows ?? []).map((w: { class_id: string; sessions: { date: string; focusTopics: string[]; rationale: string }[]; generated_at: string }) => ({
     classId: w.class_id,
     classTitle: classTitleById.get(w.class_id) ?? '',
     sessions: w.sessions,
@@ -209,10 +209,10 @@ export default async function StudentDashboard() {
         )}
       </Link>
 
-      {/* This week's plan — teacher-shared AI weekly plan per class */}
+      {/* Study plan — teacher-shared AI pacing plan per class, may span weeks */}
       {weeklyPlans.length > 0 && (
         <section className="mb-8 space-y-4">
-          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">This Week&apos;s Plan</h2>
+          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Study Plan</h2>
           {weeklyPlans.map(plan => (
             <div key={plan.classId} className="bg-white border border-gray-200 rounded-xl overflow-hidden">
               <div className="px-4 py-2.5 bg-purple-50 border-b border-purple-100">
@@ -224,7 +224,13 @@ export default async function StudentDashboard() {
                 <div className="divide-y divide-gray-50">
                   {plan.sessions.map((s, i) => (
                     <div key={i} className="px-4 py-2.5 text-sm">
-                      <p className="font-semibold text-gray-800">{s.day}</p>
+                      <p className="font-semibold text-gray-800">
+                        {(() => {
+                          if (!s.date) return 'Unknown date'
+                          const d = new Date(`${s.date}T00:00:00`)
+                          return isNaN(d.getTime()) ? s.date : d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })
+                        })()}
+                      </p>
                       <p className="text-gray-600 mt-0.5">{s.focusTopics.join(', ')}</p>
                     </div>
                   ))}
