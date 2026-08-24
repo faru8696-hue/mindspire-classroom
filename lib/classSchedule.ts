@@ -1,9 +1,20 @@
 // Faridah's fixed weekly group-session schedule — not tied to any DB table
-// since it's a single constant shared by both classes, not something that
-// currently varies per class or student. Shared between the Planning page
-// and the AI weekly-plan route so they never drift apart.
+// since it's just two classes with a stable pattern, not something that
+// varies per student. Shared between the Planning page and the AI
+// weekly-plan route so they never drift apart. Days are the same for both
+// classes, but the TIME differs per class (Honors Chem 7pm, AP Chem 8pm),
+// so it's keyed by class title rather than a single flat constant.
 export const CLASS_DAYS = ['Tuesday', 'Saturday', 'Sunday']
-export const CLASS_TIME = '8:00 PM EST'
+
+const CLASS_TIME_BY_TITLE: Record<string, string> = {
+  'Honors Chemistry': '7:00 PM EST',
+  'AP Chemistry': '8:00 PM EST',
+}
+const DEFAULT_CLASS_TIME = '8:00 PM EST'
+
+export function classTimeFor(classTitle: string): string {
+  return CLASS_TIME_BY_TITLE[classTitle] ?? DEFAULT_CLASS_TIME
+}
 
 const WEEKDAY_INDEX: Record<string, number> = {
   Sunday: 0, Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6,

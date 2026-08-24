@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import type { WeeklyPlanSession, UnmatchedTopicNote } from '@/lib/gemini'
-import { CLASS_TIME } from '@/lib/classSchedule'
+import { classTimeFor } from '@/lib/classSchedule'
 
 export interface InitialWeeklyPlan {
   sessions: WeeklyPlanSession[]
@@ -27,7 +27,8 @@ function formatSessionDate(iso: string | undefined): string {
   return d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })
 }
 
-export default function WeeklyPlanButton({ classId, initialPlan }: { classId: string; initialPlan: InitialWeeklyPlan | null }) {
+export default function WeeklyPlanButton({ classId, classTitle, initialPlan }: { classId: string; classTitle: string; initialPlan: InitialWeeklyPlan | null }) {
+  const classTime = classTimeFor(classTitle)
   const [loading, setLoading] = useState(false)
   const [sharing, setSharing] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -153,7 +154,7 @@ export default function WeeklyPlanButton({ classId, initialPlan }: { classId: st
               <div className="divide-y divide-gray-50">
                 {sessions.map((s, i) => (
                   <div key={i} className="px-4 py-2.5 text-sm">
-                    <p className="font-semibold text-gray-800">{s.dayLabel || formatSessionDate(s.date)} <span className="font-normal text-gray-400">· {CLASS_TIME}</span></p>
+                    <p className="font-semibold text-gray-800">{s.dayLabel || formatSessionDate(s.date)} <span className="font-normal text-gray-400">· {classTime}</span></p>
                     <p className="text-gray-600 mt-0.5">{s.focusTopics.join(', ')}</p>
                     <p className="text-xs text-gray-400 mt-1">{s.rationale}</p>
                     {s.homeworkSuggestion && (

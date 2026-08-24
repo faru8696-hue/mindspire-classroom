@@ -205,7 +205,7 @@ export default async function TeacherPlanningPage() {
               <p className="text-gray-400 text-sm">No group students enrolled.</p>
             ) : (
               <>
-                <WeeklyPlanButton classId={cls.id} initialPlan={weeklyPlanByClass.get(cls.id) ?? null} />
+                <WeeklyPlanButton classId={cls.id} classTitle={cls.title} initialPlan={weeklyPlanByClass.get(cls.id) ?? null} />
 
                 {(notStartedByClass.get(cls.id)?.length ?? 0) > 0 && (
                   <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mb-3">
