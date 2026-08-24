@@ -11,6 +11,9 @@ export interface StudyPlanCalendarSession {
 interface Props {
   sessions: StudyPlanCalendarSession[]
   classDays: string[] // e.g. ['Tuesday', 'Saturday', 'Sunday']
+  editable?: boolean
+  onSaveSession?: (date: string, focusTopics: string[]) => void | Promise<void>
+  onDeleteSession?: (date: string) => void | Promise<void>
 }
 
 const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -26,7 +29,12 @@ function toIso(d: Date) {
 // interface would just add indirection). Purely an at-a-glance overview of
 // WHEN things happen; the full rationale/homework text stays in the
 // existing list below this calendar wherever it's rendered.
-export default function StudyPlanCalendar({ sessions, classDays }: Props) {
+//
+// Cells never truncate their text — a row grows to fit whatever's in it
+// (a previous version line-clamped to 2 lines, which cut off real plan
+// content). When editable, clicking any day opens an inline editor to add,
+// rewrite, or remove that date's topics.
+export default function StudyPlanCalendar({ sessions, classDays, editable, onSaveSession, onDeleteSession }: Props) {
   const [viewMonth, setViewMonth] = useState(() => {
     // Jump straight to the plan's first session rather than defaulting to
     // "this month" — a plan that starts 3 weeks out would otherwise open
@@ -35,6 +43,9 @@ export default function StudyPlanCalendar({ sessions, classDays }: Props) {
     const base = first ? new Date(`${first.date}T00:00:00`) : new Date()
     return new Date(base.getFullYear(), base.getMonth(), 1)
   })
+  const [editingDate, setEditingDate] = useState<string | null>(null)
+  const [draftText, setDraftText] = useState('')
+  const [saving, setSaving] = useState(false)
 
   const sessionByDate = new Map(sessions.map(s => [s.date, s]))
 
@@ -51,6 +62,30 @@ export default function StudyPlanCalendar({ sessions, classDays }: Props) {
   while (cells.length % 7 !== 0) cells.push(null)
 
   const classDayIndexes = new Set(classDays.map(d => WEEKDAY_LABELS.findIndex(w => w.toLowerCase() === d.slice(0, 3).toLowerCase())))
+
+  function startEditing(iso: string) {
+    if (!editable) return
+    setEditingDate(iso)
+    setDraftText(sessionByDate.get(iso)?.focusTopics.join(', ') ?? '')
+  }
+
+  async function saveEditing() {
+    if (!editingDate) return
+    const topics = draftText.split(',').map(t => t.trim()).filter(Boolean)
+    if (topics.length === 0) return
+    setSaving(true)
+    await onSaveSession?.(editingDate, topics)
+    setSaving(false)
+    setEditingDate(null)
+  }
+
+  async function deleteEditing() {
+    if (!editingDate) return
+    setSaving(true)
+    await onDeleteSession?.(editingDate)
+    setSaving(false)
+    setEditingDate(null)
+  }
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -75,19 +110,48 @@ export default function StudyPlanCalendar({ sessions, classDays }: Props) {
           const session = sessionByDate.get(iso)
           const isClassDay = classDayIndexes.has(date.getDay())
           const isToday = iso === todayIso
+          const isEditing = editingDate === iso
 
           return (
-            <div key={i} className={`min-h-[64px] border-b border-r border-gray-50 p-1.5 ${isClassDay ? 'bg-purple-50/30' : ''}`}>
+            <div
+              key={i}
+              onClick={() => !isEditing && startEditing(iso)}
+              className={`min-h-[64px] border-b border-r border-gray-50 p-1.5 ${isClassDay ? 'bg-purple-50/30' : ''} ${editable && !isEditing ? 'cursor-pointer hover:bg-purple-50/60' : ''}`}
+            >
               <span className={`text-[11px] ${isToday ? 'inline-flex items-center justify-center w-5 h-5 rounded-full bg-purple-600 text-white font-bold' : 'text-gray-400'}`}>
                 {date.getDate()}
               </span>
-              {session && (
-                <div
-                  title={session.focusTopics.join(', ')}
-                  className="mt-1 text-[10px] font-medium px-1 py-0.5 rounded bg-purple-100 text-purple-700 leading-tight line-clamp-2"
-                >
+
+              {isEditing ? (
+                <div className="mt-1 space-y-1" onClick={e => e.stopPropagation()}>
+                  <textarea
+                    value={draftText}
+                    onChange={e => setDraftText(e.target.value)}
+                    placeholder="Topic, another topic…"
+                    rows={2}
+                    className="w-full text-[11px] border border-purple-300 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-purple-400"
+                    autoFocus
+                  />
+                  <div className="flex items-center gap-1">
+                    <button onClick={saveEditing} disabled={saving} className="text-[10px] font-semibold bg-purple-600 hover:bg-purple-700 text-white px-1.5 py-0.5 rounded disabled:opacity-50">
+                      Save
+                    </button>
+                    {session && (
+                      <button onClick={deleteEditing} disabled={saving} className="text-[10px] font-semibold text-red-500 hover:text-red-700 px-1 disabled:opacity-50">
+                        Delete
+                      </button>
+                    )}
+                    <button onClick={() => setEditingDate(null)} className="text-[10px] text-gray-400 hover:text-gray-600 px-1">
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : session ? (
+                <div className="mt-1 text-[10px] font-medium px-1 py-0.5 rounded bg-purple-100 text-purple-700 leading-snug whitespace-pre-wrap">
                   {session.focusTopics.join(', ')}
                 </div>
+              ) : (
+                editable && <div className="mt-1 text-[10px] text-gray-300">+ Add</div>
               )}
             </div>
           )

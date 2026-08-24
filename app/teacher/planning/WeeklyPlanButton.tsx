@@ -90,6 +90,24 @@ export default function WeeklyPlanButton({ classId, classTitle, initialPlan }: {
     if (res.ok) setShared(next)
   }
 
+  async function saveSession(date: string, focusTopics: string[]) {
+    const res = await fetch('/api/edit-weekly-plan-session', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ classId, date, action: 'set', focusTopics }),
+    })
+    const data = await res.json()
+    if (res.ok) setSessions(data.sessions)
+  }
+
+  async function deleteSession(date: string) {
+    const res = await fetch('/api/edit-weekly-plan-session', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ classId, date, action: 'remove' }),
+    })
+    const data = await res.json()
+    if (res.ok) setSessions(data.sessions)
+  }
+
   return (
     <div className="mb-3">
       <div className="flex items-center gap-2 flex-wrap">
@@ -149,10 +167,16 @@ export default function WeeklyPlanButton({ classId, classTitle, initialPlan }: {
             </div>
           )}
           {sessions.length > 0 && (
-            <StudyPlanCalendar
-              sessions={sessions.map(s => ({ date: s.date, dayLabel: s.dayLabel, focusTopics: s.focusTopics }))}
-              classDays={CLASS_DAYS}
-            />
+            <>
+              <p className="text-xs text-gray-400">Click any day to add, edit, or remove a session.</p>
+              <StudyPlanCalendar
+                sessions={sessions.map(s => ({ date: s.date, dayLabel: s.dayLabel, focusTopics: s.focusTopics }))}
+                classDays={CLASS_DAYS}
+                editable
+                onSaveSession={saveSession}
+                onDeleteSession={deleteSession}
+              />
+            </>
           )}
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
             {sessions.length === 0 ? (

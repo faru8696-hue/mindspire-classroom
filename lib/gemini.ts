@@ -262,6 +262,8 @@ DEFAULT TO ONE TOPIC PER SESSION, even within the same unit — don't bundle sev
 
 Order sessions chronologically and prioritize by real urgency (nearest test dates first, then topics many students share — including note-matched ones) and by actual teachability in the time available — not by trying to touch everything at once. If nothing has been reported at all (no checked topics and no usable notes), say so plainly rather than inventing topics.
 
+Keep each focusTopics entry SHORT — just the topic name itself (e.g. "Net Ionic Equations"), adding a sub-part label only when splitting one large topic across sessions (e.g. "Thermodynamics — enthalpy and calorimetry"). Do NOT prefix entries with the unit name or number (e.g. NOT "Unit 4: Chemical Reactions / Net Ionic Equations") — this is shown on a small calendar tile where that repetition wastes the limited space without adding information.
+
 Between sessions, students have "off days" with no group meeting — for each session, also suggest brief, SPECIFIC independent homework students can do before the next session to reinforce what was just covered or prepare for what's next (e.g. "10 practice problems balancing redox half-reactions" or "read ahead on Le Chatelier's principle"), not a vague "review your notes." Skip it (null) only if there's genuinely nothing worth assigning yet.
 
 Return:

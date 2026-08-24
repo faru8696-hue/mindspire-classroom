@@ -29,6 +29,15 @@ function toIsoDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+// Human-readable date+day label for a manually added/edited plan session
+// (the AI normally writes its own dayLabel; this covers the teacher-edit
+// path where there's no AI call to ask for one).
+export function formatDayLabel(iso: string): string {
+  const d = new Date(`${iso}T00:00:00`)
+  if (isNaN(d.getTime())) return iso
+  return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
+}
+
 // The next `count` calendar dates (ISO, today or later) that fall on one of
 // `days` — the pool of actual upcoming session slots the AI plan can draw
 // from. It doesn't have to fill every slot; this just gives it real dates
