@@ -363,38 +363,50 @@ export default function SubmissionsPage() {
   // grades used to silently never save (and stayed "pending"). The route also
   // notifies the student and records grade history.
   async function saveTeacherAnnotation(sId: string, qId: string, canvasData: string) {
-    await fetch('/api/grade', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ studentId: sId, questionId: qId, canvasData }),
-    })
-    if (selected) patchFeedbackLocal(selected.id, { canvas_data: canvasData })
+    try {
+      const res = await fetch('/api/grade', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ studentId: sId, questionId: qId, canvasData }),
+      })
+      if (!res.ok) return
+      if (selected) patchFeedbackLocal(selected.id, { canvas_data: canvasData })
+    } catch {}
   }
 
   async function saveGrade() {
     if (!selected) return
     const cur = selected
     setGrading(true)
-    await fetch('/api/grade', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        studentId: cur.student_id,
-        questionId: cur.question_id,
-        grade,
-        textFeedback: textFeedback || null,
-        notify: true,
-      }),
-    })
-    setGrading(false)
-    patchFeedbackLocal(cur.id, { grade, text_feedback: textFeedback || null })
-    // Submissions' nav badge is a live ungraded count, not click-to-clear —
-    // refresh the shared layout so it decrements right away.
-    router.refresh()
-    // Grading queue: jump to this student's next ungraded work so the teacher
-    // can grade straight through without hunting in the list.
-    const next = works.find(w => w.id !== cur.id && !w.feedback?.grade)
-    if (next) openWork(next)
+    try {
+      const res = await fetch('/api/grade', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          studentId: cur.student_id,
+          questionId: cur.question_id,
+          grade,
+          textFeedback: textFeedback || null,
+          notify: true,
+        }),
+      })
+      if (!res.ok) {
+        alert('Could not save this grade — please try again.')
+        return
+      }
+      patchFeedbackLocal(cur.id, { grade, text_feedback: textFeedback || null })
+      // Submissions' nav badge is a live ungraded count, not click-to-clear —
+      // refresh the shared layout so it decrements right away.
+      router.refresh()
+      // Grading queue: jump to this student's next ungraded work so the teacher
+      // can grade straight through without hunting in the list.
+      const next = works.find(w => w.id !== cur.id && !w.feedback?.grade)
+      if (next) openWork(next)
+    } catch {
+      alert('Could not save this grade — please check your connection and try again.')
+    } finally {
+      setGrading(false)
+    }
   }
 
   const activeClass = classes.find(c => c.id === classId)
