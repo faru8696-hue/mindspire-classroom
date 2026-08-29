@@ -104,6 +104,11 @@ export default async function LiveClassroomPage({
   }))
   const currentTopic = (topics ?? []).find(t => t.id === question.topic_id)
 
+  // Separate defensive query — live_question_id requires a migration that may
+  // not have been run yet, so this must never break the rest of the page.
+  const { data: liveRow } = await supabase.from('classes').select('live_question_id').eq('id', classId).maybeSingle()
+  const initialLiveQuestionId = liveRow !== null && 'live_question_id' in liveRow ? liveRow.live_question_id : null
+
   return (
     <LiveClassroomView
       classId={classId}
@@ -117,6 +122,7 @@ export default async function LiveClassroomPage({
       questionDifficulty={question.difficulty}
       questionPoints={question.points}
       questionTopicId={question.topic_id}
+      questionUnitId={currentTopic?.unit_id ?? ''}
       questionSource={question.source}
       topicOptions={topicOptions}
       allQuestions={allQuestions}
@@ -133,6 +139,7 @@ export default async function LiveClassroomPage({
       teacherId={teacherProfile?.id ?? ''}
       teacherName={teacherProfile?.full_name ?? 'Teacher'}
       autoOpenCommentsStudentId={autoOpenCommentsStudentId ?? null}
+      initialLiveQuestionId={initialLiveQuestionId}
     />
   )
 }

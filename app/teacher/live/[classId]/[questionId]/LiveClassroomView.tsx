@@ -32,9 +32,11 @@ interface Props {
   questionDifficulty: string | null
   questionPoints: number | null
   questionTopicId: string
+  questionUnitId: string
   questionSource: string | null
   topicOptions: TopicOption[]
   allQuestions: ClassQuestion[]
+  initialLiveQuestionId: string | null
   questionHelp: Record<string, number>
   students: Student[]
   initialSubmissions: Submission[]
@@ -65,13 +67,16 @@ const DIFFICULTY_BADGE: Record<string, string> = {
 
 export default function LiveClassroomView({
   classId, questionId, classTitle, topicTitle, unitTitle, questionTitle, questionContent, answerKey,
-  questionDifficulty, questionPoints, questionTopicId, questionSource, topicOptions,
+  questionDifficulty, questionPoints, questionTopicId, questionUnitId, questionSource, topicOptions,
   allQuestions, questionHelp, students, initialSubmissions, initialFeedbacks, initialNotifications,
-  initialComments, teacherId, teacherName, autoOpenCommentsStudentId,
+  initialComments, teacherId, teacherName, autoOpenCommentsStudentId, initialLiveQuestionId,
 }: Props) {
   const supabase = createClient()
   const [helpByQuestion, setHelpByQuestion] = useState<Record<string, number>>(questionHelp)
   const [switcherOpen, setSwitcherOpen] = useState(false)
+  const [liveQuestionId, setLiveQuestionId] = useState<string | null>(initialLiveQuestionId)
+  const [pushingLive, setPushingLive] = useState(false)
+  const isLive = liveQuestionId === questionId
   const [questionCollapsed, setQuestionCollapsed] = useState(false)
   const [commentsByStudent, setCommentsByStudent] = useState<Map<string, CommentRow[]>>(() => {
     const m = new Map<string, CommentRow[]>()
@@ -209,6 +214,43 @@ export default function LiveClassroomView({
       alert('Could not save this grade — please check your connection and try again.')
     } finally {
       setGradingId(null)
+    }
+  }
+
+  // Pushes "we're working on this question right now" to every student in the
+  // class — a direct RLS-permitted write (classes_teacher's "for all" policy
+  // covers this client) plus a broadcast so students already on the app pick
+  // it up immediately instead of waiting for their next page load.
+  async function pushToClass() {
+    setPushingLive(true)
+    try {
+      const { error } = await supabase.from('classes').update({ live_question_id: questionId }).eq('id', classId)
+      if (error) { alert('Could not push this question to the class — please try again.'); return }
+      setLiveQuestionId(questionId)
+      supabase.channel(`live-question:${classId}`).send({
+        type: 'broadcast', event: 'question-changed',
+        payload: { questionId, unitId: questionUnitId, topicId: questionTopicId, title: questionTitle, classTitle },
+      }).catch(err => console.error('live-question broadcast failed:', err))
+    } catch {
+      alert('Could not push this question to the class — please check your connection and try again.')
+    } finally {
+      setPushingLive(false)
+    }
+  }
+
+  async function clearLive() {
+    setPushingLive(true)
+    try {
+      const { error } = await supabase.from('classes').update({ live_question_id: null }).eq('id', classId)
+      if (error) { alert('Could not clear the live question — please try again.'); return }
+      setLiveQuestionId(null)
+      supabase.channel(`live-question:${classId}`).send({
+        type: 'broadcast', event: 'question-changed', payload: { questionId: null },
+      }).catch(err => console.error('live-question broadcast failed:', err))
+    } catch {
+      alert('Could not clear the live question — please check your connection and try again.')
+    } finally {
+      setPushingLive(false)
     }
   }
 
@@ -712,6 +754,25 @@ export default function LiveClassroomView({
             <button onClick={() => setFilter('done')}
               className="bg-purple-600 text-white text-xs font-bold px-3 py-1.5 rounded-full hover:bg-purple-500">
               ✓ {doneIds.size} done
+            </button>
+          )}
+          {isLive ? (
+            <button
+              onClick={clearLive}
+              disabled={pushingLive}
+              title="Stop showing this as the live question to students"
+              className="flex items-center gap-1.5 text-xs font-bold px-4 py-1.5 rounded-full bg-red-600 hover:bg-red-700 text-white disabled:opacity-50 flex-shrink-0"
+            >
+              🔴 Live — Clear
+            </button>
+          ) : (
+            <button
+              onClick={pushToClass}
+              disabled={pushingLive}
+              title="Show this as the current question to every student in the class"
+              className="flex items-center gap-1.5 text-xs font-bold px-4 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-50 flex-shrink-0"
+            >
+              📢 Push to Class
             </button>
           )}
           <button

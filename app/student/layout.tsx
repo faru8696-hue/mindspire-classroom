@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { logout } from '@/app/actions/auth'
 import ProfileGate from '@/components/ProfileGate'
 import StudentNotificationBell from '@/components/StudentNotificationBell'
+import LiveQuestionBanner, { type LiveQuestionInfo } from '@/components/LiveQuestionBanner'
 
 export default async function StudentLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
@@ -37,6 +38,39 @@ export default async function StudentLayout({ children }: { children: React.Reac
   const admin = createSupabaseAdmin(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
   const { data: enrollments } = await admin.from('class_enrollments').select('class_id').eq('student_id', session.user.id)
   const enrolledClassIds = (enrollments ?? []).map((e: { class_id: string }) => e.class_id)
+
+  // Live-question push — defensive query, live_question_id requires a
+  // migration that may not have been run yet, so this must never break the
+  // rest of the layout. A query error just means no banner shows.
+  const { data: enrolledClasses } = enrolledClassIds.length > 0
+    ? await admin.from('classes').select('id, title, live_question_id').in('id', enrolledClassIds)
+    : { data: [] as { id: string; title: string; live_question_id: string | null }[] }
+
+  const liveQuestionIds = (enrolledClasses ?? [])
+    .map(c => c.live_question_id)
+    .filter((id): id is string => !!id)
+  const { data: liveQuestionsRaw } = liveQuestionIds.length > 0
+    ? await admin.from('questions').select('id, title, topic_id').in('id', liveQuestionIds)
+    : { data: [] as { id: string; title: string; topic_id: string }[] }
+  const liveTopicIds = (liveQuestionsRaw ?? []).map(q => q.topic_id)
+  const { data: liveTopicsRaw } = liveTopicIds.length > 0
+    ? await admin.from('topics').select('id, unit_id').in('id', liveTopicIds)
+    : { data: [] as { id: string; unit_id: string }[] }
+
+  const unitIdByTopic = new Map((liveTopicsRaw ?? []).map(t => [t.id, t.unit_id]))
+  const questionById = new Map((liveQuestionsRaw ?? []).map(q => [q.id, q]))
+  const initialLiveQuestions: LiveQuestionInfo[] = (enrolledClasses ?? [])
+    .filter(c => c.live_question_id)
+    .map(c => {
+      const q = questionById.get(c.live_question_id!)
+      if (!q) return null
+      return {
+        classId: c.id, classTitle: c.title, questionId: q.id,
+        unitId: unitIdByTopic.get(q.topic_id) ?? '', topicId: q.topic_id, title: q.title,
+      }
+    })
+    .filter((x): x is LiveQuestionInfo => x !== null)
+  const liveSubscribeClasses = (enrolledClasses ?? []).map(c => ({ id: c.id, title: c.title }))
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -72,6 +106,7 @@ export default async function StudentLayout({ children }: { children: React.Reac
         </div>
       </nav>
       <main className="flex-1 p-6">
+        <LiveQuestionBanner classes={liveSubscribeClasses} initialLiveQuestions={initialLiveQuestions} />
         <ProfileGate profileComplete={profileComplete}>{children}</ProfileGate>
       </main>
     </div>
