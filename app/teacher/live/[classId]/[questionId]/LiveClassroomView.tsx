@@ -128,6 +128,7 @@ export default function LiveClassroomView({
   const [filter, setFilter] = useState<Filter>('all')
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set())
   const [gradingId, setGradingId] = useState<string | null>(null)
+  const [clearingIds, setClearingIds] = useState<Set<string>>(new Set())
   const audioRef = useRef<AudioContext | null>(null)
   const [aiResults, setAiResults] = useState<Map<string, {
     loading: boolean; grade?: 'correct' | 'incorrect'; feedback?: string; error?: string; approved?: boolean
@@ -215,6 +216,63 @@ export default function LiveClassroomView({
     } finally {
       setGradingId(null)
     }
+  }
+
+  // Resets one or more students' work on this question back to blank — the
+  // whiteboard/answer AND any grade or feedback already given, so it's as if
+  // they never touched it. grade_history is untouched server-side; this is
+  // about resetting the current board, not erasing that a grade was given.
+  async function clearWork(studentIds: string[]) {
+    setClearingIds(prev => new Set([...prev, ...studentIds]))
+    try {
+      const res = await fetch('/api/clear-work', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ questionId, studentIds }),
+      })
+      if (!res.ok) {
+        alert('Could not clear this work — please try again.')
+        return
+      }
+      setSubmissions(prev => {
+        const next = new Map(prev)
+        for (const id of studentIds) {
+          const existing = next.get(id)
+          if (existing) next.set(id, { ...existing, canvas_data: null, text_answer: null })
+        }
+        return next
+      })
+      setGrades(prev => {
+        const next = new Map(prev)
+        for (const id of studentIds) next.delete(id)
+        return next
+      })
+      setFeedbackCanvasByStudent(prev => {
+        const next = new Map(prev)
+        for (const id of studentIds) next.delete(id)
+        return next
+      })
+    } catch {
+      alert('Could not clear this work — please check your connection and try again.')
+    } finally {
+      setClearingIds(prev => {
+        const next = new Set(prev)
+        for (const id of studentIds) next.delete(id)
+        return next
+      })
+    }
+  }
+
+  async function clearStudentWork(student: Student, e: React.MouseEvent) {
+    e.preventDefault()
+    e.stopPropagation()
+    if (!window.confirm(`Clear ${student.full_name}'s work on this question? This wipes their board/answer and any grade or feedback already given — it cannot be undone.`)) return
+    await clearWork([student.id])
+  }
+
+  async function clearAllWork() {
+    if (!window.confirm(`Clear every student's work on this question? This wipes each board/answer and any grade or feedback already given for all ${students.length} students — it cannot be undone.`)) return
+    await clearWork(students.map(s => s.id))
   }
 
   // Pushes "we're working on this question right now" to every student in the
@@ -730,6 +788,14 @@ export default function LiveClassroomView({
           >
             {aiCheckingAll ? '🤖 Checking…' : '🤖 AI Check All'}
           </button>
+          <button
+            onClick={clearAllWork}
+            disabled={clearingIds.size > 0}
+            title="Clear every student's work on this question"
+            className="text-xs font-bold px-3 py-1.5 rounded-full bg-white border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50"
+          >
+            🗑 Clear All
+          </button>
           <span className="text-xs text-gray-600 bg-gray-100 px-3 py-1.5 rounded-full">
             {submittedCount}/{students.length} submitted
           </span>
@@ -982,6 +1048,14 @@ export default function LiveClassroomView({
                         >
                           ↗
                         </Link>
+                        <button
+                          onClick={e => clearStudentWork(student, e)}
+                          disabled={clearingIds.has(student.id)}
+                          title="Clear this student's work on this question"
+                          className="text-gray-300 hover:text-red-600 flex-shrink-0 text-xs leading-none disabled:opacity-50"
+                        >
+                          🗑
+                        </button>
                       </div>
                     </div>
                   </div>
