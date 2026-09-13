@@ -234,6 +234,16 @@ export default function LiveClassroomView({
         alert('Could not clear this work — please try again.')
         return
       }
+      // The API call above already wiped the DB row — this just tells an
+      // already-open student board to reflect that live. Without it the
+      // student's tab keeps showing (and can even re-save) the old strokes
+      // until they happen to reload the page. Fire-and-forget per student,
+      // same pattern as the grade-notif broadcasts above.
+      for (const id of studentIds) {
+        supabase.channel(`work-cleared:${questionId}:${id}`).send({
+          type: 'broadcast', event: 'cleared', payload: {},
+        }).catch(err => console.error('work-cleared broadcast failed:', err))
+      }
       setSubmissions(prev => {
         const next = new Map(prev)
         for (const id of studentIds) {

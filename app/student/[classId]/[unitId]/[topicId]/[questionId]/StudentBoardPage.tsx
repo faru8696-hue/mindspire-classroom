@@ -112,6 +112,31 @@ export default function StudentBoardPage({
     return () => { supabase.removeChannel(ch) }
   }, [questionId, studentId])
 
+  // Teacher clicked "Clear work" on this student (LiveClassroomView calls
+  // /api/clear-work, which wipes the DB row, then broadcasts here). Without
+  // this, an already-open board never learns the DB changed underneath it —
+  // it keeps showing the old strokes, and worse, its own autosave/unmount
+  // flush would eventually re-upload that stale in-memory board over the
+  // now-blank row, making the clear look like it "didn't work." Calling the
+  // board's clear() empties its in-memory state too, so there's nothing left
+  // for either save path to resurrect.
+  useEffect(() => {
+    const ch = supabase.channel(`work-cleared:${questionId}:${studentId}`)
+    ch.on('broadcast', { event: 'cleared' }, () => {
+      boardRef.current?.clear()
+      setGrade(null)
+      playTone(392)
+      setGradeToast({ grade: 'comment', feedback: 'Your teacher reset this board — go ahead and try it again.' })
+      setTimeout(() => setGradeToast(null), 8000)
+    })
+    try {
+      ch.subscribe()
+    } catch (err) {
+      console.error('work-cleared subscribe failed:', err)
+    }
+    return () => { supabase.removeChannel(ch) }
+  }, [questionId, studentId])
+
   // Live grade + comment toasts. student_notifications is RLS-gated, so realtime
   // postgres_changes never reaches the student client — poll the service-role API
   // instead (same source the bell/dashboard use) and toast on newly-seen rows.

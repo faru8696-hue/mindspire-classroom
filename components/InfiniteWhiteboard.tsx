@@ -16,6 +16,15 @@ export interface InfiniteWhiteboardHandle {
   // reference diagram (shading a region, labeling a curve, etc.) instead of
   // only seeing it as a static side-panel image.
   addImageObject: (url: string) => void
+  // Wipes every object and undo/redo history, then repaints — used when a
+  // teacher resets this student's work server-side (via /api/clear-work) and
+  // an already-open board needs to reflect that immediately. Deliberately
+  // bypasses pushHistory/commitObjects so the student can't just hit undo to
+  // bring the "cleared" work straight back, and empties objsRef synchronously
+  // so neither the periodic autosave nor the on-unmount flush — both of which
+  // skip saving only when objsRef is already empty — can resurrect the stale
+  // in-memory strokes over the now-blank database row.
+  clear: () => void
 }
 
 const imageCache = new Map<string, HTMLImageElement>()
@@ -281,10 +290,21 @@ function InfiniteWhiteboardInner({
     img.src = url
   }, [commitObjects, pushHistory])
 
+  const clear = useCallback(() => {
+    objsRef.current = []
+    history.current = []
+    redoStack.current = []
+    setSelId(null)
+    selIdRef.current = null
+    setObjCount(0)
+    setBroadcastTick(t => t + 1)
+  }, [])
+
   useImperativeHandle(ref, () => ({
     getSnapshot: () => canvasRef.current?.toDataURL('image/png') ?? null,
     addImageObject,
-  }), [addImageObject])
+    clear,
+  }), [addImageObject, clear])
 
   const doUndo = useCallback(() => {
     if (!history.current.length) return
